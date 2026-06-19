@@ -2007,11 +2007,10 @@ document.addEventListener("keydown", e => {
 // ─────────────────────────────────────────────
 
 const BG_IMAGES = [
-  "https://files.catbox.moe/oge2ul.jpg",
-  "https://files.catbox.moe/3pwrh8.png",
-  "https://files.catbox.moe/gvt6xv.jpg",
-  "https://files.catbox.moe/tuby89.jpg",
-  "https://files.catbox.moe/3jg1c3.jpg",
+  "https://github.com/Missiion/Jogos-com-eles/blob/main/Imagem_de_fundo.jpg?raw=true",
+  "https://github.com/Missiion/Jogos-com-eles/blob/main/Imagem_de_fundo_2.png?raw=true",
+  "https://github.com/Missiion/Jogos-com-eles/blob/main/Imagem_de_fundo_3.jpg?raw=true",
+  "https://github.com/Missiion/Jogos-com-eles/blob/main/Imagem_de_fundo_4.jpg?raw=true",
 ];
 
 const BG_KEY   = "jce_bg_index";
