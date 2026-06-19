@@ -1,0 +1,2903 @@
+/* ═══════════════════════════════════════════════
+   Jogos com Eles — styles.css
+   Inspiração: RAWG landscape expand-on-hover
+   Paleta: dark warm + amber accent
+   Tipo: Space Grotesk + Inter
+   ═══════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+img, iframe { display: block; }
+button, a { font-family: inherit; cursor: pointer; text-decoration: none; }
+
+:root {
+  --base:       #111118;
+  --surface:    #1a1a24;
+  --surface2:   #222230;
+  --surface3:   #2a2a3a;
+  --border:     rgba(255,255,255,0.07);
+  --border2:    rgba(255,255,255,0.13);
+  --text:       #eeeef8;
+  --muted:      #7878a0;
+  --muted2:     #4a4a6a;
+  --amber:      #ffb347;
+  --amber-dim:  rgba(255,179,71,0.15);
+  --orange:     #ff9466;
+  --orange-dim: rgba(255,148,102,0.15);
+  --green:      #4dd98a;
+  --green-dim:  rgba(77,217,138,0.12);
+  --blue-dim:   rgba(80,150,255,0.12);
+  --blue:       #5096ff;
+  --red-dim:    rgba(255,80,80,0.1);
+  --red:        rgba(255,120,120,0.85);
+  --radius:     8px;
+  --radius-sm:  5px;
+  --tr:         0.22s ease;
+
+  /* ── Banner badge size — change this to resize the cover art on cards ── */
+  --card-banner-size: 52px; /* width; height is auto (portrait ratio ~4:3) */
+}
+
+/* Font-size fluida por zona de resolução.
+   1080p (1920px) = 16px base exacto — pixel-perfect ao original.
+   Cada zona usa uma curva linear própria para não exagerar nem encolher.
+   Tudo o que usa rem no CSS escala automaticamente em cascata. */
+
+/* Zona 1: 720p e abaixo (≤1366px) — escala mais conservadora
+   1280px → 10px  |  1366px → 11px */
+html {
+  font-size: clamp(9px, 0.78vw, 11px);
+  -webkit-font-smoothing: antialiased;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Zona 2: entre 720p e 1080p (1367px–1919px) — ramp suave até 16px
+   1367px → 11px  |  1919px → ~15.5px */
+@media (min-width: 1367px) {
+  html { font-size: clamp(11px, 0.833vw, 16px); }
+}
+
+/* Zona 3: 1080p exacto (1920px) — base original, 16px */
+@media (min-width: 1920px) {
+  html { font-size: 16px; }
+}
+
+/* Zona 4: 1080p → 1440p (1921px–2559px) — crescimento moderado
+   1921px → 16px  |  2560px → ~21px */
+@media (min-width: 1921px) {
+  html { font-size: clamp(16px, 0.833vw, 21px); }
+}
+
+/* Zona 5: 1440p → 4K (2560px–3840px) — crescimento controlado
+   2560px → 21px  |  3840px → 28px */
+@media (min-width: 2560px) {
+  html { font-size: clamp(21px, 0.729vw, 28px); }
+}
+
+/* Zona 6: 4K e acima (≥3840px) — cap em 28px */
+@media (min-width: 3840px) {
+  html { font-size: 28px; }
+}
+
+/* ═══════════════════════════════════════════════
+   PAGE LOADER — ecrã de carregamento inicial
+   ═══════════════════════════════════════════════ */
+
+.page-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #0d0d14;
+  background-image: url("https://files.catbox.moe/oge2ul.jpg");
+  background-size: cover;
+  background-position: center top;
+  transition: opacity 0.65s ease, visibility 0.65s ease;
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Overlay de blur — o JS manipula o backdrop-filter via style inline */
+.loader-bg {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 8, 14, 0.42);
+}
+
+/* Estado de saída — app.js adiciona .loader-out */
+.page-loader.loader-out {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ── Centro: spinner + texto ── */
+.loader-center {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 36px;
+}
+
+/* ── Spinner ring ── */
+.loader-ring {
+  width: 88px;
+  height: 88px;
+  filter: drop-shadow(0 0 16px rgba(255,179,71,0.25));
+}
+
+.loader-ring-svg {
+  width: 100%;
+  height: 100%;
+  transform-origin: center;
+}
+
+.loader-ring-track {
+  stroke: none;
+}
+
+.loader-ring-arc {
+  stroke: var(--amber);
+  transform-origin: center;
+  animation: loader-spin 1.6s linear infinite, loader-dash 2.4s ease-in-out infinite;
+}
+
+@keyframes loader-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes loader-dash {
+  0%   { stroke-dashoffset: 220; stroke-dasharray: 20 244; }
+  45%  { stroke-dashoffset: 0;   stroke-dasharray: 200 64; }
+  100% { stroke-dashoffset: -220; stroke-dasharray: 20 244; }
+}
+
+/* ── Texto ── */
+.loader-text-wrap {
+  min-height: 1.6em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loader-text {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgba(238,238,248,0.55);
+  white-space: pre;
+}
+
+/* Cursor piscante injetado pelo JS */
+.loader-cursor {
+  display: inline-block;
+  width: 1px;
+  height: 0.95em;
+  background: rgba(238,238,248,0.45);
+  margin-left: 2px;
+  vertical-align: middle;
+  animation: loader-blink 0.55s step-end infinite;
+}
+
+@keyframes loader-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ── Background image ────────────────────────── */
+body {
+  background-color: #0d0d14;
+  background-image: url("https://files.catbox.moe/oge2ul.jpg");
+  background-size: cover;
+  background-position: center top;
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Full-page glass overlay — sits above bg, below content */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  backdrop-filter: blur(var(--bg-blur, 2px));
+  -webkit-backdrop-filter: blur(var(--bg-blur, 2px));
+  background: rgba(10, 10, 18, 0.35);
+  pointer-events: none;
+}
+
+/* Push real page content above the bg overlay (modal/admin já gerem o seu próprio stacking).
+   Nota: #admin-hint foi removido daqui de propósito — é position:fixed e
+   tem o seu próprio z-index; incluí-lo aqui (seletor de ID) tinha mais
+   especificidade do que a regra .admin-hint mais abaixo e estava a forçar
+   position:relative no hint, tirando-o do fluxo "fixed" e empurrando o
+   header para baixo sempre que a dica ficava visível. */
+.main {
+  position: relative;
+  z-index: 1;
+}
+
+/* .main é o único scroll container — body/html ficam locked a 100vh,
+   o background nunca fica exposto abaixo do conteúdo */
+.main {
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Scrollbar subtil inline para não sair do layout */
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface3) transparent;
+}
+
+/* ── Loading / Empty ─────────────────────────── */
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 80px 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.loading-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--surface3);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty-state {
+  text-align: center;
+  padding: 80px 0;
+  color: var(--muted);
+}
+
+.empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+.empty-state p { font-size: 0.88rem; }
+.hidden { display: none !important; }
+
+/* ═══════════════════════════════════════════════
+   GAME LIST + ROWS
+   ═══════════════════════════════════════════════ */
+.game-list {
+  padding: 12px 40px 64px;
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+/* ═══════════════════════════════════════════════
+   GAME CARD — landscape RAWG-style expand on hover
+   ═══════════════════════════════════════════════ */
+.game-card {
+  position: relative;
+  background: var(--surface);
+  border-radius: var(--radius);
+  overflow: visible;
+  cursor: pointer;
+  outline: none;
+  transform-origin: center top;
+  transition: transform 0.35s cubic-bezier(0.4,0,0.2,1), box-shadow 0.35s ease;
+  box-shadow:
+    0 1px 0   rgba(255,255,255,0.06),
+    0 2px 6px rgba(0,0,0,0.45),
+    0 8px 24px rgba(0,0,0,0.35);
+}
+
+.game-card:hover {
+  transform: scale(1.045);
+  z-index: 10;
+  box-shadow:
+    0 1px 0    rgba(255,255,255,0.09),
+    0 4px 10px rgba(0,0,0,0.5),
+    0 14px 36px rgba(0,0,0,0.45);
+}
+
+.game-card:focus-visible .card-top {
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
+}
+
+/* ── Image top ────────────────────────────────── */
+.card-top {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface2);
+  transition: border-radius var(--tr);
+}
+
+/* when expanded, only top corners rounded */
+.game-card:hover .card-top {
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.card-bg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* (zoom is handled by .game-card:hover scale) */
+
+/* gradient at bottom of image for title legibility — multi-stop para um
+   esbatimento suave (em vez de um corte/retângulo demasiado óbvio) */
+.card-image-gradient {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 62%;
+  background: linear-gradient(to bottom,
+    rgba(10,10,16,0)    0%,
+    rgba(10,10,16,0.18) 40%,
+    rgba(8,8,13,0.55)   72%,
+    rgba(6,6,10,0.82)   100%);
+  pointer-events: none;
+}
+
+/* Scrub bar — top of image, shows on hover */
+.card-scrub-bar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 4;
+}
+
+.game-card:hover .card-scrub-bar {
+  opacity: 1;
+}
+
+.scrub-dot {
+  flex: 1;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.22);
+  transition: background 0.15s;
+}
+
+.scrub-dot.active {
+  background: rgba(255,255,255,0.85);
+}
+
+.scrub-dot.trailer-dot { background: rgba(255,179,71,0.35); }
+.scrub-dot.trailer-dot.active { background: var(--amber); }
+
+/* ── Admin card buttons — editar key-art / remover ──
+   Escondidos por defeito; só ficam visíveis em modo editor
+   (body.editor-mode, activado ao escrever "admin"). */
+.card-edit-btn,
+.card-delete-btn {
+  display: none;
+  position: absolute;
+  top: 8px;
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+body.editor-mode .card-edit-btn,
+body.editor-mode .card-delete-btn {
+  display: flex;
+}
+
+.card-edit-btn {
+  right: 8px;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.16);
+  color: rgba(255,255,255,0.78);
+}
+
+.card-edit-btn:hover {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+
+.card-delete-btn {
+  left: 8px;
+  background: var(--red-dim);
+  border: 1px solid rgba(255,80,80,0.22);
+  color: var(--red);
+}
+
+.card-delete-btn:hover {
+  background: rgba(255,60,60,0.4);
+  border-color: rgba(255,80,80,0.6);
+  color: #fff;
+}
+
+/* Banner badge — cover art + title, bottom-left of card */
+.card-banner-badge {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  z-index: 3;
+  display: flex;
+  align-items: flex-end;  /* title aligns to bottom edge of cover */
+  gap: 8px;
+  max-width: calc(100% - 20px);
+}
+
+.card-banner-cover {
+  width: var(--card-banner-size);
+  height: calc(var(--card-banner-size) * 1.34); /* ~4:3 portrait ratio */
+  object-fit: cover;
+  border-radius: 5px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.08);
+}
+
+.card-banner-cover--empty {
+  background: var(--surface3);
+}
+
+.card-banner-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: clamp(0.68rem, 0.95vw, 0.88rem);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: #fff;
+  line-height: 1.25;
+  /* Sombra leve e única — só o suficiente para destacar do fundo,
+     sem criar um halo/retângulo escuro por trás do texto. A legibilidade
+     principal vem do gradiente subtil em .card-image-gradient. */
+  text-shadow: 0 1px 4px rgba(0,0,0,0.55);
+  /* Truncate if too long */
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* ── Expand panel ─────────────────────────────── */
+.card-expand {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 50;
+  border-radius: 0 0 var(--radius) var(--radius);
+  border: none;
+  padding: 12px 14px 14px;
+  /* Professional glassmorphism — genuine blur of whatever sits behind the
+     card, soft tonal gradient instead of a hard white edge, depth via
+     shadow rather than a stroked border. */
+  background:
+    linear-gradient(165deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.015) 45%, rgba(0,0,0,0.12) 100%),
+    rgba(13, 13, 20, 0.74);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow:
+    0 24px 48px rgba(0,0,0,0.5),
+    0 1px 0 rgba(0,0,0,0.4),
+    inset 0 1px 0 rgba(255,255,255,0.045);
+  /* Hidden by default */
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
+  pointer-events: none;
+}
+
+.game-card:hover .card-expand {
+  max-height: 200px;
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* Tags row inside expand */
+.expand-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.tag {
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.07);
+  color: rgba(255,255,255,0.6);
+  white-space: nowrap;
+}
+
+.tag.coop   { background: var(--green-dim); color: var(--green); }
+.tag.mmo    { background: var(--blue-dim);  color: var(--blue);  }
+.tag.multiplayer { background: var(--blue-dim); color: var(--blue); }
+
+/* Description inside expand */
+.expand-desc {
+  font-size: 0.72rem;
+  line-height: 1.55;
+  color: rgba(238,238,248,0.55);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+/* Footer row: rating + steam */
+.expand-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-rating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--amber);
+}
+
+.rating-count {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.65rem;
+}
+
+.card-steam-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.5);
+  padding: 4px 9px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 3px;
+  background: rgba(255,255,255,0.04);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.card-steam-btn:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.3);
+  background: rgba(255,255,255,0.09);
+}
+
+/* ── Card expand-footer: links group (quicklinks + steam) ── */
+.expand-footer-links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* Quick-link pills in card expand — icon only (favicon) */
+.card-quicklink-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255,255,255,0.42);
+  padding: 4px 5px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 3px;
+  background: rgba(255,255,255,0.03);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  line-height: 1;
+}
+.card-quicklink-btn:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.28);
+  background: rgba(255,255,255,0.08);
+}
+
+/* ═══════════════════════════════════════════════
+   MODAL
+   ═══════════════════════════════════════════════ */
+.game-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  backdrop-filter: blur(14px) brightness(0.55);
+  -webkit-backdrop-filter: blur(14px) brightness(0.55);
+}
+
+/* Two-box vertical layout — media em modo "cinema" (largo, 16:9),
+   info mais estreita e centrada por baixo. Sem scroll — cabe no viewport.
+   overflow:visible para não clippar o modal-info nem a sua box-shadow. */
+.modal-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  max-width: 68.75rem; /* 1100px @ 16px base; escala com o html font-size */
+  width: 100%;
+  max-height: 90vh;
+  overflow: visible;
+}
+
+/* X close — top-right of entire modal */
+.modal-close {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 1100;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.65);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.modal-close:hover {
+  background: rgba(255,255,255,0.12);
+  color: var(--text);
+}
+
+/* ── Box 1: Media — modo cinema ─── */
+/* aspect-ratio 16/9 necessário para iframes (não têm dimensão intrínseca).
+   A img usa position:absolute+cover para preencher sem letterboxing.
+   Sem box-shadow nem background para não criar "sombra" visível. */
+.modal-media {
+  position: relative;
+  background: transparent;
+  border-radius: 14px;
+  overflow: hidden;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  flex-shrink: 0;
+  /* Parallax 3D — perspectiva para o conteúdo interno */
+  perspective: 1000px;
+  transform-style: preserve-3d;
+}
+
+.modal-media img {
+  /* Absolute fill + cover: preenche o container 16/9 sem letterboxing */
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  z-index: 1;
+  will-change: transform;
+  transition: transform 0.1s ease-out, opacity 0.35s ease-out;
+  opacity: 0;
+}
+.modal-media img.loaded { opacity: 1; }
+
+.modal-media iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 1;
+  border: none;
+  opacity: 0;
+  transition: opacity 0.35s ease-out;
+}
+.modal-media iframe.loaded { opacity: 1; }
+
+/* Skeleton glass — cobre o espaço enquanto a imagem/vídeo carrega,
+   evitando o "vazio" entre trocas de screenshot/trailer.
+   Estilo vidro fosco com glare diagonal animado a percorrer a superfície. */
+.modal-media-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  /* Vidro base: fundo semi-transparente com blur real do conteúdo por trás */
+  background: rgba(18, 18, 28, 0.48);
+  backdrop-filter: blur(24px) saturate(130%);
+  -webkit-backdrop-filter: blur(24px) saturate(130%);
+  /* Glare beam — layer separada via pseudo-element (não suporta animação
+     em background-position com backdrop-filter activo, por isso usamos
+     um overlay isolado no ::after) */
+  overflow: hidden;
+}
+
+/* Reflexo/glare diagonal animado por cima do vidro */
+.modal-media-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* Faixa brilhante estreita em diagonal — simula reflexo de luz numa superfície de vidro */
+  background: linear-gradient(
+    118deg,
+    transparent            0%,
+    transparent           30%,
+    rgba(255,255,255,0.03) 38%,
+    rgba(255,255,255,0.11) 44%,
+    rgba(255,255,255,0.15) 48%,
+    rgba(255,255,255,0.11) 52%,
+    rgba(255,255,255,0.03) 58%,
+    transparent           66%,
+    transparent          100%
+  );
+  background-size: 250% 100%;
+  animation: modalGlare 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Borda interior de vidro — topo claro (luz) + base escura (profundidade) */
+.modal-media-skeleton::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg,
+      rgba(255,255,255,0.07) 0%,
+      rgba(255,255,255,0.02) 30%,
+      rgba(0,0,0,0.0)        60%,
+      rgba(0,0,0,0.12)      100%
+    );
+  pointer-events: none;
+}
+
+@keyframes modalGlare {
+  0%   { background-position: 200% 0; opacity: 0; }
+  8%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { background-position: -200% 0; opacity: 0; }
+}
+
+/* Steam button — bottom-right of media box */
+.modal-media-steam {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(0,0,0,0.60);
+  border: 1px solid rgba(255,255,255,0.14);
+  color: rgba(255,255,255,0.75);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+.modal-media-steam:hover {
+  background: rgba(255,255,255,0.13);
+  color: #fff;
+}
+
+/* Prev/next nav */
+.modal-prev,
+.modal-next {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.modal-prev { left: 10px; }
+.modal-next { right: 10px; }
+.modal-prev:hover, .modal-next:hover {
+  background: rgba(255,255,255,0.15);
+  color: var(--text);
+}
+
+.modal-media-nav {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 5px;
+  z-index: 5;
+}
+
+.modal-media-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.28);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.modal-media-dot.active {
+  background: var(--text);
+  transform: scale(1.3);
+}
+.modal-media-dot.trailer-dot { background: rgba(255,179,71,0.4); }
+.modal-media-dot.trailer-dot.active { background: var(--amber); }
+
+/* ── Banner do jogo — vive fora do .modal-content, no espaço livre
+   à esquerda do modal. Não altera a largura/posição do modal-content
+   nem do modal-media; só aparece quando há espaço sobrante no ecrã.
+   Escala normal de capa de jogo (proporção vertical ~3:4), ancorado
+   ao topo — não estica para a altura toda do modal. */
+.modal-banner {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  margin-right: 1.75rem;  /* 28px @ 16px base */
+  width: 12.5rem;         /* 200px @ 16px base */
+  max-width: 280px;       /* cap em 4K */
+  aspect-ratio: 3 / 4;
+  display: none;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface3);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.modal-banner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.modal-banner-empty {
+  width: 100%;
+  height: 100%;
+  background: var(--surface3);
+}
+
+/* ── Aba: estúdio / desenvolvedor / data / estado / engine ──
+   Vive fora do .modal-content, no espaço livre à direita, alinhada
+   ao topo do modal (nível do modal-media/modal-next). Não altera
+   nenhuma dimensão do modal. */
+.modal-extra-info {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 1.75rem;   /* 28px @ 16px base */
+  height: 100%;
+  width: 15rem;           /* 240px @ 16px base */
+  max-width: 320px;       /* cap em 4K */
+  display: none;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 22px;
+}
+
+.extra-info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.extra-info-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  /* Glow preto subtil por trás do texto — só para legibilidade
+     quando o fundo da página é claro/contrastante; sem bordas. */
+  text-shadow:
+    0 0 10px rgba(0,0,0,0.8),
+    0 0 18px rgba(0,0,0,0.5),
+    0 1px 2px rgba(0,0,0,0.9);
+}
+
+.extra-info-value {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+/* Estado quando o dado não existe na IGDB — fallback visual discreto */
+.extra-info-value.unknown {
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  font-style: italic;
+  color: var(--muted2);
+}
+
+/* Painéis laterais — aparecem quando há espaço físico suficiente no viewport
+   para o modal (1100px) + banner (200px) + extra-info (240px) + margens (56px) + padding (48px)
+   ≈ 1644px. Com o rem fluido, o conteúdo dentro dos painéis cresce junto. */
+@media (min-width: 1640px) {
+  .modal-banner,
+  .modal-extra-info {
+    display: flex;
+  }
+}
+
+/* ── Box 2: Info — glassmorphism ──────────────── */
+/* ── Box 2: Info — centrada por baixo, mais estreita, glassmorphism ── */
+.modal-info {
+  position: relative;
+  border-radius: 14px;
+  padding: 22px 26px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 68.75rem;  /* acompanha a largura "cinema" da media; escala com o html font-size */
+  align-self: center;
+  /* Glassmorphism */
+  background: rgba(13, 13, 20, 0.74);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05);
+  transition: max-width 0.3s cubic-bezier(0.4,0,0.2,1), width 0.3s cubic-bezier(0.4,0,0.2,1),
+              max-height 0.3s cubic-bezier(0.4,0,0.2,1), padding 0.3s ease;
+}
+
+/* ── Expanded state — centred, larger, scrollable ── */
+.modal-info.expanded {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(720px, 90vw);
+  max-width: 720px;
+  max-height: 80vh;
+  overflow-y: auto;
+  z-index: 1200;
+  padding: 30px 32px 32px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 32px 80px rgba(0,0,0,0.65);
+}
+.modal-info.expanded::-webkit-scrollbar { width: 4px; }
+
+/* Acções top-right do info panel — Steam + Expand numa row */
+.modal-info-actions {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Steam inline no info panel */
+.modal-info-steam {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.09);
+  color: rgba(255,255,255,0.55);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.modal-info-steam:hover {
+  background: rgba(255,255,255,0.11);
+  border-color: rgba(255,255,255,0.22);
+  color: var(--text);
+}
+
+/* Expand toggle — agora dentro de .modal-info-actions */
+.modal-info-expand-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.09);
+  color: rgba(255,255,255,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.modal-info-expand-btn:hover {
+  background: rgba(255,255,255,0.11);
+  border-color: rgba(255,255,255,0.22);
+  color: var(--text);
+}
+.modal-info.expanded .modal-info-expand-btn {
+  background: rgba(255,255,255,0.09);
+  color: var(--text);
+}
+
+/* ── Modal info quick-links (Online-Fix, cs.rin.ru) ── */
+.modal-info-quicklink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.60rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.09);
+  color: rgba(255,255,255,0.48);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.modal-info-quicklink:hover {
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.22);
+  color: var(--text);
+}
+
+/* Favicon do site, à esquerda do texto */
+.modal-info-quicklink .quicklink-icon {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+/* ── Modal title row: title + copy button ── */
+.modal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Copy button — sits right of the title, always visible in modal-info */
+.modal-copy-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.09);
+  color: rgba(255,255,255,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.modal-copy-btn:hover {
+  background: rgba(255,255,255,0.11);
+  border-color: rgba(255,255,255,0.22);
+  color: var(--text);
+}
+/* Feedback visual breve ao copiar */
+.modal-copy-btn.copied {
+  background: var(--green-dim);
+  border-color: rgba(77,217,138,0.3);
+  color: var(--green);
+}
+
+.modal-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.2;
+  /* Sem flex-grow: o título ocupa só o espaço do seu texto, para o
+     botão de copiar ficar mesmo ao lado, em vez de empurrado para a
+     extremidade direita do painel. */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.modal-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.modal-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.modal-rating {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--amber);
+}
+
+.modal-steam-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 7px 14px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.13);
+  color: rgba(255,255,255,0.6);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.modal-steam-btn:hover {
+  background: rgba(255,255,255,0.11);
+  border-color: rgba(255,255,255,0.28);
+  color: var(--text);
+}
+
+.modal-desc {
+  font-size: 0.83rem;
+  line-height: 1.7;
+  color: rgba(238,238,248,0.58);
+  /* Sistema de limite de texto — corta a descrição após 4 linhas;
+     o botão de expandir mostra o texto completo. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+
+.modal-info.expanded .modal-desc {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  font-size: 0.88rem;
+}
+
+.modal-info.expanded .modal-title {
+  font-size: 1.5rem;
+}
+
+/* ═══════════════════════════════════════════════
+   ADMIN
+   ═══════════════════════════════════════════════ */
+/* Widget flutuante no canto inferior direito — não bloqueia o resto da
+   página (sem backdrop, sem travar o scroll). Colapsado por defeito:
+   apenas o botão circular (admin-fab) fica visível; clicar nele
+   descolapsa o painel (admin-panel-body) por cima do botão. */
+.admin-overlay {
+  position: fixed;
+  inset: auto 20px 20px auto;
+  z-index: 2000;
+  display: block;
+  width: auto;
+  height: auto;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  pointer-events: none;
+}
+
+.admin-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+/* Row que agrupa os dois fabs lado a lado */
+.admin-fabs-row {
+  order: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-fab {
+  pointer-events: all;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  color: var(--amber);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  transition: background 0.15s, transform 0.15s, border-color 0.15s;
+}
+
+.admin-fab:hover {
+  background: var(--surface2);
+  border-color: rgba(255,179,71,0.4);
+  transform: scale(1.06);
+}
+
+.admin-panel.expanded .admin-fab {
+  color: var(--text);
+}
+
+/* FAB de testes — mesmo estilo mas com cor muted por defeito */
+.admin-tests-fab {
+  color: var(--muted);
+}
+
+.admin-tests-fab:hover {
+  color: var(--text);
+  border-color: rgba(255,179,71,0.4);
+}
+
+.admin-tests-fab.active {
+  color: var(--text);
+}
+
+.admin-panel-body {
+  order: 1;
+  margin-bottom: 10px;
+  width: 340px;
+  max-width: calc(100vw - 40px);
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  box-shadow: 0 32px 64px rgba(0,0,0,0.55);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: max-height 0.28s ease, opacity 0.2s ease, transform 0.2s ease;
+}
+
+.admin-panel.expanded .admin-panel-body {
+  max-height: 70vh;
+  opacity: 1;
+  pointer-events: all;
+  transform: translateY(0);
+}
+
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.admin-badge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.admin-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.admin-close:hover {
+  background: rgba(255,255,255,0.07);
+  color: var(--text);
+}
+
+.admin-search-section {
+  padding: 16px 18px 10px;
+  flex-shrink: 0;
+}
+
+.admin-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.admin-search-row {
+  display: flex;
+  gap: 7px;
+}
+
+.admin-input {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  color: var(--text);
+  font-size: 0.83rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.admin-input:focus { border-color: rgba(255,255,255,0.22); }
+.admin-input::placeholder { color: var(--muted2); }
+
+.admin-search-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.admin-search-btn:hover {
+  background: rgba(255,255,255,0.11);
+  color: var(--text);
+}
+
+.admin-search-results {
+  margin: 0 18px 10px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-y: auto;
+  max-height: 230px;
+  flex-shrink: 0;
+}
+
+.admin-tests-panel {
+  order: 2;
+  margin-bottom: 10px;
+  align-self: flex-start;   /* alinha à esquerda, sob o fab de testes */
+  width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translateY(6px);
+  transition: max-height 0.22s ease, opacity 0.18s ease, transform 0.18s ease;
+}
+
+.admin-tests-panel.open {
+  max-height: 300px;
+  opacity: 1;
+  pointer-events: all;
+  transform: translateY(0);
+}
+
+.admin-test-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: rgba(255,255,255,0.75);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: background 0.15s, color 0.15s;
+}
+
+.admin-test-btn:hover {
+  background: rgba(255,255,255,0.12);
+  color: var(--text);
+}
+
+.admin-test-btn.active {
+  background: rgba(120,170,255,0.16);
+  border-color: rgba(120,170,255,0.4);
+  color: rgba(160,195,255,0.95);
+}
+
+.search-loading {
+  padding: 14px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.12s;
+}
+
+.search-result-item:last-child { border-bottom: none; }
+.search-result-item:hover { background: rgba(255,255,255,0.03); }
+
+.search-result-cover {
+  width: 32px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: var(--surface3);
+}
+
+.search-result-info { flex: 1; min-width: 0; }
+
+.search-result-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-result-year {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.search-result-add {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 5px 10px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--border);
+  color: rgba(255,255,255,0.65);
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.search-result-add:hover {
+  background: rgba(255,255,255,0.13);
+  color: var(--text);
+}
+
+.search-result-add.added {
+  color: var(--muted2);
+  border-color: rgba(255,255,255,0.04);
+  background: transparent;
+  cursor: default;
+}
+
+.admin-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px 8px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted2);
+  flex-shrink: 0;
+}
+
+.admin-divider::before,
+.admin-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.admin-game-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 18px 10px;
+}
+
+.admin-empty {
+  padding: 22px 0;
+  text-align: center;
+  color: var(--muted2);
+  font-size: 0.8rem;
+}
+
+.admin-game-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.admin-game-item:last-child { border-bottom: none; }
+
+.admin-game-cover {
+  width: 28px;
+  height: 38px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background: var(--surface3);
+}
+
+.admin-game-name {
+  flex: 1;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-game-remove {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 3px 9px;
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid rgba(255,80,80,0.18);
+  color: rgba(255,100,100,0.5);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.admin-game-remove:hover {
+  background: rgba(255,80,80,0.07);
+  border-color: rgba(255,80,80,0.35);
+  color: rgba(255,120,120,0.9);
+}
+
+.admin-status {
+  margin: 0 18px 14px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.76rem;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.admin-status.success {
+  background: rgba(77,217,138,0.09);
+  border: 1px solid rgba(77,217,138,0.18);
+  color: var(--green);
+}
+
+.admin-status.error {
+  background: rgba(255,80,80,0.07);
+  border: 1px solid rgba(255,80,80,0.18);
+  color: var(--red);
+}
+
+/* ═══════════════════════════════════════════════
+   KEY ART PICKER — popup de admin
+   ═══════════════════════════════════════════════ */
+.keyart-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0,0,0,0.65);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.keyart-backdrop {
+  position: absolute;
+  inset: 0;
+}
+
+.keyart-panel {
+  position: relative;
+  z-index: 1;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 32px 64px rgba(0,0,0,0.55);
+}
+
+.keyart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.keyart-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.keyart-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.keyart-close:hover {
+  background: rgba(255,255,255,0.07);
+  color: var(--text);
+}
+
+.keyart-grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 18px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.keyart-thumb {
+  position: relative;
+  border-radius: 7px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border: 2px solid transparent;
+  background: var(--surface2);
+  padding: 0;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.keyart-thumb:hover {
+  transform: scale(1.025);
+  border-color: rgba(255,255,255,0.22);
+}
+
+.keyart-thumb.selected {
+  border-color: var(--amber);
+}
+
+.keyart-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.keyart-empty {
+  grid-column: 1 / -1;
+  padding: 30px 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ── Admin key hint ────────────────────────────── */
+.admin-hint {
+  position: fixed;
+  bottom: 18px;
+  right: 18px;
+  z-index: 500;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 0.72rem;
+  font-family: 'Space Grotesk', monospace;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  opacity: 0;
+  transform: translateY(5px);
+  transition: opacity 0.18s, transform 0.18s;
+  pointer-events: none;
+}
+
+.admin-hint.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ═══════════════════════════════════════════════
+   TOOLBAR — tabs + sort + view
+   ═══════════════════════════════════════════════ */
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 40px;
+  background: none;
+  flex-wrap: wrap;
+}
+
+.toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── Tabs dropdown ────────────────────────────── */
+.tabs-dropdown {
+  position: relative;
+}
+
+.tabs-dropdown-trigger {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 5px 11px 5px 13px;
+  min-height: 30px;
+  border-radius: 100px;
+  background: var(--amber-dim);
+  border: 1px solid rgba(255,179,71,0.3);
+  color: var(--amber);
+  white-space: nowrap;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.tabs-dropdown-trigger:hover,
+.tabs-dropdown.open > .tabs-dropdown-trigger {
+  background: rgba(255,179,71,0.24);
+  border-color: rgba(255,179,71,0.5);
+}
+
+.tabs-dropdown-label {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabs-dropdown-chevron {
+  margin-left: -1px;
+  opacity: 0.85;
+  transition: transform 0.28s cubic-bezier(.4,0,.2,1);
+}
+
+.tabs-dropdown:hover .tabs-dropdown-chevron,
+.tabs-dropdown.open .tabs-dropdown-chevron {
+  transform: rotate(180deg);
+}
+
+/* Ponte invisível entre o trigger e o menu para o hover não "quebrar" ao mover o rato */
+.tabs-dropdown::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: 10px;
+}
+
+.tabs-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: 0;
+  min-width: 190px;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(20,20,29,0.92);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 6px;
+  box-shadow: 0 16px 36px rgba(0,0,0,0.5), 0 2px 10px rgba(0,0,0,0.35);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px) scale(0.96);
+  transform-origin: top left;
+  pointer-events: none;
+  transition: opacity 0.2s cubic-bezier(.4,0,.2,1),
+              transform 0.25s cubic-bezier(.34,1.56,.64,1),
+              visibility 0.2s;
+  z-index: 150;
+}
+
+.tabs-dropdown:hover .tabs-dropdown-menu,
+.tabs-dropdown.open .tabs-dropdown-menu,
+.tabs-dropdown-menu:hover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+}
+
+.tabs-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px 7px 11px;
+  border-radius: 6px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.2s ease, transform 0.2s ease,
+              background 0.15s ease, color 0.15s ease;
+}
+
+.tabs-dropdown:hover .tabs-dropdown-item,
+.tabs-dropdown.open .tabs-dropdown-item {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.tabs-dropdown-menu .tabs-dropdown-item:nth-child(1) { transition-delay: 0.02s; }
+.tabs-dropdown-menu .tabs-dropdown-item:nth-child(2) { transition-delay: 0.05s; }
+.tabs-dropdown-menu .tabs-dropdown-item:nth-child(3) { transition-delay: 0.08s; }
+.tabs-dropdown-menu .tabs-dropdown-item:nth-child(4) { transition-delay: 0.11s; }
+.tabs-dropdown-menu .tabs-dropdown-item:nth-child(5) { transition-delay: 0.14s; }
+.tabs-dropdown-menu .tabs-dropdown-item:nth-child(n+6) { transition-delay: 0.16s; }
+
+.tabs-dropdown-item:hover {
+  background: rgba(255,255,255,0.07);
+  color: var(--text);
+}
+
+.tabs-dropdown-item.active {
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+
+.tabs-dropdown-item-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tab count badge */
+.tab-count {
+  font-size: 0.62rem;
+  font-weight: 700;
+  background: rgba(255,255,255,0.1);
+  border-radius: 100px;
+  padding: 1px 5px;
+  color: var(--muted);
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.tabs-dropdown-trigger .tab-count {
+  background: rgba(255,179,71,0.2);
+  color: var(--amber);
+}
+.tabs-dropdown-item.active .tab-count {
+  background: rgba(255,179,71,0.2);
+  color: var(--amber);
+}
+
+/* Apagar tab — visível apenas em modo admin, no tema vermelho de "destrutivo" do site */
+.tabs-dropdown-item .tab-delete {
+  display: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: rgba(255,100,100,0.55);
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+body.editor-mode .tabs-dropdown-item .tab-delete { display: flex; }
+.tabs-dropdown-item .tab-delete:hover {
+  background: rgba(255,80,80,0.18);
+  color: rgba(255,120,120,0.95);
+}
+
+/* ── Criar Tab ────────────────────────────────── */
+.create-tab-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.create-tab-btn {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 5px 11px;
+  border-radius: 100px;
+  background: transparent;
+  border: 1px dashed rgba(255,255,255,0.18);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.create-tab-btn:hover {
+  border-color: rgba(255,255,255,0.35);
+  color: var(--text);
+}
+
+.create-tab-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.create-tab-input {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 100px;
+  padding: 5px 13px;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 150px;
+}
+.create-tab-input:focus { border-color: rgba(255,255,255,0.3); }
+.create-tab-input::placeholder { color: var(--muted2); }
+
+.create-tab-confirm {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--amber-dim);
+  border: 1px solid rgba(255,179,71,0.3);
+  color: var(--amber);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+.create-tab-confirm:hover {
+  background: rgba(255,179,71,0.25);
+  border-color: rgba(255,179,71,0.55);
+}
+
+/* ── Sort group ────────────────────────────────── */
+.sort-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.sort-btn {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 4px 9px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.sort-btn:hover { color: var(--text); }
+.sort-btn.active {
+  background: rgba(255,255,255,0.09);
+  color: var(--text);
+}
+
+/* ── View group ────────────────────────────────── */
+.view-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.view-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.view-btn:hover { color: var(--text); }
+.view-btn.active {
+  background: rgba(255,255,255,0.09);
+  color: var(--text);
+}
+
+/* ═══════════════════════════════════════════════
+   SETTINGS — engrenagem + dropdown
+   Segue o mesmo padrão visual do tag-filter:
+   pill trigger com hover → menu glassmorphism
+   ═══════════════════════════════════════════════ */
+
+.settings-wrap {
+  position: relative;
+}
+
+/* ── Trigger — botão circular, apenas ícone, sem efeito de fade ── */
+.settings-trigger {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+/* Ícone da engrenagem — branco normal, sem rotação nem transição de cor */
+.settings-trigger svg {
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+/* Ponte invisível entre o trigger e o menu (igual ao tag-filter) */
+.settings-wrap::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 100%;
+  height: 10px;
+}
+
+/* ── Menu — mesmo glassmorphism do tag-filter-menu ── */
+.settings-menu {
+  --settings-size: 1.5;
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  width: calc(280px * var(--settings-size));
+  background: rgba(20,20,29,0.96);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 8px;
+  box-shadow: 0 16px 36px rgba(0,0,0,0.5), 0 2px 10px rgba(0,0,0,0.35);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: top right;
+  pointer-events: none;
+  transition: opacity 0.2s cubic-bezier(.4,0,.2,1),
+              transform 0.25s cubic-bezier(.34,1.56,.64,1),
+              visibility 0.2s;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.settings-wrap.open .settings-menu {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+}
+
+/* ── Secções dentro do menu ──
+   --settings-size controla o tamanho geral da secção (texto, espaçamentos,
+   grelha de fundos e slider) a partir de uma única unidade, definida acima
+   em .settings-menu. 1 = tamanho original; sobe/desce este valor para
+   escalar tudo dentro da secção de uma vez. */
+.settings-section {
+  padding: calc(6px * var(--settings-size)) calc(4px * var(--settings-size));
+  font-size: calc(1em * var(--settings-size));
+}
+
+.settings-section + .settings-section {
+  border-top: 1px solid var(--border);
+}
+
+.settings-section-label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: calc(0.7rem * var(--settings-size));
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.85;
+  padding: calc(4px * var(--settings-size)) calc(6px * var(--settings-size)) calc(8px * var(--settings-size));
+  display: block;
+}
+
+/* ── Carrossel de fundos — grelha de 5 miniaturas ── */
+.bg-carousel-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: calc(5px * var(--settings-size));
+  padding: 0 calc(2px * var(--settings-size)) calc(2px * var(--settings-size));
+}
+
+.bg-carousel-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 5px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background: var(--surface3);
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.bg-carousel-thumb:hover {
+  transform: scale(1.06);
+  border-color: rgba(255,255,255,0.3);
+}
+
+.bg-carousel-thumb.active {
+  border-color: var(--amber);
+}
+
+.bg-carousel-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ── Slider de desfoque ── */
+.blur-slider-row {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--settings-size));
+  padding: calc(2px * var(--settings-size)) calc(4px * var(--settings-size));
+}
+
+.blur-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 3px;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  /* track fill updated inline by JS */
+  background: linear-gradient(to right,
+    rgba(255,179,71,0.7) 0%,
+    rgba(255,179,71,0.7) var(--pct, 10%),
+    rgba(255,255,255,0.1) var(--pct, 10%),
+    rgba(255,255,255,0.1) 100%
+  );
+}
+
+.blur-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--amber);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  transition: transform 0.12s;
+}
+.blur-slider::-webkit-slider-thumb:hover { transform: scale(1.25); }
+
+.blur-slider::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--amber);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+}
+
+.blur-value-label {
+  font-family: 'Space Grotesk', monospace;
+  font-size: calc(0.65rem * var(--settings-size));
+  font-weight: 600;
+  color: var(--muted);
+  min-width: calc(26px * var(--settings-size));
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── View: five-col mode ────────────────────────── */
+.game-grid.view-five {
+  grid-template-columns: repeat(5, 1fr);
+  gap: 13px;
+}
+
+.game-grid.view-five .card-banner-title {
+  font-size: 0.65rem;
+}
+.game-grid.view-five .card-banner-badge {
+  bottom: 7px;
+  left: 7px;
+}
+.game-grid.view-five .card-banner-cover {
+  width: 38px;
+  height: calc(38px * 1.34);
+}
+
+/* ── View: compact mode ─────────────────────────── */
+.game-grid.view-compact {
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+}
+
+.game-grid.view-compact .card-banner-title {
+  font-size: 0.62rem;
+}
+.game-grid.view-compact .card-banner-badge {
+  bottom: 6px;
+  left: 6px;
+}
+.game-grid.view-compact .card-banner-cover {
+  width: 32px;
+  height: calc(32px * 1.34);
+}
+
+/* ── Add-to-Tab button on cards ─────────────────── */
+.card-addtab-btn {
+  display: none;
+  position: absolute;
+  top: 8px;
+  z-index: 6;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  /* sits left of edit (right:8px); edit is 26px wide + 8px from edge = right:40px */
+  right: 40px;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.16);
+  color: rgba(255,255,255,0.78);
+  font-size: 1rem;
+  line-height: 1;
+}
+body.editor-mode .card-addtab-btn { display: flex; }
+.card-addtab-btn:hover {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+
+/* ═══════════════════════════════════════════════
+   ADD-TO-TAB MODAL
+   ═══════════════════════════════════════════════ */
+.addtab-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.addtab-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.addtab-panel {
+  position: relative;
+  z-index: 1;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  width: 100%;
+  max-width: 320px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+}
+
+.addtab-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.addtab-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.addtab-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.addtab-close:hover {
+  background: rgba(255,255,255,0.07);
+  color: var(--text);
+}
+
+.addtab-list {
+  padding: 10px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.addtab-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  transition: background 0.15s, border-color 0.15s;
+  width: 100%;
+  text-align: left;
+}
+.addtab-item:hover {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.09);
+}
+.addtab-item.in-tab {
+  color: var(--amber);
+  background: var(--amber-dim);
+  border-color: rgba(255,179,71,0.22);
+}
+.addtab-item .addtab-check {
+  color: var(--amber);
+  flex-shrink: 0;
+}
+
+.addtab-empty {
+  padding: 20px 0;
+  text-align: center;
+  color: var(--muted2);
+  font-size: 0.8rem;
+}
+
+/* ── editor-only toggle ─── */
+.editor-only { display: none !important; }
+body.editor-mode .editor-only { display: flex !important; }
+
+/* ═══════════════════════════════════════════════
+   TAG FILTER — pill trigger + dropdown
+   ═══════════════════════════════════════════════ */
+.tag-filter {
+  position: relative;
+}
+
+.tag-filter-trigger {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 5px 11px 5px 13px;
+  min-height: 30px;
+  border-radius: 100px;
+  background: var(--orange-dim);
+  border: 1px solid rgba(255,148,102,0.3);
+  color: var(--orange);
+  white-space: nowrap;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.tag-filter-trigger:hover,
+.tag-filter.open .tag-filter-trigger {
+  background: rgba(255,148,102,0.24);
+  border-color: rgba(255,148,102,0.5);
+}
+
+/* Active state — at least one tag selected (same color family, just stronger) */
+.tag-filter-trigger.has-active {
+  background: rgba(255,148,102,0.24);
+  border-color: rgba(255,148,102,0.5);
+  color: var(--orange);
+}
+.tag-filter-trigger.has-active:hover,
+.tag-filter.open .tag-filter-trigger.has-active {
+  background: rgba(255,148,102,0.32);
+  border-color: rgba(255,148,102,0.62);
+}
+
+/* Count badge inside trigger */
+.tag-filter-count {
+  font-size: 0.6rem;
+  font-weight: 700;
+  background: rgba(255,148,102,0.3);
+  color: var(--orange);
+  border-radius: 100px;
+  padding: 1px 5px;
+  line-height: 1.4;
+}
+
+/* Hover on the whole pill opens the menu immediately, same as tabs-dropdown */
+.tag-filter:hover .tag-filter-menu,
+.tag-filter.open .tag-filter-menu,
+.tag-filter-menu:hover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+}
+
+/* Bridge so menu doesn't vanish when moving mouse */
+.tag-filter::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  height: 10px;
+}
+
+/* ── Dropdown menu ── */
+.tag-filter-menu {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: 0;
+  width: 300px;
+  background: rgba(20,20,29,0.96);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 8px;
+  box-shadow: 0 16px 36px rgba(0,0,0,0.5), 0 2px 10px rgba(0,0,0,0.35);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: top left;
+  pointer-events: none;
+  transition: opacity 0.2s cubic-bezier(.4,0,.2,1),
+              transform 0.25s cubic-bezier(.34,1.56,.64,1),
+              visibility 0.2s;
+  z-index: 150;
+}
+
+/* ── Sub-tabs (Géneros & Temas / Estado de Lançamento) ── */
+.tag-filter-subtabs {
+  display: flex;
+  gap: 4px;
+  padding: 2px 2px 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tag-filter-subtab {
+  flex: 1;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tag-filter-subtab:hover {
+  background: rgba(255,255,255,0.06);
+  color: var(--text);
+}
+
+.tag-filter-subtab.active {
+  background: rgba(255,148,102,0.16);
+  border-color: rgba(255,148,102,0.35);
+  color: var(--orange);
+}
+
+/* Header row inside dropdown */
+.tag-filter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.tag-filter-header-label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text);
+  opacity: 0.85;
+}
+
+.tag-filter-clear {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--orange);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0.9;
+  transition: opacity 0.15s;
+}
+.tag-filter-clear:hover { opacity: 1; }
+
+/* Tag pill grid */
+.tag-filter-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.tag-filter-item {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 5px 11px;
+  border-radius: 100px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: rgba(238,238,248,0.78);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tag-filter-item:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.2);
+  color: var(--text);
+}
+
+.tag-filter-item.active {
+  background: rgba(255,148,102,0.18);
+  border-color: rgba(255,148,102,0.38);
+  color: var(--orange);
+}
+.tag-filter-item.active:hover {
+  background: rgba(255,148,102,0.26);
+  border-color: rgba(255,148,102,0.5);
+}
+
+/* ── Scrollbar ─────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted2); }
+
+/* ── Responsive ────────────────────────────────── */
+@media (max-width: 1400px) {
+  .game-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (max-width: 1000px) {
+  .game-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .game-list { padding: 0 24px 48px; }
+  .page-header { padding: 36px 24px 20px; }
+}
+
+@media (max-width: 700px) {
+  .game-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .game-list { padding: 0 16px 48px; }
+  .page-header { padding: 28px 16px 16px; }
+  .modal-content { max-height: 95vh; }
+  .modal-info { padding: 16px; }
+  .modal-info.expanded { width: 92vw; max-height: 85vh; padding: 22px 18px 24px; }
+}
+
+/* ── Abaixo de 1640px: banner e extra-info reintegrados no modal ───────────
+   Os painéis laterais não têm espaço livre fora do modal-content neste range.
+   Banner → overlay discreto no canto sup-esq do modal-media.
+   Extra-info → faixa horizontal compacta entre o media e o info panel. */
+@media (max-width: 1639px) {
+
+  /* Banner: overlay no canto superior-esquerdo do modal-media */
+  .modal-banner {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: auto;
+    margin: 0;
+    width: 4.5rem;
+    max-width: 80px;
+    aspect-ratio: 3 / 4;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08);
+    display: block;
+    z-index: 4;
+  }
+
+  /* Extra-info: faixa horizontal inline, inserida no fluxo do modal-content */
+  .modal-extra-info {
+    position: static;
+    display: flex !important;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    margin: 0;
+    padding: 10px 4px 2px;
+  }
+
+  .extra-info-row {
+    flex-direction: column;
+    gap: 1px;
+    flex: 0 0 auto;
+    min-width: 72px;
+  }
+
+  .extra-info-label {
+    font-size: 0.6rem;
+    text-shadow: none;
+  }
+
+  .extra-info-value {
+    font-size: 0.82rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-bg, .card-expand, .game-card { transition: none !important; }
+}
+
+/* ═══════════════════════════════════════════════
+   CARD — Release status badge (top-right of card-top)
+   ═══════════════════════════════════════════════ */
+.card-release-status {
+  position: absolute;
+  top: 8px;       /* repouso: canto superior direito */
+  right: 8px;
+  z-index: 4;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.57rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  backdrop-filter: blur(8px) brightness(0.7);
+  -webkit-backdrop-filter: blur(8px) brightness(0.7);
+  pointer-events: none;
+  /* Animação smooth no hover do card */
+  transition: top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Hover: desce abaixo dos scrub-dots */
+.game-card:hover .card-release-status {
+  top: 20px;
+}
+
+/* Verde suave — Lançado */
+.card-release-status--released {
+  background: linear-gradient(135deg, rgba(77, 217, 138, 0.22), rgba(77, 217, 138, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(77, 217, 138, 0.3), 0 2px 8px rgba(0,0,0,0.35);
+  color: #7eedb2;
+}
+
+/* Azul claro suave — Acesso Antecipado */
+.card-release-status--early {
+  background: linear-gradient(135deg, rgba(80, 150, 255, 0.22), rgba(80, 150, 255, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(80, 150, 255, 0.3), 0 2px 8px rgba(0,0,0,0.35);
+  color: #8fc3ff;
+}
+
+/* Vermelho suave — Por lançar, Cancelado, etc. */
+.card-release-status--pending {
+  background: linear-gradient(135deg, rgba(255, 80, 80, 0.22), rgba(255, 80, 80, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(255, 80, 80, 0.3), 0 2px 8px rgba(0,0,0,0.35);
+  color: rgba(255, 150, 150, 0.95);
+}
+
+/* Unknown / fallback — muted */
+.card-release-status--unknown {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 2px 8px rgba(0,0,0,0.35);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* Em modo editor, os botões de admin ocupam o canto sup-dir — empurra o badge */
+body.editor-mode .card-release-status {
+  right: 72px;
+}
+
+/* Smaller badge in five/compact views */
+.game-grid.view-five .card-release-status,
+.game-grid.view-compact .card-release-status {
+  font-size: 0.5rem;
+  padding: 2px 5px;
+  top: 6px;
+  right: 6px;
+}
+.game-grid.view-five .game-card:hover .card-release-status,
+.game-grid.view-compact .game-card:hover .card-release-status {
+  top: 18px;
+}
+
+/* ═══════════════════════════════════════════════
+   CARD — Last-row expand opens upward
+   Cards in the last grid row get .last-row; their
+   card-expand is repositioned above the card instead
+   of below, so it never gets clipped by the viewport.
+   ═══════════════════════════════════════════════ */
+.game-card.last-row {
+  transform-origin: center bottom;
+}
+
+.game-card.last-row .card-expand {
+  top: auto;
+  bottom: 100%;
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow:
+    0 -24px 48px rgba(0,0,0,0.5),
+    0 -1px 0 rgba(0,0,0,0.4),
+    inset 0 -1px 0 rgba(255,255,255,0.045);
+}
+
+.game-card.last-row:hover .card-top {
+  border-radius: 0 0 var(--radius) var(--radius);
+}

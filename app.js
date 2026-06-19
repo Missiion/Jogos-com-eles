@@ -1,0 +1,2007 @@
+// app.js — Jogos com Eles
+// Importa o db do firebase.js
+import { db } from "./firebase.js";
+import {
+  collection, doc, getDocs, addDoc, deleteDoc, updateDoc, setDoc,
+  onSnapshot, query, orderBy, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+// ─────────────────────────────────────────────
+//  CONFIG
+// ─────────────────────────────────────────────
+
+// Cloudflare Worker proxy — faz a ponte com a API do IGDB sem erros de CORS
+const IGDB_PROXY = "https://igdb-proxy.dr-mx-droid.workers.dev";
+
+const IGDB_CLIENT_ID     = "m079gokvukuokos50mw73b4qluwskc";
+const IGDB_ACCESS_TOKEN  = "6d3x70gthrbk8ag7p06kyxfzu9v1r4";
+
+const CACHE_KEY     = "jce_games_cache_v3";
+const CACHE_TS_KEY  = "jce_games_cache_ts_v3";
+const CACHE_TTL_MS  = 5 * 60 * 1000; // 5 min TTL (Firebase real-time sobrepõe isto)
+
+// ─────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────
+let gamesData   = [];   // [{id, igdbId, name, cover, screenshots, videos, genres, modes, rating, summary, steamUrl, addedAt, preferredKeyArt}]
+let adminOpen     = false; // true enquanto o "modo editor" está ativo (cards mostram botões de admin)
+let adminExpanded = false; // true quando o painel de admin (canto inferior direito) está descolapsado
+let testsExpanded = false; // true quando o painel de testes (ao lado da pesquisa) está descolapsado
+let forcedLoadingActive = false; // true enquanto o loading é forçado a aparecer indefinidamente (debug)
+let modalOpen   = false;
+let modalIndex  = 0;    // índice de media no modal
+let modalMediaList = []; // [{type:'img'|'video', src, thumb}]
+let _modalCurrentGame = null; // referência ao jogo actualmente no modal
+let infoExpanded = false; // estado do painel modal-info expandido
+let modalAutoTimer = null; // setTimeout do auto-advance (screenshots: 5s; vídeos: 'ended')
+
+// ── Tabs, sort, view ─────────────────────────
+// Tabs: [{id, label}] — persisted in localStorage
+let tabsData    = [];    // lista de tabs criadas em admin
+let activeTab   = "all"; // "all" | tabId
+
+// tabId → Set of firebaseIds
+let tabGamesMap = {};    // {tabId: Set<firebaseId>}
+
+// Sort: "random" | "name" | "rating"
+const SORT_KEY  = "jce_sort";
+let currentSort = localStorage.getItem(SORT_KEY) || "random";
+
+// random seed per session — ensures same order within a session but different each load
+let randomSeed  = Math.random();
+function seededRandom(seed, idx) {
+  // Simple deterministic pseudo-random based on seed + index
+  const x = Math.sin(seed * 9301 + idx * 49297 + 233720) * 19301;
+  return x - Math.floor(x);
+}
+
+// View: "grid" | "five" | "compact"
+const VIEW_KEY  = "jce_view";
+let currentView = localStorage.getItem(VIEW_KEY) || "grid";
+// Migrate legacy "list" view (removed) to "grid"
+if (currentView === "list") { currentView = "grid"; localStorage.setItem(VIEW_KEY, "grid"); }
+
+// Add-to-tab modal state
+let addTabTargetGame = null;
+
+// ── Tag filter state ──────────────────────────
+let activeTagFilters = new Set(); // set of tag strings currently active
+let activeStatusFilters = new Set(); // set of release-status strings currently active
+let currentTagSubtab = "tags"; // "tags" | "status"
+
+// ─────────────────────────────────────────────
+//  DOM REFS
+// ─────────────────────────────────────────────
+const $gameList      = document.getElementById("game-list");
+const $loadingState  = document.getElementById("loading-state");
+const $emptyState    = document.getElementById("empty-state");
+const $adminOverlay  = document.getElementById("admin-overlay");
+const $adminPanel    = document.getElementById("admin-panel");
+const $adminFab      = document.getElementById("admin-fab");
+const $adminClose    = document.getElementById("admin-close");
+const $adminSearch   = document.getElementById("admin-search-input");
+const $adminSearchBtn= document.getElementById("admin-search-btn");
+const $adminResults  = document.getElementById("admin-search-results");
+const $adminTestsBtn = document.getElementById("admin-tests-btn");
+const $adminTestsPanel = document.getElementById("admin-tests-panel");
+const $adminForceLoadingBtn = document.getElementById("admin-force-loading-btn");
+const $adminForceLoadingLabel = document.getElementById("admin-force-loading-label");
+const $adminGameList = document.getElementById("admin-game-list");
+const $adminStatus   = document.getElementById("admin-status");
+const $adminHint     = document.getElementById("admin-hint");
+const $adminHintText = document.getElementById("admin-hint-text");
+const $gameModal     = document.getElementById("game-modal");
+const $modalBackdrop = document.getElementById("modal-backdrop");
+const $modalClose    = document.getElementById("modal-close");
+const $modalMedia    = document.getElementById("modal-media");
+const $modalInfo     = document.getElementById("modal-info");
+const $modalExtraInfo = document.getElementById("modal-extra-info");
+const $modalBanner   = document.getElementById("modal-banner");
+const $keyartModal   = document.getElementById("keyart-modal");
+const $keyartBackdrop= document.getElementById("keyart-backdrop");
+const $keyartClose   = document.getElementById("keyart-close");
+const $keyartGrid    = document.getElementById("keyart-grid");
+const $keyartTitle   = document.getElementById("keyart-title");
+
+// Toolbar
+const $tabsDropdown       = document.getElementById("tabs-dropdown");
+const $tabsDropdownTrigger= document.getElementById("tabs-dropdown-trigger");
+const $tabsDropdownLabel  = document.getElementById("tabs-dropdown-label");
+const $tabsDropdownCount  = document.getElementById("tabs-dropdown-count");
+const $tabsDropdownMenu   = document.getElementById("tabs-dropdown-menu");
+const $createTabWrap   = document.getElementById("create-tab-wrap");
+const $createTabBtn    = document.getElementById("create-tab-btn");
+const $createTabInputWrap = document.getElementById("create-tab-input-wrap");
+const $createTabInput  = document.getElementById("create-tab-input");
+const $createTabConfirm= document.getElementById("create-tab-confirm");
+
+// --- Filter ---
+const $tagFilter        = document.getElementById("tag-filter");
+const $tagFilterTrigger = document.getElementById("tag-filter-trigger");
+const $tagFilterLabel   = document.getElementById("tag-filter-label");
+const $tagFilterCount   = document.getElementById("tag-filter-count");
+const $tagFilterClear   = document.getElementById("tag-filter-clear");
+const $tagFilterList    = document.getElementById("tag-filter-list");
+const $tagFilterListStatus   = document.getElementById("tag-filter-list-status");
+const $tagFilterHeaderLabel  = document.getElementById("tag-filter-header-label");
+const $tagFilterSubtabTags   = document.getElementById("tag-filter-subtab-tags");
+const $tagFilterSubtabStatus = document.getElementById("tag-filter-subtab-status");
+// ------------------------------------
+
+// Add-to-tab modal
+const $addtabModal     = document.getElementById("addtab-modal");
+const $addtabBackdrop  = document.getElementById("addtab-backdrop");
+const $addtabClose     = document.getElementById("addtab-close");
+const $addtabTitle     = document.getElementById("addtab-title");
+const $addtabList      = document.getElementById("addtab-list");
+
+// ─────────────────────────────────────────────
+//  IGDB API HELPER
+//  Nota: em produção, este call deve ir para o teu backend/proxy
+// ─────────────────────────────────────────────
+async function igdbRequest(endpoint, body) {
+  const res = await fetch(`${IGDB_PROXY}/${endpoint}`, {
+    method: "POST",
+    headers: {
+      "Client-ID": IGDB_CLIENT_ID,
+      "Authorization": `Bearer ${IGDB_ACCESS_TOKEN}`,
+      "Content-Type": "text/plain",
+    },
+    body,
+  });
+  if (!res.ok) throw new Error(`IGDB error: ${res.status}`);
+  return res.json();
+}
+
+async function searchGames(term) {
+  return igdbRequest("games", `
+    search "${term}";
+    fields name, cover.url, first_release_date, summary, rating,
+           genres.name, themes.name, game_modes.name,
+           screenshots.url, videos.video_id, artworks.url,
+           websites.url, websites.category,
+           involved_companies.company.name, involved_companies.developer, involved_companies.publisher,
+           game_engines.name, status,
+           language_supports.language.locale, language_supports.language_support_type.name;
+    limit 8;
+  `);
+}
+
+async function fetchGameById(igdbId) {
+  const results = await igdbRequest("games", `
+    fields name, cover.url, first_release_date, summary, rating,
+           genres.name, themes.name, game_modes.name,
+           screenshots.url, videos.video_id, artworks.url,
+           websites.url, websites.category,
+           involved_companies.company.name, involved_companies.developer, involved_companies.publisher,
+           game_engines.name, status,
+           language_supports.language.locale, language_supports.language_support_type.name;
+    where id = ${igdbId};
+    limit 1;
+  `);
+  return results[0] || null;
+}
+
+// ─────────────────────────────────────────────
+//  IGDB DATA HELPERS
+// ─────────────────────────────────────────────
+function coverUrl(url) {
+  if (!url) return null;
+  return url.replace("t_thumb", "t_cover_big").replace("//", "https://");
+}
+
+function screenshotUrl(url) {
+  if (!url) return null;
+  return url.replace("t_thumb", "t_screenshot_big").replace("//", "https://");
+}
+
+function artworkUrl(url) {
+  if (!url) return null;
+  return url.replace("t_thumb", "t_1080p").replace("//", "https://");
+}
+
+function youtubeEmbed(videoId) {
+  return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&controls=1&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&enablejsapi=1`;
+}
+
+function youtubeThumbnail(videoId) {
+  return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+}
+
+function steamUrl(websites) {
+  if (!websites) return null;
+  // Category 13 = Steam on IGDB; fallback: any URL containing steampowered.com
+  const steam = websites.find(w => w.category === 13)
+             || websites.find(w => w.url && w.url.includes("steampowered.com"));
+  return steam ? steam.url : null;
+}
+
+function genreTags(genres) {
+  return (genres || []).map(g => g.name || g).slice(0, 3);
+}
+
+function modeTags(modes) {
+  return (modes || []).map(m => m.name || m);
+}
+
+function modeClass(name) {
+  const n = (name || "").toLowerCase();
+  if (n.includes("mmo")) return "mmo";
+  if (n.includes("co-op") || n.includes("coop") || n.includes("cooperative")) return "coop";
+  if (n.includes("multi")) return "multiplayer";
+  return "";
+}
+
+function ratingStr(r) {
+  if (!r) return null;
+  return (r / 10).toFixed(1);
+}
+
+// Nomes de empresas envolvidas, filtrados por papel ("developer" ou "publisher")
+function companyNames(involvedCompanies, roleKey) {
+  return (involvedCompanies || [])
+    .filter(ic => ic && ic[roleKey] && ic.company && ic.company.name)
+    .map(ic => ic.company.name);
+}
+
+function engineNames(engines) {
+  return (engines || []).map(e => e && e.name).filter(Boolean);
+}
+
+// Detecta PT-PT / PT-BR / EN-US a partir de language_supports (locale IGDB).
+// Mostra sempre EN-US; PT-PT e/ou PT-BR só se existirem. Mais nenhuma língua.
+function languageStr(languageSupports) {
+  const locales = new Set((languageSupports || []).map(ls => ls.language && ls.language.locale).filter(Boolean));
+  const out = [];
+  if (locales.has("pt-PT")) out.push("PT-PT");
+  if (locales.has("pt-BR")) out.push("PT-BR");
+  out.push("EN-US");
+  return out.join(" / ");
+}
+
+function themeNames(themes) {
+  return (themes || []).map(t => t && t.name).filter(Boolean);
+}
+
+// Estado de lançamento — usa o enum "status" da IGDB; se não existir,
+// infere "Lançado" / "Por lançar" a partir da data de lançamento.
+const RELEASE_STATUS_MAP = {
+  0: "Lançado",
+  2: "Alpha",
+  3: "Beta",
+  4: "Acesso Antecipado",
+  5: "Offline",
+  6: "Cancelado",
+  7: "Rumor",
+  8: "Removido de venda",
+};
+
+function releaseStatusStr(status, firstReleaseTs) {
+  const mapped = (status != null) ? RELEASE_STATUS_MAP[status] : null;
+
+  // Acesso Antecipado (status 4) sem data, ou com data no futuro:
+  // o jogo ainda não lançou de facto — substitui por "Por lançar"
+  if (mapped === "Acesso Antecipado") {
+    if (!firstReleaseTs || firstReleaseTs * 1000 > Date.now()) {
+      return "Por lançar";
+    }
+  }
+
+  if (mapped) return mapped;
+
+  if (firstReleaseTs) {
+    return (firstReleaseTs * 1000 <= Date.now()) ? "Lançado" : "Por lançar";
+  }
+
+  // Sem status e sem data — sem informação, assume por lançar
+  return "Por lançar";
+}
+
+// CSS class for release status badge colour
+// Compares directly against the known values from RELEASE_STATUS_MAP
+// and the inferred strings from releaseStatusStr — avoids accent issues.
+function releaseStatusClass(statusStr) {
+  if (!statusStr) return "unknown";
+  switch (statusStr) {
+    case "Lançado":           return "released";
+    case "Acesso Antecipado": return "early";
+    case "Por lançar":
+    case "Alpha":
+    case "Beta":
+    case "Offline":
+    case "Cancelado":
+    case "Rumor":
+    case "Removido de venda": return "pending";
+    default:                  return "unknown";
+  }
+}
+
+// Data de lançamento completa e legível (ex: "23 de dezembro de 2020")
+function fullReleaseDateStr(unixTs) {
+  if (!unixTs) return null;
+  try {
+    return new Date(unixTs * 1000).toLocaleDateString("pt-PT", {
+      day: "2-digit", month: "long", year: "numeric"
+    });
+  } catch(e) { return null; }
+}
+
+// Normaliza dados do IGDB para o nosso formato
+function normalizeGame(igdbGame) {
+  const screenshots = (igdbGame.screenshots || []).map(s => screenshotUrl(s.url)).filter(Boolean);
+  const artworks    = (igdbGame.artworks    || []).map(a => artworkUrl(a.url)).filter(Boolean);
+  const videos = (igdbGame.videos || []).map(v => v.video_id).filter(Boolean);
+  const year = igdbGame.first_release_date
+    ? new Date(igdbGame.first_release_date * 1000).getFullYear()
+    : null;
+
+  return {
+    igdbId:      igdbGame.id,
+    name:        igdbGame.name,
+    cover:       coverUrl(igdbGame.cover?.url),
+    screenshots,
+    artworks,
+    videos,
+    genres:      genreTags(igdbGame.genres),
+    themes:      themeNames(igdbGame.themes),
+    modes:       modeTags(igdbGame.game_modes),
+    rating:      igdbGame.rating || null,
+    summary:     igdbGame.summary || "",
+    steamUrl:    steamUrl(igdbGame.websites),
+    year,
+    studios:        companyNames(igdbGame.involved_companies, "publisher"),
+    developers:     companyNames(igdbGame.involved_companies, "developer"),
+    engines:        engineNames(igdbGame.game_engines),
+    releaseStatus:  releaseStatusStr(igdbGame.status, igdbGame.first_release_date),
+    releaseDateFull: fullReleaseDateStr(igdbGame.first_release_date),
+    language:        languageStr(igdbGame.language_supports),
+  };
+}
+
+// ─────────────────────────────────────────────
+//  CACHE
+// ─────────────────────────────────────────────
+function saveCache(games) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(games));
+    localStorage.setItem(CACHE_TS_KEY, Date.now().toString());
+  } catch(e) { /* storage full */ }
+}
+
+function loadCache() {
+  try {
+    const ts = parseInt(localStorage.getItem(CACHE_TS_KEY) || "0");
+    if (Date.now() - ts > CACHE_TTL_MS) return null;
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
+}
+
+function clearCache() {
+  localStorage.removeItem(CACHE_KEY);
+  localStorage.removeItem(CACHE_TS_KEY);
+}
+
+// ─────────────────────────────────────────────
+//  FIREBASE — Real-time listener
+// ─────────────────────────────────────────────
+function listenToGames() {
+  const q = query(collection(db, "games"), orderBy("addedAt", "asc"));
+
+  onSnapshot(q, async (snapshot) => {
+    const firestoreDocs = snapshot.docs.map(d => ({ firebaseId: d.id, ...d.data() }));
+
+    // Se lista vazia
+    if (firestoreDocs.length === 0) {
+      gamesData = [];
+      saveCache([]);
+      renderGameList([]);
+      renderAdminList([]);
+      return;
+    }
+
+    // Fetch dados do IGDB para cada jogo (se não estiver já em cache)
+    const cached = loadCache() || [];
+    const cachedMap = Object.fromEntries(cached.map(g => [g.igdbId, g]));
+
+    const resolved = await Promise.all(
+      firestoreDocs.map(async (fsDoc) => {
+        if (cachedMap[fsDoc.igdbId]) {
+          return { ...cachedMap[fsDoc.igdbId], firebaseId: fsDoc.firebaseId, preferredKeyArt: fsDoc.preferredKeyArt || null };
+        }
+        try {
+          const igdbGame = await fetchGameById(fsDoc.igdbId);
+          if (!igdbGame) return null;
+          return { ...normalizeGame(igdbGame), firebaseId: fsDoc.firebaseId, preferredKeyArt: fsDoc.preferredKeyArt || null };
+        } catch(e) {
+          console.warn("Falha ao buscar jogo", fsDoc.igdbId, e);
+          return null;
+        }
+      })
+    );
+
+    gamesData = resolved.filter(Boolean);
+    saveCache(gamesData);
+    renderGameList(gamesData);
+    renderAdminList(gamesData);
+    renderTagFilter(); // refresh available tags after new game data
+  });
+}
+
+// ─────────────────────────────────────────────
+//  RENDER — Game List
+// ─────────────────────────────────────────────
+function getFilteredSortedGames() {
+  // 1. Filter by active tab
+  let list = gamesData.slice();
+  if (activeTab !== "all") {
+    const allowed = tabGamesMap[activeTab] || new Set();
+    list = list.filter(g => allowed.has(g.firebaseId));
+  }
+
+  // 2. Tag filter (genres + themes, OR logic)
+  if (activeTagFilters.size > 0) {
+    list = list.filter(g => {
+      const tags = [...(g.genres || []), ...(g.themes || [])];
+      return tags.some(t => activeTagFilters.has(t));
+    });
+  }
+
+  // 2b. Release-status filter (OR logic)
+  if (activeStatusFilters.size > 0) {
+    list = list.filter(g => activeStatusFilters.has(g.releaseStatus));
+  }
+
+  // 3. Sort
+  if (currentSort === "name") {
+    list.sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt"));
+  } else if (currentSort === "rating") {
+    list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  } else {
+    // random — stable within session via seed
+    list.sort((a, b) => seededRandom(randomSeed, gamesData.indexOf(a)) - seededRandom(randomSeed, gamesData.indexOf(b)));
+  }
+  return list;
+}
+
+// Detects which cards are on the last row of the grid and marks them,
+// so their expand panel can be flipped to open upward via CSS.
+function markLastRowCards() {
+  const grid = $gameList.querySelector(".game-grid");
+  if (!grid) return;
+  const cards = Array.from(grid.querySelectorAll(".game-card"));
+  cards.forEach(c => c.classList.remove("last-row"));
+  if (!cards.length) return;
+
+  // Find the maximum top offset among all cards — cards sharing that value are on the last row
+  const tops = cards.map(c => c.getBoundingClientRect().top);
+  const maxTop = Math.max(...tops);
+  cards.forEach((c, i) => {
+    if (Math.abs(tops[i] - maxTop) < 2) c.classList.add("last-row");
+  });
+}
+
+function renderGameList(games) {
+  $loadingState.classList.add("hidden");
+
+  const filtered = getFilteredSortedGames();
+
+  if (filtered.length === 0) {
+    $gameList.innerHTML = "";
+    $emptyState.classList.remove("hidden");
+    // Mesmo sem jogos, dispensa o loader
+    if (typeof window.dismissLoader === "function") window.dismissLoader();
+    return;
+  }
+
+  $emptyState.classList.add("hidden");
+
+  const viewClass = currentView === "list" ? "view-list"
+    : currentView === "five" ? "view-five"
+    : currentView === "compact" ? "view-compact"
+    : "";
+
+  $gameList.innerHTML = `
+    <div class="game-grid${viewClass ? " " + viewClass : ""}">
+      ${filtered.map((game, idx) => buildCard(game, gamesData.indexOf(game))).join("")}
+    </div>
+  `;
+
+  // Attach scrub + admin events
+  $gameList.querySelectorAll(".game-card").forEach(card => {
+    attachScrubEvents(card);
+    attachAdminCardEvents(card);
+  });
+
+  // Mark last-row cards so their expand panel opens upward
+  markLastRowCards();
+
+  // Update tab counts
+  renderTabs();
+
+  // Dispensar o ecrã de carregamento na primeira renderização com conteúdo
+  if (typeof window.dismissLoader === "function") window.dismissLoader();
+}
+
+// ─────────────────────────────────────────────
+//  ADMIN — Botões nos cards (editar key-art / remover)
+//  Só ficam clicáveis visualmente quando body.editor-mode está activo,
+//  mas os listeners existem sempre — stopPropagation evita abrir o modal.
+// ─────────────────────────────────────────────
+function attachAdminCardEvents(card) {
+  const idx = parseInt(card.dataset.idx);
+  const game = gamesData[idx];
+  if (!game) return;
+
+  const editBtn = card.querySelector(".card-edit-btn");
+  if (editBtn) {
+    editBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      openKeyArtPicker(game);
+    });
+  }
+
+  const delBtn = card.querySelector(".card-delete-btn");
+  if (delBtn) {
+    delBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      removeGame(game.firebaseId);
+    });
+  }
+
+  const addTabBtn = card.querySelector(".card-addtab-btn");
+  if (addTabBtn) {
+    addTabBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      openAddTabModal(game);
+    });
+  }
+}
+
+function buildCard(game, globalIdx) {
+  const screenshots = game.screenshots || [];
+  const artworks    = game.artworks    || [];
+  const videos      = game.videos || [];
+
+  // card-bg: preferência global de admin → key-art do IGDB → fallback para screenshot → fallback para cover
+  const coverSrc = game.preferredKeyArt || artworks[0] || screenshots[0] || game.cover || "";
+
+  const ratingVal   = ratingStr(game.rating);
+
+  const themeTagsHtml = (game.themes || []).map(t =>
+    `<span class="tag">${escHtml(t)}</span>`
+  ).join("");
+
+  const modeTagsHtml = game.modes.map(m =>
+    `<span class="tag ${modeClass(m)}">${escHtml(m)}</span>`
+  ).join("");
+
+  // Scrub dots: screenshots only (videos are modal-only now)
+  const dotCount = Math.min(screenshots.length, 5);
+  const dotsHtml = Array.from({ length: dotCount }, () =>
+    `<div class="scrub-dot"></div>`
+  ).join("");
+
+  const steamBtnHtml = game.steamUrl
+    ? `<a class="card-steam-btn"
+          href="${escHtml(game.steamUrl)}"
+          target="_blank" rel="noopener"
+          onclick="event.stopPropagation()">
+        <img src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://store.steampowered.com/t&size=128" width="11" height="11" alt="Steam" style="object-fit:contain;display:block;"/>
+        Steam
+      </a>`
+    : "";
+
+  const cardQuickLinksHtml = `
+    <a class="card-quicklink-btn" href="https://online-fix.me/" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Online-Fix">
+      <img src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://online-fix.me/t&size=128" width="11" height="11" alt="OF" style="object-fit:contain;display:block;"/>
+    </a>
+    <a class="card-quicklink-btn" href="https://cs.rin.ru/forum/index.php" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="cs.rin.ru">
+      <img src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://cs.rin.ru/forum/index.phpt&size=128" width="11" height="11" alt="CS" style="object-fit:contain;display:block;"/>
+    </a>
+  `;
+
+  const ratingHtml = ratingVal
+    ? `<div class="card-rating">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffb347" stroke="none"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+        ${ratingVal}
+        <span class="rating-count">/10</span>
+      </div>`
+    : "";
+
+  return `
+    <div class="game-card"
+         data-idx="${globalIdx}"
+         tabindex="0"
+         role="button"
+         aria-label="Ver detalhes de ${escHtml(game.name)}">
+
+      <!-- Image area -->
+      <div class="card-top">
+        <img class="card-bg"
+             src="${escHtml(coverSrc)}"
+             alt="${escHtml(game.name)}"
+             loading="lazy"
+             data-screenshots='${JSON.stringify(screenshots)}'
+             data-videos='${JSON.stringify(videos)}'/>
+        <div class="card-image-gradient"></div>
+        <div class="card-scrub-bar">${dotsHtml}</div>
+
+        <!-- Botões de admin — só visíveis em modo editor (body.editor-mode) -->
+        <button class="card-delete-btn" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="Remover jogo" title="Remover jogo">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <button class="card-addtab-btn" data-idx="${globalIdx}" aria-label="Adicionar a tab" title="Adicionar a tab">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button class="card-edit-btn" data-idx="${globalIdx}" aria-label="Editar key art" title="Editar key art">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        </button>
+
+        <!-- Banner badge: cover art + title, bottom-left -->
+        <div class="card-banner-badge">
+          ${game.cover
+            ? `<img class="card-banner-cover" src="${escHtml(game.cover)}" alt="" loading="lazy"/>`
+            : `<div class="card-banner-cover card-banner-cover--empty"></div>`}
+          <span class="card-banner-title">${escHtml(game.name)}</span>
+        </div>
+
+        <!-- Release status label — bottom-right of card-top -->
+        ${game.releaseStatus ? `<span class="card-release-status card-release-status--${releaseStatusClass(game.releaseStatus)}">${escHtml(game.releaseStatus)}</span>` : ""}
+      </div>
+
+      <!-- Expand panel — drops below image on hover -->
+      <div class="card-expand">
+        <div class="expand-tags">
+          ${themeTagsHtml}
+          ${modeTagsHtml}
+        </div>
+        <div class="expand-desc">${escHtml(game.summary)}</div>
+        <div class="expand-footer">
+          ${ratingHtml}
+          <div class="expand-footer-links">
+            ${cardQuickLinksHtml}
+            ${steamBtnHtml}
+          </div>
+        </div>
+      </div>
+
+    </div>
+  `;
+}
+
+// ─────────────────────────────────────────────
+//  SCRUB MECHANIC
+// ─────────────────────────────────────────────
+function attachScrubEvents(card) {
+  const img      = card.querySelector(".card-bg");
+  const cardTop  = card.querySelector(".card-top");
+  const dots     = card.querySelectorAll(".scrub-dot");
+
+  let screenshots = [];
+
+  try {
+    screenshots = JSON.parse(img.dataset.screenshots || "[]");
+  } catch(e) {}
+
+  // Only screenshots for scrub — videos are modal-only
+  const allMedia = screenshots.slice(0, 5);
+
+  if (allMedia.length <= 1) {
+    // Still attach click handler even with no scrub
+    card.addEventListener("click", () => openModal(parseInt(card.dataset.idx)));
+    card.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openModal(parseInt(card.dataset.idx));
+      }
+    });
+    return;
+  }
+
+  let currentIdx = 0;
+  let isHovering = false;
+
+  function showMedia(idx) {
+    currentIdx = idx;
+    const item = allMedia[idx];
+    img.style.opacity = "1";
+    if (item) img.src = item;
+    dots.forEach((dot, i) => dot.classList.toggle("active", i === idx));
+  }
+
+  function onMouseMove(e) {
+    if (!isHovering) return;
+    const rect = cardTop.getBoundingClientRect();
+    const pct  = (e.clientX - rect.left) / rect.width;
+    const idx  = Math.min(Math.floor(pct * allMedia.length), allMedia.length - 1);
+    if (idx !== currentIdx) showMedia(idx);
+  }
+
+  function onMouseEnter() {
+    isHovering = true;
+    showMedia(0);
+  }
+
+  function onMouseLeave() {
+    isHovering = false;
+    img.src = img.dataset.cover || allMedia[0] || img.src;
+    img.style.opacity = "1";
+    dots.forEach(d => d.classList.remove("active"));
+  }
+
+  // Store original cover src
+  img.dataset.cover = img.src;
+
+  card.addEventListener("mouseenter", onMouseEnter);
+  card.addEventListener("mouseleave", onMouseLeave);
+  card.addEventListener("mousemove",  onMouseMove);
+
+  // Click → open modal
+  card.addEventListener("click", () => {
+    const idx = parseInt(card.dataset.idx);
+    openModal(idx);
+  });
+
+  card.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      openModal(parseInt(card.dataset.idx));
+    }
+  });
+}
+
+// ─────────────────────────────────────────────
+//  MODAL
+// ─────────────────────────────────────────────
+function buildModalMedia(game) {
+  modalMediaList = [];
+  const screenshots = game.screenshots || [];
+  const videos = game.videos || [];
+
+  // 1) Trailer principal primeiro
+  if (videos.length > 0) {
+    modalMediaList.push({ type: "video", src: youtubeEmbed(videos[0]), thumb: youtubeThumbnail(videos[0]) });
+  }
+
+  // 2) Screenshots
+  screenshots.forEach(url => {
+    modalMediaList.push({ type: "img", src: url });
+  });
+
+  // 3) Restantes trailers, pela mesma ordem
+  videos.slice(1).forEach(vid => {
+    modalMediaList.push({ type: "video", src: youtubeEmbed(vid), thumb: youtubeThumbnail(vid) });
+  });
+}
+
+function renderModalMedia(idx) {
+  modalIndex = Math.max(0, Math.min(idx, modalMediaList.length - 1));
+  const item = modalMediaList[modalIndex];
+
+  const dotsHtml = modalMediaList.map((m, i) => {
+    const isTrailer = m.type === "video";
+    return `<div class="modal-media-dot${isTrailer ? " trailer-dot" : ""}${i === modalIndex ? " active" : ""}"
+                 data-mid="${i}"></div>`;
+  }).join("");
+
+  const prevHtml = modalIndex > 0
+    ? `<button class="modal-prev" id="modal-prev" aria-label="Anterior">
+         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+       </button>` : "";
+
+  const nextHtml = modalIndex < modalMediaList.length - 1
+    ? `<button class="modal-next" id="modal-next" aria-label="Próximo">
+         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+       </button>` : "";
+
+  const mediaContent = item.type === "img"
+    ? `<img src="${escHtml(item.src)}" alt="Screenshot" onload="this.classList.add('loaded')"/>`
+    : `<iframe src="${escHtml(item.src)}" allowfullscreen allow="autoplay; encrypted-media" onload="this.classList.add('loaded')"></iframe>`;
+
+  $modalMedia.innerHTML = `
+    <div class="modal-media-skeleton"></div>
+    ${prevHtml}
+    ${nextHtml}
+    ${mediaContent}
+    ${modalMediaList.length > 1 ? `<div class="modal-media-nav">${dotsHtml}</div>` : ""}
+  `;
+
+  // Nav events
+  $modalMedia.querySelectorAll(".modal-media-dot").forEach(dot => {
+    dot.addEventListener("click", () => renderModalMedia(parseInt(dot.dataset.mid)));
+  });
+
+  const prevBtn = document.getElementById("modal-prev");
+  const nextBtn = document.getElementById("modal-next");
+  if (prevBtn) prevBtn.addEventListener("click", () => renderModalMedia(modalIndex - 1));
+  if (nextBtn) nextBtn.addEventListener("click", () => renderModalMedia(modalIndex + 1));
+
+  scheduleModalAutoAdvance(item);
+}
+
+// ─────────────────────────────────────────────
+//  Auto-advance do modal-media:
+//  - screenshot: avança após 5s idle
+//  - vídeo: avança quando o YouTube reporta 'ended' (postMessage API)
+// ─────────────────────────────────────────────
+function clearModalAutoAdvance() {
+  if (modalAutoTimer) { clearTimeout(modalAutoTimer); modalAutoTimer = null; }
+  window.removeEventListener("message", onYoutubeStateMessage);
+}
+
+function goToNextModalMedia() {
+  if (!modalOpen) return;
+  const nextIdx = modalIndex + 1 < modalMediaList.length ? modalIndex + 1 : 0;
+  renderModalMedia(nextIdx);
+}
+
+function onYoutubeStateMessage(e) {
+  let data;
+  try { data = JSON.parse(e.data); } catch(_) { return; }
+  // YT IFrame API: event "infoDelivery", info.playerState === 0 → ended
+  if (data && data.event === "infoDelivery" && data.info && data.info.playerState === 0) {
+    goToNextModalMedia();
+  }
+}
+
+function scheduleModalAutoAdvance(item) {
+  clearModalAutoAdvance();
+  if (!item) return;
+  if (item.type === "img") {
+    modalAutoTimer = setTimeout(goToNextModalMedia, 10000);
+  } else {
+    window.addEventListener("message", onYoutubeStateMessage);
+    // Subscreve ao evento 'onStateChange' do player assim que o iframe carregar
+    const iframe = $modalMedia.querySelector("iframe");
+    if (iframe) {
+      iframe.addEventListener("load", () => {
+        try {
+          iframe.contentWindow.postMessage('{"event":"listening","id":1}', "*");
+        } catch(_) {}
+      });
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+//  MODAL — Banner do jogo (capa), fora do modal-media,
+//  do lado esquerdo. Fallback discreto se não houver capa.
+// ─────────────────────────────────────────────
+function renderModalBanner(game) {
+  $modalBanner.innerHTML = game.cover
+    ? `<img src="${escHtml(game.cover)}" alt="${escHtml(game.name)}" loading="lazy"/>`
+    : `<div class="modal-banner-empty"></div>`;
+}
+
+// ─────────────────────────────────────────────
+//  MODAL — Aba extra: estúdio, desenvolvedor,
+//  data de lançamento, estado de lançamento, engine.
+//  Mostra um valor de fallback quando o dado
+//  não existe na IGDB.
+// ─────────────────────────────────────────────
+const EXTRA_INFO_FALLBACK = "Não disponível";
+
+function renderModalExtraInfo(game) {
+  const studioStr = (game.studios && game.studios.length)
+    ? game.studios.join(", ") : EXTRA_INFO_FALLBACK;
+  const devStr = (game.developers && game.developers.length)
+    ? game.developers.join(", ") : EXTRA_INFO_FALLBACK;
+  const dateStr   = game.releaseDateFull || EXTRA_INFO_FALLBACK;
+  const statusStr = game.releaseStatus   || EXTRA_INFO_FALLBACK;
+  const engineStr = (game.engines && game.engines.length)
+    ? game.engines.join(", ") : EXTRA_INFO_FALLBACK;
+  const languageStrVal = game.language || EXTRA_INFO_FALLBACK;
+
+  // Modos de jogo (multiplayer, co-op, etc.) são mostrados nos tags — excluir daqui
+  // Géneros substituem os themes no extra-info
+  const genresStr = (game.genres && game.genres.length)
+    ? game.genres.join(", ") : EXTRA_INFO_FALLBACK;
+
+  const rows = [
+    ["Estúdio", studioStr],
+    ["Desenvolvedor", devStr],
+    ["Data de lançamento", dateStr],
+    ["Estado de lançamento", statusStr],
+    ["Engine", engineStr],
+    ["Linguagem", languageStrVal],
+    ["Géneros", genresStr],
+  ];
+
+  $modalExtraInfo.innerHTML = rows.map(([label, value]) => `
+    <div class="extra-info-row">
+      <span class="extra-info-label">${escHtml(label)}</span>
+      <span class="extra-info-value${value === EXTRA_INFO_FALLBACK ? " unknown" : ""}">${escHtml(value)}</span>
+    </div>
+  `).join("");
+}
+
+function openModal(gameIdx) {
+  const game = gamesData[gameIdx];
+  if (!game) return;
+  modalOpen = true;
+  _modalCurrentGame = game;
+
+  buildModalMedia(game);
+  const ratingVal = ratingStr(game.rating);
+
+  const themeTagsHtml = (game.themes || []).map(t =>
+    `<span class="tag">${escHtml(t)}</span>`
+  ).join("");
+
+  const modeTagsHtml = game.modes.map(m =>
+    `<span class="tag ${modeClass(m)}">${escHtml(m)}</span>`
+  ).join("");
+
+  const ratingHtml = ratingVal
+    ? `<div class="modal-rating">
+         <svg width="16" height="16" viewBox="0 0 24 24" fill="#ffc86a"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+         ${ratingVal} / 10
+       </div>` : "";
+
+  const infoSteamHtml = game.steamUrl
+    ? `<a class="modal-info-steam" href="${escHtml(game.steamUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+        <img src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://store.steampowered.com/t&size=128" width="11" height="11" alt="Steam" style="object-fit:contain;display:block;"/>
+        Steam
+      </a>`
+    : "";
+
+  const modalQuickLinksHtml = `
+    <a class="modal-info-quicklink" href="https://online-fix.me/" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Online-Fix">
+      <img class="quicklink-icon" src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://online-fix.me/t&size=128" alt="" loading="lazy"/>
+      Online-Fix
+    </a>
+    <a class="modal-info-quicklink" href="https://cs.rin.ru/forum/index.php" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="cs.rin.ru">
+      <img class="quicklink-icon" src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://cs.rin.ru/forum/index.phpt&size=128" alt="" loading="lazy"/>
+      cs.rin.ru
+    </a>
+  `;
+
+  $modalInfo.innerHTML = `
+    <div class="modal-info-actions">
+      ${modalQuickLinksHtml}
+      ${infoSteamHtml}
+      <button class="modal-info-expand-btn" id="modal-info-expand-btn" aria-label="Expandir descrição">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+          <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-title-row">
+      <h2 class="modal-title">${escHtml(game.name)}</h2>
+      <button class="modal-copy-btn" id="modal-copy-btn" aria-label="Copiar nome" title="Copiar nome do jogo">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+    </div>
+    <div class="modal-tags">${themeTagsHtml}${modeTagsHtml}</div>
+    <div class="modal-meta">${ratingHtml}</div>
+    <p class="modal-desc">${escHtml(game.summary || "Sem descrição disponível.")}</p>
+  `;
+
+  document.getElementById("modal-info-expand-btn")
+    .addEventListener("click", (e) => { e.stopPropagation(); toggleInfoExpand(); });
+
+  const copyBtn = document.getElementById("modal-copy-btn");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(game.name).then(() => {
+        copyBtn.classList.add("copied");
+        setTimeout(() => copyBtn.classList.remove("copied"), 1400);
+      }).catch(() => {});
+    });
+  }
+
+  renderModalExtraInfo(game);
+  renderModalBanner(game);
+
+  // Start with first screenshot (index 0)
+  renderModalMedia(0);
+
+  $gameModal.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+  $modalClose.focus();
+
+  // Parallax 3D subtil — segue o rato dentro da zona de media
+  $modalMedia.addEventListener("mousemove", onModalMediaParallax);
+  $modalMedia.addEventListener("mouseleave", resetModalMediaParallax);
+}
+
+// ─────────────────────────────────────────────
+//  Parallax 3D subtil no visualizador de media
+//  (só para screenshots — o iframe do YouTube
+//  fica a 100% para não cortar a UI do player)
+// ─────────────────────────────────────────────
+function onModalMediaParallax(e) {
+  const el = $modalMedia.querySelector("img");
+  if (!el) return;
+  const rect = $modalMedia.getBoundingClientRect();
+  const px = (e.clientX - rect.left) / rect.width  - 0.5; // -0.5 a 0.5
+  const py = (e.clientY - rect.top)  / rect.height - 0.5;
+
+  const maxShift = 10;   // px de translação
+  const maxTilt  = 2.5;  // graus de rotação
+
+  el.style.transform =
+    `translate3d(${(-px * maxShift).toFixed(2)}px, ${(-py * maxShift).toFixed(2)}px, 0) ` +
+    `rotateX(${(py * maxTilt).toFixed(2)}deg) rotateY(${(-px * maxTilt).toFixed(2)}deg) scale(1.02)`;
+}
+
+function resetModalMediaParallax() {
+  const el = $modalMedia.querySelector("img");
+  if (el) el.style.transform = "translate3d(0,0,0) rotateX(0) rotateY(0) scale(1)";
+}
+
+function closeModal() {
+  modalOpen = false;
+  if (infoExpanded) collapseInfo();
+  clearModalAutoAdvance();
+  // Stop any iframe from playing
+  $modalMedia.removeEventListener("mousemove", onModalMediaParallax);
+  $modalMedia.removeEventListener("mouseleave", resetModalMediaParallax);
+  $modalMedia.innerHTML = "";
+  $modalExtraInfo.innerHTML = "";
+  $modalBanner.innerHTML = "";
+  $gameModal.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+$modalClose.addEventListener("click", closeModal);
+$modalBackdrop.addEventListener("click", () => {
+  if (infoExpanded) { collapseInfo(); } else { closeModal(); }
+});
+
+// ─────────────────────────────────────────────
+//  MODAL — Info panel expand (texto completo)
+//  Centra e amplia o modal-info; sai com ESC
+//  ou clique fora da zona.
+// ─────────────────────────────────────────────
+function pauseModalYoutube() {
+  const iframe = $modalMedia.querySelector("iframe");
+  if (iframe) {
+    // postMessage API do YouTube player — pausa sem recarregar o src
+    try { iframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', "*"); } catch(e) {}
+  }
+}
+
+function expandInfo() {
+  infoExpanded = true;
+  pauseModalYoutube();
+  clearModalAutoAdvance();
+  $modalInfo.classList.add("expanded");
+}
+
+function collapseInfo() {
+  infoExpanded = false;
+  $modalInfo.classList.remove("expanded");
+  scheduleModalAutoAdvance(modalMediaList[modalIndex]);
+}
+
+function toggleInfoExpand() {
+  if (infoExpanded) collapseInfo(); else expandInfo();
+}
+
+// Keyboard nav in modal
+document.addEventListener("keydown", e => {
+  if (!modalOpen) return;
+  if (e.key === "Escape") {
+    if (infoExpanded) { collapseInfo(); } else { closeModal(); }
+    return;
+  }
+  if (infoExpanded) return;
+  if (e.key === "ArrowRight") renderModalMedia(modalIndex + 1);
+  if (e.key === "ArrowLeft")  renderModalMedia(modalIndex - 1);
+});
+
+// ─────────────────────────────────────────────
+//  ADMIN MODE — Typing "admin"
+// ─────────────────────────────────────────────
+let adminBuffer = "";
+let adminHintTimer = null;
+
+const ADMIN_WORD = "qdmin";
+
+document.addEventListener("keydown", e => {
+  // Ignore enquanto um modal está aberto, ou enquanto se escreve num input/textarea
+  // (mas continua a ouvir mesmo com adminOpen=true, para permitir fechar o admin)
+  if (modalOpen) return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+
+  const char = e.key.toLowerCase();
+  if (!/^[a-z]$/.test(char)) {
+    adminBuffer = "";
+    return;
+  }
+
+  adminBuffer += char;
+
+  // Show hint
+  if (ADMIN_WORD.startsWith(adminBuffer)) {
+    $adminHintText.textContent = adminBuffer;
+    $adminHint.classList.add("show");
+    clearTimeout(adminHintTimer);
+    adminHintTimer = setTimeout(() => {
+      $adminHint.classList.remove("show");
+      adminBuffer = "";
+    }, 1500);
+  } else {
+    adminBuffer = "";
+    $adminHint.classList.remove("show");
+  }
+
+  // Check if complete
+  if (adminBuffer === ADMIN_WORD) {
+    adminBuffer = "";
+    clearTimeout(adminHintTimer);
+    $adminHint.classList.remove("show");
+    // Se o admin já está aberto, a mesma palavra fecha-o (e tudo o que
+    // depende dele); caso contrário, abre o modo admin como antes.
+    if (adminOpen) {
+      closeAdmin();
+    } else {
+      openAdmin();
+    }
+  }
+});
+
+function openAdmin() {
+  // Activa o "modo editor": mostra o botão flutuante no canto inferior
+  // direito (colapsado) e revela os botões de admin nos cards.
+  adminOpen = true;
+  $adminOverlay.classList.remove("hidden");
+  document.body.classList.add("editor-mode");
+  $createTabWrap.classList.remove("hidden");
+}
+
+function closeAdmin() {
+  // Sai por completo do modo editor.
+  adminOpen = false;
+  adminExpanded = false;
+  $adminOverlay.classList.add("hidden");
+  $adminPanel.classList.remove("expanded");
+  document.body.classList.remove("editor-mode");
+  $adminResults.classList.add("hidden");
+  $adminResults.innerHTML = "";
+  $adminSearch.value = "";
+  hideStatus();
+  // Colapsa o painel de testes e para o loading forçado, se estiver activo
+  closeTestsPanel();
+  if (forcedLoadingActive) {
+    if (typeof window.forceShowLoader === "function") window.forceShowLoader(false);
+    setForcedLoadingUI(false);
+  }
+  // Fecha quaisquer modais dependentes do modo admin (key-art picker,
+  // adicionar a tab) que possam estar abertos
+  if (!$keyartModal.classList.contains("hidden")) closeKeyArtPicker();
+  if (!$addtabModal.classList.contains("hidden")) closeAddTabModal();
+  // Hide criar tab input if open
+  $createTabBtn.classList.remove("hidden");
+  $createTabInputWrap.classList.add("hidden");
+  $createTabWrap.classList.add("hidden");
+}
+
+function toggleAdminPanel() {
+  adminExpanded = !adminExpanded;
+  $adminPanel.classList.toggle("expanded", adminExpanded);
+  if (adminExpanded) setTimeout(() => $adminSearch.focus(), 150);
+}
+
+$adminFab.addEventListener("click", toggleAdminPanel);
+$adminClose.addEventListener("click", closeAdmin);
+$adminOverlay.addEventListener("keydown", e => {
+  if (e.key === "Escape") closeAdmin();
+});
+
+// ─────────────────────────────────────────────
+//  ADMIN — Painel de Testes (fab ao lado do admin-fab)
+//  Funciona como um menu colapsado, igual em comportamento ao
+//  botão do admin, mas guarda botões de teste para uso futuro.
+// ─────────────────────────────────────────────
+function toggleTestsPanel() {
+  testsExpanded = !testsExpanded;
+  $adminTestsBtn.classList.toggle("active", testsExpanded);
+  $adminTestsPanel.classList.toggle("open", testsExpanded);
+}
+
+function closeTestsPanel() {
+  testsExpanded = false;
+  $adminTestsBtn.classList.remove("active");
+  $adminTestsPanel.classList.remove("open");
+}
+
+$adminTestsBtn.addEventListener("click", toggleTestsPanel);
+
+// ─────────────────────────────────────────────
+//  ADMIN — Forçar Loading (dentro do painel de testes)
+//  Reexibe o ecrã de loading e mantém a animação a correr
+//  indefinidamente, até se clicar de novo para desligar.
+// ─────────────────────────────────────────────
+function setForcedLoadingUI(active) {
+  forcedLoadingActive = active;
+  $adminForceLoadingBtn.classList.toggle("active", active);
+  $adminForceLoadingLabel.textContent = active ? "A Forçar Loading..." : "Forçar Loading";
+}
+
+$adminForceLoadingBtn.addEventListener("click", () => {
+  const next = !forcedLoadingActive;
+  if (typeof window.forceShowLoader === "function") {
+    window.forceShowLoader(next);
+  }
+  setForcedLoadingUI(next);
+});
+
+// ─────────────────────────────────────────────
+//  ADMIN — Search IGDB
+// ─────────────────────────────────────────────
+let searchDebounce = null;
+const SEARCH_DEBOUNCE_MS = 350;
+
+$adminSearch.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    clearTimeout(searchDebounce);
+    doSearch();
+  }
+});
+
+$adminSearch.addEventListener("input", () => {
+  clearTimeout(searchDebounce);
+  const term = $adminSearch.value.trim();
+  if (!term) {
+    $adminResults.classList.add("hidden");
+    $adminResults.innerHTML = "";
+    return;
+  }
+  searchDebounce = setTimeout(doSearch, SEARCH_DEBOUNCE_MS);
+});
+
+$adminSearchBtn.addEventListener("click", () => {
+  clearTimeout(searchDebounce);
+  doSearch();
+});
+
+async function doSearch() {
+  const term = $adminSearch.value.trim();
+  if (!term) return;
+
+  $adminResults.classList.remove("hidden");
+  $adminResults.innerHTML = `
+    <div class="search-loading">
+      <div class="loading-spinner"></div>
+      A pesquisar...
+    </div>`;
+
+  try {
+    const results = await searchGames(term);
+
+    if (!results || results.length === 0) {
+      $adminResults.innerHTML = `<div class="search-loading">Nenhum resultado encontrado.</div>`;
+      return;
+    }
+
+    const alreadyAdded = new Set(gamesData.map(g => g.igdbId));
+
+    $adminResults.innerHTML = results.map(game => {
+      const cover = coverUrl(game.cover?.url);
+      const year  = game.first_release_date
+        ? new Date(game.first_release_date * 1000).getFullYear()
+        : "";
+      const added = alreadyAdded.has(game.id);
+
+      return `
+        <div class="search-result-item">
+          ${cover
+            ? `<img class="search-result-cover" src="${escHtml(cover)}" alt="" loading="lazy"/>`
+            : `<div class="search-result-cover" style="background:var(--surface2)"></div>`}
+          <div class="search-result-info">
+            <div class="search-result-name">${escHtml(game.name)}</div>
+            <div class="search-result-year">${year}</div>
+          </div>
+          <button class="search-result-add${added ? " added" : ""}"
+                  data-igdb="${game.id}"
+                  ${added ? "disabled" : ""}>
+            ${added ? "✓ Adicionado" : "+ Adicionar"}
+          </button>
+        </div>
+      `;
+    }).join("");
+
+    // Attach add buttons
+    $adminResults.querySelectorAll(".search-result-add:not(.added)").forEach(btn => {
+      btn.addEventListener("click", () => addGame(parseInt(btn.dataset.igdb), btn));
+    });
+
+  } catch(err) {
+    console.error(err);
+    $adminResults.innerHTML = `<div class="search-loading" style="color:#ff9a9a">Erro ao pesquisar. Verifica as credenciais IGDB.</div>`;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  ADMIN — Add / Remove games
+// ─────────────────────────────────────────────
+async function addGame(igdbId, btn) {
+  btn.disabled = true;
+  btn.textContent = "A adicionar...";
+
+  try {
+    await addDoc(collection(db, "games"), {
+      igdbId,
+      addedAt: serverTimestamp(),
+    });
+    btn.textContent = "✓ Adicionado";
+    btn.classList.add("added");
+    clearCache();
+    showStatus("Jogo adicionado com sucesso!", "success");
+  } catch(err) {
+    console.error(err);
+    btn.disabled = false;
+    btn.textContent = "+ Adicionar";
+    showStatus("Erro ao adicionar jogo.", "error");
+  }
+}
+
+async function removeGame(firebaseId) {
+  try {
+    await deleteDoc(doc(db, "games", firebaseId));
+    clearCache();
+    showStatus("Jogo removido.", "success");
+  } catch(err) {
+    console.error(err);
+    showStatus("Erro ao remover jogo.", "error");
+  }
+}
+
+// ─────────────────────────────────────────────
+//  ADMIN — Key Art Picker (preferência global, gravada no Firestore)
+// ─────────────────────────────────────────────
+function openKeyArtPicker(game) {
+  const candidates = [];
+  const seen = new Set();
+  const pushAll = (arr) => (arr || []).forEach(url => {
+    if (url && !seen.has(url)) { seen.add(url); candidates.push(url); }
+  });
+
+  pushAll(game.artworks);
+  pushAll(game.screenshots);
+  if (game.cover && !seen.has(game.cover)) candidates.push(game.cover);
+
+  const current = game.preferredKeyArt
+    || (game.artworks && game.artworks[0])
+    || (game.screenshots && game.screenshots[0])
+    || game.cover;
+
+  $keyartTitle.textContent = `Key Art — ${game.name}`;
+
+  if (candidates.length === 0) {
+    $keyartGrid.innerHTML = `<div class="keyart-empty">Sem imagens disponíveis.</div>`;
+  } else {
+    $keyartGrid.innerHTML = candidates.map(url => `
+      <button class="keyart-thumb${url === current ? " selected" : ""}" data-url="${escHtml(url)}">
+        <img src="${escHtml(url)}" alt="" loading="lazy"/>
+      </button>
+    `).join("");
+
+    $keyartGrid.querySelectorAll(".keyart-thumb").forEach(btn => {
+      btn.addEventListener("click", () => setPreferredKeyArt(game, btn.dataset.url));
+    });
+  }
+
+  $keyartModal.classList.remove("hidden");
+}
+
+function closeKeyArtPicker() {
+  $keyartModal.classList.add("hidden");
+  $keyartGrid.innerHTML = "";
+}
+
+async function setPreferredKeyArt(game, url) {
+  try {
+    await updateDoc(doc(db, "games", game.firebaseId), { preferredKeyArt: url });
+    game.preferredKeyArt = url;
+    clearCache();
+    saveCache(gamesData);
+    closeKeyArtPicker();
+    renderGameList(gamesData);
+    showStatus("Key art atualizada.", "success");
+  } catch(err) {
+    console.error(err);
+    showStatus("Erro ao atualizar key art.", "error");
+  }
+}
+
+$keyartClose.addEventListener("click", closeKeyArtPicker);
+$keyartBackdrop.addEventListener("click", closeKeyArtPicker);
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !$keyartModal.classList.contains("hidden")) closeKeyArtPicker();
+});
+
+// ─────────────────────────────────────────────
+//  ADMIN — Render list
+// ─────────────────────────────────────────────
+function renderAdminList(games) {
+  if (games.length === 0) {
+    $adminGameList.innerHTML = `<div class="admin-empty">Nenhum jogo adicionado ainda.</div>`;
+    return;
+  }
+
+  $adminGameList.innerHTML = games.map(game => `
+    <div class="admin-game-item">
+      ${game.cover
+        ? `<img class="admin-game-cover" src="${escHtml(game.cover)}" alt="" loading="lazy"/>`
+        : `<div class="admin-game-cover" style="background:var(--surface2);border-radius:4px"></div>`}
+      <span class="admin-game-name">${escHtml(game.name)}</span>
+      <button class="admin-game-remove" data-fbid="${escHtml(game.firebaseId)}">Remover</button>
+    </div>
+  `).join("");
+
+  $adminGameList.querySelectorAll(".admin-game-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (confirm(`Remover "${btn.closest(".admin-game-item").querySelector(".admin-game-name").textContent}"?`)) {
+        removeGame(btn.dataset.fbid);
+      }
+    });
+  });
+}
+
+// ─────────────────────────────────────────────
+//  STATUS MESSAGES
+// ─────────────────────────────────────────────
+let statusTimer = null;
+
+function showStatus(msg, type = "success") {
+  $adminStatus.textContent = msg;
+  $adminStatus.className = `admin-status ${type}`;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => hideStatus(), 3000);
+}
+
+function hideStatus() {
+  $adminStatus.className = "admin-status hidden";
+}
+
+// ─────────────────────────────────────────────
+//  UTILS
+// ─────────────────────────────────────────────
+function escHtml(str) {
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// ─────────────────────────────────────────────
+//  TABS — Persistence (Firestore, global)
+//  Colecções: "tabs" (lista) e "tabGames" (atribuições)
+// ─────────────────────────────────────────────
+
+// Listener em tempo real das tabs — actualiza tabsData e re-renderiza
+function listenToTabs() {
+  const q = query(collection(db, "tabs"), orderBy("createdAt", "asc"));
+  onSnapshot(q, (snapshot) => {
+    tabsData = snapshot.docs.map(d => ({ id: d.id, label: d.data().label }));
+    renderTabs();
+    renderGameList(gamesData);
+  });
+}
+
+// Listener em tempo real das atribuições tab→jogos
+function listenToTabGames() {
+  onSnapshot(collection(db, "tabGames"), (snapshot) => {
+    tabGamesMap = {};
+    snapshot.docs.forEach(d => {
+      tabGamesMap[d.id] = new Set(d.data().gameIds || []);
+    });
+    renderTabs();
+    renderGameList(gamesData);
+  });
+}
+
+async function createTab(label) {
+  try {
+    await addDoc(collection(db, "tabs"), {
+      label,
+      createdAt: serverTimestamp(),
+    });
+    // O listener onSnapshot actualiza tabsData e re-renderiza automaticamente
+  } catch(e) {
+    console.error("Erro ao criar tab:", e);
+    showStatus("Erro ao criar tab.", "error");
+  }
+}
+
+async function deleteTab(id) {
+  try {
+    await deleteDoc(doc(db, "tabs", id));
+    await deleteDoc(doc(db, "tabGames", id));
+    if (activeTab === id) activeTab = "all";
+    // O listener onSnapshot trata do re-render
+  } catch(e) {
+    console.error("Erro ao apagar tab:", e);
+    showStatus("Erro ao apagar tab.", "error");
+  }
+}
+
+async function saveTabGames(tabId, gameIdsSet) {
+  try {
+    await setDoc(doc(db, "tabGames", tabId), {
+      gameIds: [...gameIdsSet],
+    });
+  } catch(e) {
+    console.error("Erro ao guardar jogos da tab:", e);
+    showStatus("Erro ao guardar jogos da tab.", "error");
+  }
+}
+
+// ─────────────────────────────────────────────
+//  TABS — Render
+// ─────────────────────────────────────────────
+function renderTabs() {
+  // Opções do menu: "Todos" + tabs criadas
+  const options = [
+    { id: "all", label: "Todos", count: gamesData.length, deletable: false },
+    ...tabsData.map(tab => {
+      const set = tabGamesMap[tab.id] || new Set();
+      return {
+        id: tab.id,
+        label: tab.label,
+        count: gamesData.filter(g => set.has(g.firebaseId)).length,
+        deletable: true,
+      };
+    }),
+  ];
+
+  const activeOption = options.find(o => o.id === activeTab) || options[0];
+
+  // Trigger (pill activa)
+  $tabsDropdownLabel.textContent = activeOption.label;
+  $tabsDropdownCount.textContent = activeOption.count;
+
+  // Menu — todas as opções (incluindo a activa, para se poder ver o contexto)
+  $tabsDropdownMenu.innerHTML = options.map(opt => `
+    <div class="tabs-dropdown-item${opt.id === activeTab ? " active" : ""}" data-tabid="${escHtml(opt.id)}" role="option" tabindex="0" aria-selected="${opt.id === activeTab}">
+      <span class="tabs-dropdown-item-label">${escHtml(opt.label)}</span>
+      <span class="tab-count">${opt.count}</span>
+      ${opt.deletable ? `
+        <button class="tab-delete" data-tabid="${escHtml(opt.id)}" aria-label="Apagar tab" title="Apagar tab" tabindex="-1">
+          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      ` : ""}
+    </div>
+  `).join("");
+
+  // Selecionar tab
+  $tabsDropdownMenu.querySelectorAll(".tabs-dropdown-item").forEach(item => {
+    item.addEventListener("click", e => {
+      if (e.target.closest(".tab-delete")) return;
+      activeTab = item.dataset.tabid;
+      // Reset tag/status filters when switching tabs
+      activeTagFilters.clear();
+      activeStatusFilters.clear();
+      renderTagFilter();
+      $tabsDropdown.classList.remove("open");
+      renderTabs();
+      renderGameList(gamesData);
+    });
+  });
+
+  // Apagar tab (apenas visível em modo admin via CSS)
+  $tabsDropdownMenu.querySelectorAll(".tab-delete").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      if (confirm(`Apagar a tab "${tabsData.find(t => t.id === btn.dataset.tabid)?.label}"?`)) {
+        deleteTab(btn.dataset.tabid);
+      }
+    });
+  });
+}
+
+// ─────────────────────────────────────────────
+//  TABS — Dropdown open/close (clique, para touch/teclado;
+//  o hover já é tratado via CSS)
+// ─────────────────────────────────────────────
+$tabsDropdownTrigger.addEventListener("click", () => {
+  const isOpen = $tabsDropdown.classList.toggle("open");
+  $tabsDropdownTrigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
+});
+
+document.addEventListener("click", e => {
+  if (!$tabsDropdown.contains(e.target)) {
+    $tabsDropdown.classList.remove("open");
+    $tabsDropdownTrigger.setAttribute("aria-expanded", "false");
+  }
+});
+
+// ─────────────────────────────────────────────
+//  CRIAR TAB — Admin toolbar button
+// ─────────────────────────────────────────────
+$createTabBtn.addEventListener("click", () => {
+  $createTabBtn.classList.add("hidden");
+  $createTabInputWrap.classList.remove("hidden");
+  $createTabInput.value = "";
+  $createTabInput.focus();
+});
+
+function confirmCreateTab() {
+  const label = $createTabInput.value.trim();
+  if (label) {
+    createTab(label);
+  }
+  $createTabBtn.classList.remove("hidden");
+  $createTabInputWrap.classList.add("hidden");
+  $createTabInput.value = "";
+}
+
+$createTabConfirm.addEventListener("click", confirmCreateTab);
+$createTabInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") confirmCreateTab();
+  if (e.key === "Escape") {
+    $createTabBtn.classList.remove("hidden");
+    $createTabInputWrap.classList.add("hidden");
+  }
+});
+
+// ─────────────────────────────────────────────
+//  SORT — toolbar buttons
+// ─────────────────────────────────────────────
+document.querySelectorAll(".sort-btn").forEach(btn => {
+  btn.classList.toggle("active", btn.dataset.sort === currentSort);
+  btn.addEventListener("click", () => {
+    currentSort = btn.dataset.sort;
+    localStorage.setItem(SORT_KEY, currentSort);
+    document.querySelectorAll(".sort-btn").forEach(b => b.classList.toggle("active", b.dataset.sort === currentSort));
+    renderGameList(gamesData);
+  });
+});
+
+// ─────────────────────────────────────────────
+//  VIEW — toolbar buttons
+// ─────────────────────────────────────────────
+function applyViewButtons() {
+  document.querySelectorAll(".view-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.view === currentView);
+  });
+}
+
+document.querySelectorAll(".view-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    currentView = btn.dataset.view;
+    localStorage.setItem(VIEW_KEY, currentView);
+    applyViewButtons();
+    renderGameList(gamesData);
+  });
+});
+
+applyViewButtons();
+
+// ─────────────────────────────────────────────
+//  TAG FILTER
+// ─────────────────────────────────────────────
+
+// Collect all unique genres + themes across loaded games, sorted A-Z
+function getAllTags() {
+  const set = new Set();
+  gamesData.forEach(g => {
+    (g.genres || []).forEach(t => set.add(t));
+    (g.themes || []).forEach(t => set.add(t));
+  });
+  return [...set].sort((a, b) => a.localeCompare(b, "pt"));
+}
+
+// Collect all release-status strings actually present in the loaded games,
+// ordered to match RELEASE_STATUS_MAP's natural progression.
+function getAllReleaseStatuses() {
+  const STATUS_ORDER = ["Lançado", "Acesso Antecipado", "Por lançar", "Alpha", "Beta", "Offline", "Rumor", "Cancelado", "Removido de venda"];
+  const present = new Set();
+  gamesData.forEach(g => { if (g.releaseStatus) present.add(g.releaseStatus); });
+  return STATUS_ORDER.filter(s => present.has(s));
+}
+
+function renderTagFilter() {
+  const tags = getAllTags();
+  const statuses = getAllReleaseStatuses();
+
+  // Update trigger appearance (count reflects both filter kinds combined)
+  const totalActive = activeTagFilters.size + activeStatusFilters.size;
+  const hasActive = totalActive > 0;
+  $tagFilterTrigger.classList.toggle("has-active", hasActive);
+  $tagFilterCount.textContent = totalActive;
+  $tagFilterCount.classList.toggle("hidden", !hasActive);
+  $tagFilterClear.classList.toggle("hidden", !hasActive);
+
+  // Build genre/theme tag pill list
+  $tagFilterList.innerHTML = tags.map(tag => {
+    const active = activeTagFilters.has(tag);
+    return `<button class="tag-filter-item${active ? " active" : ""}" data-tag="${escHtml(tag)}" role="option" aria-selected="${active}">${escHtml(tag)}</button>`;
+  }).join("");
+
+  $tagFilterList.querySelectorAll(".tag-filter-item").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const tag = btn.dataset.tag;
+      if (activeTagFilters.has(tag)) {
+        activeTagFilters.delete(tag);
+      } else {
+        activeTagFilters.add(tag);
+      }
+      renderTagFilter();
+      renderGameList(gamesData);
+    });
+  });
+
+  // Build release-status pill list
+  $tagFilterListStatus.innerHTML = statuses.map(status => {
+    const active = activeStatusFilters.has(status);
+    return `<button class="tag-filter-item${active ? " active" : ""}" data-status="${escHtml(status)}" role="option" aria-selected="${active}">${escHtml(status)}</button>`;
+  }).join("");
+
+  $tagFilterListStatus.querySelectorAll(".tag-filter-item").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const status = btn.dataset.status;
+      if (activeStatusFilters.has(status)) {
+        activeStatusFilters.delete(status);
+      } else {
+        activeStatusFilters.add(status);
+      }
+      renderTagFilter();
+      renderGameList(gamesData);
+    });
+  });
+}
+
+// Switch between the "Géneros & Temas" and "Estado de Lançamento" sub-tabs
+function setTagFilterSubtab(subtab) {
+  currentTagSubtab = subtab;
+  const showTags = subtab === "tags";
+  $tagFilterSubtabTags.classList.toggle("active", showTags);
+  $tagFilterSubtabStatus.classList.toggle("active", !showTags);
+  $tagFilterList.classList.toggle("hidden", !showTags);
+  $tagFilterListStatus.classList.toggle("hidden", showTags);
+  $tagFilterHeaderLabel.textContent = showTags ? "Géneros & Temas" : "Estado de Lançamento";
+}
+
+$tagFilterSubtabTags.addEventListener("click", e => {
+  e.stopPropagation();
+  setTagFilterSubtab("tags");
+});
+$tagFilterSubtabStatus.addEventListener("click", e => {
+  e.stopPropagation();
+  setTagFilterSubtab("status");
+});
+setTagFilterSubtab("tags"); // ensure initial sync with markup
+
+// Toggle open/close (click, for touch/keyboard; hover is handled via CSS)
+$tagFilterTrigger.addEventListener("click", e => {
+  e.stopPropagation();
+  const isOpen = $tagFilter.classList.toggle("open");
+  $tagFilterTrigger.setAttribute("aria-expanded", isOpen);
+  if (isOpen) renderTagFilter();
+});
+
+// Refresh list content on hover too, since the menu can open via CSS :hover
+// without going through the click handler above.
+$tagFilter.addEventListener("mouseenter", () => renderTagFilter());
+
+// Clear all (both genre/theme tags and release-status filters)
+$tagFilterClear.addEventListener("click", e => {
+  e.stopPropagation();
+  activeTagFilters.clear();
+  activeStatusFilters.clear();
+  renderTagFilter();
+  renderGameList(gamesData);
+});
+
+// Close on outside click
+document.addEventListener("click", e => {
+  if (!$tagFilter.contains(e.target)) {
+    $tagFilter.classList.remove("open");
+    $tagFilterTrigger.setAttribute("aria-expanded", false);
+  }
+});
+
+// ─────────────────────────────────────────────
+//  ADD-TO-TAB MODAL
+// ─────────────────────────────────────────────
+function openAddTabModal(game) {
+  addTabTargetGame = game;
+  $addtabTitle.textContent = `Adicionar "${game.name}" a Tab`;
+
+  if (tabsData.length === 0) {
+    $addtabList.innerHTML = `<div class="addtab-empty">Nenhuma tab criada ainda.<br>Cria uma tab primeiro.</div>`;
+  } else {
+    $addtabList.innerHTML = tabsData.map(tab => {
+      const set = tabGamesMap[tab.id] || new Set();
+      const inTab = set.has(game.firebaseId);
+      return `
+        <button class="addtab-item${inTab ? " in-tab" : ""}" data-tabid="${escHtml(tab.id)}">
+          ${escHtml(tab.label)}
+          ${inTab ? `<span class="addtab-check">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          </span>` : ""}
+        </button>
+      `;
+    }).join("");
+
+    $addtabList.querySelectorAll(".addtab-item").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const tabId = btn.dataset.tabid;
+        if (!tabGamesMap[tabId]) tabGamesMap[tabId] = new Set();
+        const set = tabGamesMap[tabId];
+        if (set.has(game.firebaseId)) {
+          set.delete(game.firebaseId);
+        } else {
+          set.add(game.firebaseId);
+        }
+        // Persiste no Firestore (global); o listener onSnapshot re-renderiza
+        await saveTabGames(tabId, set);
+        // Re-render imediato do modal para feedback visual
+        openAddTabModal(game);
+      });
+    });
+  }
+
+  $addtabModal.classList.remove("hidden");
+}
+
+function closeAddTabModal() {
+  $addtabModal.classList.add("hidden");
+  addTabTargetGame = null;
+}
+
+$addtabClose.addEventListener("click", closeAddTabModal);
+$addtabBackdrop.addEventListener("click", closeAddTabModal);
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape" && !$addtabModal.classList.contains("hidden")) closeAddTabModal();
+});
+
+// ─────────────────────────────────────────────
+//  SETTINGS — Fundo (carrossel) + Desfoque (slider)
+// ─────────────────────────────────────────────
+
+const BG_IMAGES = [
+  "https://files.catbox.moe/oge2ul.jpg",
+  "https://files.catbox.moe/3pwrh8.png",
+  "https://files.catbox.moe/gvt6xv.jpg",
+  "https://files.catbox.moe/tuby89.jpg",
+  "https://files.catbox.moe/3jg1c3.jpg",
+];
+
+const BG_KEY   = "jce_bg_index";
+const BLUR_KEY = "jce_bg_blur";
+
+let currentBgIndex = Math.min(
+  parseInt(localStorage.getItem(BG_KEY) ?? "0"),
+  BG_IMAGES.length - 1
+);
+let currentBlur = parseFloat(localStorage.getItem(BLUR_KEY) ?? "2");
+
+// Aplica o fundo ao body (e ao loader enquanto ainda existe)
+function applyBackground() {
+  const url = BG_IMAGES[currentBgIndex] ?? BG_IMAGES[0];
+  document.body.style.backgroundImage = `url("${url}")`;
+  const loader = document.getElementById("page-loader");
+  if (loader) loader.style.backgroundImage = `url("${url}")`;
+}
+
+// Aplica o valor de blur via custom property e actualiza o track do slider
+function applyBlur(val) {
+  document.documentElement.style.setProperty("--bg-blur", `${val}px`);
+  const slider = document.getElementById("blur-slider");
+  if (slider) {
+    const pct = ((val / 20) * 100).toFixed(1);
+    slider.style.background = `linear-gradient(to right,
+      rgba(255,179,71,0.75) 0%,
+      rgba(255,179,71,0.75) ${pct}%,
+      rgba(255,255,255,0.1) ${pct}%,
+      rgba(255,255,255,0.1) 100%)`;
+  }
+}
+
+// (Re)constrói as miniaturas do carrossel de fundos
+function renderCarousel() {
+  const grid = document.getElementById("bg-carousel-grid");
+  if (!grid) return;
+
+  grid.innerHTML = BG_IMAGES.map((url, i) => `
+    <button class="bg-carousel-thumb${i === currentBgIndex ? " active" : ""}"
+            data-idx="${i}"
+            title="Fundo ${i + 1}">
+      <img src="${url}" alt="Fundo ${i + 1}" loading="lazy"/>
+    </button>
+  `).join("");
+
+  grid.querySelectorAll(".bg-carousel-thumb").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      currentBgIndex = parseInt(btn.dataset.idx);
+      localStorage.setItem(BG_KEY, currentBgIndex);
+      applyBackground();
+      // Actualiza o estado activo sem re-render completo
+      grid.querySelectorAll(".bg-carousel-thumb").forEach((b, i) =>
+        b.classList.toggle("active", i === currentBgIndex)
+      );
+    });
+  });
+}
+
+// Inicializa o painel de settings: aplica valores guardados + liga eventos
+function initSettings() {
+  // 1. Aplicar imediatamente os valores guardados
+  applyBackground();
+  applyBlur(currentBlur);
+
+  // 2. Construir miniaturas do carrossel
+  renderCarousel();
+
+  // 3. Ligar o slider de blur
+  const slider = document.getElementById("blur-slider");
+  const label  = document.getElementById("blur-value-label");
+  if (slider && label) {
+    slider.value = currentBlur;
+    label.textContent = currentBlur === 0 ? "Off" : `${currentBlur}px`;
+    applyBlur(currentBlur); // garante que o track está correcto no arranque
+
+    slider.addEventListener("input", e => {
+      e.stopPropagation();
+      const val = parseFloat(slider.value);
+      currentBlur = val;
+      localStorage.setItem(BLUR_KEY, val);
+      label.textContent = val === 0 ? "Off" : `${val}px`;
+      applyBlur(val);
+    });
+  }
+
+  // 4. Ligar o trigger — abre/fecha apenas por click (sem hover)
+  const wrap    = document.getElementById("settings-wrap");
+  const trigger = document.getElementById("settings-trigger");
+  if (wrap && trigger) {
+    trigger.addEventListener("click", e => {
+      e.stopPropagation();
+      const isOpen = wrap.classList.toggle("open");
+      trigger.setAttribute("aria-expanded", isOpen);
+    });
+
+    // Fecha ao clicar fora
+    document.addEventListener("click", ev => {
+      if (!wrap.contains(ev.target)) {
+        wrap.classList.remove("open");
+        trigger.setAttribute("aria-expanded", "false");
+      }
+    });
+  }
+}
+
+
+function init() {
+  // Restore sort/view button state
+  document.querySelectorAll(".sort-btn").forEach(b => b.classList.toggle("active", b.dataset.sort === currentSort));
+  applyViewButtons();
+
+  // Init settings panel (bg carousel + blur)
+  initSettings();
+
+  // Render tabs (vazio até o Firestore responder)
+  renderTabs();
+
+  // Try to show games from cache immediately
+  const cached = loadCache();
+  if (cached && cached.length > 0) {
+    gamesData = cached;
+    renderGameList(cached);
+    renderAdminList(cached);
+  }
+
+  // Re-mark last-row cards when the window is resized (column count may change)
+  window.addEventListener("resize", () => markLastRowCards(), { passive: true });
+
+  // Listeners Firestore em tempo real
+  listenToTabGames();   // tab→jogos primeiro (para estar pronto quando as tabs chegarem)
+  listenToTabs();       // tabs — re-renderiza quando houver dados
+  listenToGames();      // jogos
+}
+
+init();
