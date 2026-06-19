@@ -7,6 +7,24 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ─────────────────────────────────────────────
+//  i18n — atalhos para o sistema de tradução
+//  (carregado em i18n.js, exposto em window.i18n)
+// ─────────────────────────────────────────────
+const t = (k) => (window.i18n ? window.i18n.t(k) : k);
+const isPt = () => (window.i18n ? window.i18n.isPt() : true);
+const translateText = (txt, lang) =>
+  window.i18n ? window.i18n.translateText(txt, lang) : Promise.resolve(txt);
+const applyTranslations = (root) => {
+  if (window.i18n) window.i18n.applyTranslations(root);
+};
+
+// Traduz um termo (género/tema/modo) — usa glossário ou API
+async function translateTag(tag) {
+  if (!tag) return tag;
+  return translateText(tag);
+}
+
+// ─────────────────────────────────────────────
 //  CONFIG
 // ─────────────────────────────────────────────
 
@@ -316,11 +334,13 @@ function releaseStatusClass(statusStr) {
   }
 }
 
-// Data de lançamento completa e legível (ex: "23 de dezembro de 2020")
+// Data de lançamento completa e legível (ex: "23 de dezembro de 2020" ou "23 December 2020")
+// Usa o locale consoante o idioma activo (pt-PT ou en-GB).
 function fullReleaseDateStr(unixTs) {
   if (!unixTs) return null;
   try {
-    return new Date(unixTs * 1000).toLocaleDateString("pt-PT", {
+    const locale = isPt() ? "pt-PT" : "en-GB";
+    return new Date(unixTs * 1000).toLocaleDateString(locale, {
       day: "2-digit", month: "long", year: "numeric"
     });
   } catch(e) { return null; }
@@ -353,7 +373,8 @@ function normalizeGame(igdbGame) {
     developers:     companyNames(igdbGame.involved_companies, "developer"),
     engines:        engineNames(igdbGame.game_engines),
     releaseStatus:  releaseStatusStr(igdbGame.status, igdbGame.first_release_date),
-    releaseDateFull: fullReleaseDateStr(igdbGame.first_release_date),
+    firstReleaseTs:  igdbGame.first_release_date || null, // timestamp unix (segundos)
+    releaseDateFull: fullReleaseDateStr(igdbGame.first_release_date), // cache; re-computado on-render
     language:        languageStr(igdbGame.language_supports),
   };
 }
@@ -425,6 +446,14 @@ function listenToGames() {
     renderGameList(gamesData);
     renderAdminList(gamesData);
     renderTagFilter(); // refresh available tags after new game data
+  }, (err) => {
+    console.warn("[app.js] Erro no listener do Firebase:", err);
+    // Em caso de erro (permissões, config inválida, etc.), mostra estado
+    // vazio e dispensa o loader para não bloquear a UI.
+    gamesData = [];
+    renderGameList([]);
+    renderAdminList([]);
+    renderTagFilter();
   });
 }
 
@@ -454,7 +483,7 @@ function getFilteredSortedGames() {
 
   // 3. Sort
   if (currentSort === "name") {
-    list.sort((a, b) => (a.name || "").localeCompare(b.name || "", "pt"));
+    list.sort((a, b) => (a.name || "").localeCompare(b.name || "", isPt() ? "pt" : "en"));
   } else if (currentSort === "rating") {
     list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
   } else {
@@ -521,6 +550,10 @@ function renderGameList(games) {
 
   // Dispensar o ecrã de carregamento na primeira renderização com conteúdo
   if (typeof window.dismissLoader === "function") window.dismissLoader();
+
+  // Traduz assíncronamente os sumários dos cards (Google Translate API)
+  // Fire-and-forget — não bloqueia o render.
+  translateCardSummaries().catch(() => {});
 }
 
 // ─────────────────────────────────────────────
@@ -568,12 +601,14 @@ function buildCard(game, globalIdx) {
 
   const ratingVal   = ratingStr(game.rating);
 
-  const themeTagsHtml = (game.themes || []).map(t =>
-    `<span class="tag">${escHtml(t)}</span>`
+  // Tags: traduz via glossário (síncrono); se não estiver no glossário,
+  // mantém o original (EN) — a tradução via API seria demais para cada render.
+  const themeTagsHtml = (game.themes || []).map(tag =>
+    `<span class="tag">${escHtml(translateTagSync(tag))}</span>`
   ).join("");
 
   const modeTagsHtml = game.modes.map(m =>
-    `<span class="tag ${modeClass(m)}">${escHtml(m)}</span>`
+    `<span class="tag ${modeClass(m)}">${escHtml(translateTagSync(m))}</span>`
   ).join("");
 
   // Scrub dots: screenshots only (videos are modal-only now)
@@ -609,12 +644,19 @@ function buildCard(game, globalIdx) {
       </div>`
     : "";
 
+  // Sumário: mostra o original (EN) imediatamente; a tradução é feita
+  // async depois do render (translateCardSummaries).
+  const summaryText = game.summary || t("Sem descrição disponível.");
+  // Estado de lançamento traduzido para exibição
+  const releaseStatusDisplay = game.releaseStatus ? t(game.releaseStatus) : "";
+
   return `
     <div class="game-card"
          data-idx="${globalIdx}"
+         data-fbid="${escHtml(game.firebaseId || "")}"
          tabindex="0"
          role="button"
-         aria-label="Ver detalhes de ${escHtml(game.name)}">
+         aria-label="${escHtml(t("Ver detalhes de"))} ${escHtml(game.name)}">
 
       <!-- Image area -->
       <div class="card-top">
@@ -628,13 +670,13 @@ function buildCard(game, globalIdx) {
         <div class="card-scrub-bar">${dotsHtml}</div>
 
         <!-- Botões de admin — só visíveis em modo editor (body.editor-mode) -->
-        <button class="card-delete-btn" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="Remover jogo" title="Remover jogo">
+        <button class="card-delete-btn" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="${escHtml(t("Remover jogo"))}" title="${escHtml(t("Remover jogo"))}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
-        <button class="card-addtab-btn" data-idx="${globalIdx}" aria-label="Adicionar a tab" title="Adicionar a tab">
+        <button class="card-addtab-btn" data-idx="${globalIdx}" aria-label="${escHtml(t("Adicionar a tab"))}" title="${escHtml(t("Adicionar a tab"))}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         </button>
-        <button class="card-edit-btn" data-idx="${globalIdx}" aria-label="Editar key art" title="Editar key art">
+        <button class="card-edit-btn" data-idx="${globalIdx}" aria-label="${escHtml(t("Editar key art"))}" title="${escHtml(t("Editar key art"))}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
         </button>
 
@@ -647,7 +689,7 @@ function buildCard(game, globalIdx) {
         </div>
 
         <!-- Release status label — bottom-right of card-top -->
-        ${game.releaseStatus ? `<span class="card-release-status card-release-status--${releaseStatusClass(game.releaseStatus)}">${escHtml(game.releaseStatus)}</span>` : ""}
+        ${releaseStatusDisplay ? `<span class="card-release-status card-release-status--${releaseStatusClass(game.releaseStatus)}">${escHtml(releaseStatusDisplay)}</span>` : ""}
       </div>
 
       <!-- Expand panel — drops below image on hover -->
@@ -656,7 +698,7 @@ function buildCard(game, globalIdx) {
           ${themeTagsHtml}
           ${modeTagsHtml}
         </div>
-        <div class="expand-desc">${escHtml(game.summary)}</div>
+        <div class="expand-desc" data-game-fbid="${escHtml(game.firebaseId || "")}">${escHtml(summaryText)}</div>
         <div class="expand-footer">
           ${ratingHtml}
           <div class="expand-footer-links">
@@ -668,6 +710,62 @@ function buildCard(game, globalIdx) {
 
     </div>
   `;
+}
+
+// Traduz síncronamente um tag via glossário (se existir).
+// Para tags fora do glossário, devolve o original (EN) — a tradução
+// via API seria demasiado pesada para cada render.
+function translateTagSync(tag) {
+  if (!tag) return tag;
+  // Em EN, os tags IGDB já vêm em EN — devolve as-is.
+  if (!isPt()) return tag;
+  // Em PT, tenta glossário; se não estiver, devolve o original (EN).
+  if (window.i18n && window.i18n.glossaryLookupSync) {
+    const looked = window.i18n.glossaryLookupSync(tag);
+    if (looked != null) return looked;
+  }
+  return tag;
+}
+
+// Traduz assíncronamente os sumários de todos os cards visíveis.
+// Mostra o banner "A traduzir..." enquanto decorre.
+// Usa cache interna (por firebaseId + lang) para evitar retraduzir.
+const _summaryTranslated = new Map(); // chave: `${fbid}::${lang}` → texto traduzido
+
+async function translateCardSummaries() {
+  const lang = isPt() ? "pt" : "en";
+  const descEls = document.querySelectorAll('.expand-desc[data-game-fbid]');
+  if (descEls.length === 0) return;
+
+  let pendingCount = 0;
+  const promises = [];
+  descEls.forEach(el => {
+    const fbid = el.dataset.gameFbid;
+    const game = gamesData.find(g => g.firebaseId === fbid);
+    if (!game || !game.summary) return;
+
+    const cacheKey = `${fbid}::${lang}`;
+    // Se já temos a tradução em cache para este idioma, aplica-a
+    const cached = _summaryTranslated.get(cacheKey);
+    if (cached != null) {
+      el.textContent = cached;
+      return;
+    }
+
+    pendingCount++;
+    promises.push(
+      translateText(game.summary, lang).then(translated => {
+        if (translated) {
+          el.textContent = translated;
+          _summaryTranslated.set(cacheKey, translated);
+        }
+      }).catch(() => {})
+    );
+  });
+
+  if (pendingCount > 0) {
+    await Promise.all(promises);
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -786,17 +884,17 @@ function renderModalMedia(idx) {
   }).join("");
 
   const prevHtml = modalIndex > 0
-    ? `<button class="modal-prev" id="modal-prev" aria-label="Anterior">
+    ? `<button class="modal-prev" id="modal-prev" aria-label="${escHtml(t("Anterior"))}">
          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
        </button>` : "";
 
   const nextHtml = modalIndex < modalMediaList.length - 1
-    ? `<button class="modal-next" id="modal-next" aria-label="Próximo">
+    ? `<button class="modal-next" id="modal-next" aria-label="${escHtml(t("Próximo"))}">
          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
        </button>` : "";
 
   const mediaContent = item.type === "img"
-    ? `<img src="${escHtml(item.src)}" alt="Screenshot" onload="this.classList.add('loaded')"/>`
+    ? `<img src="${escHtml(item.src)}" alt="${escHtml(t("Screenshot"))}" onload="this.classList.add('loaded')"/>`
     : `<iframe src="${escHtml(item.src)}" allowfullscreen allow="autoplay; encrypted-media" onload="this.classList.add('loaded')"></iframe>`;
 
   $modalMedia.innerHTML = `
@@ -883,35 +981,42 @@ function renderModalBanner(game) {
 const EXTRA_INFO_FALLBACK = "Não disponível";
 
 function renderModalExtraInfo(game) {
+  const fallbackDisplay = t(EXTRA_INFO_FALLBACK);
   const studioStr = (game.studios && game.studios.length)
-    ? game.studios.join(", ") : EXTRA_INFO_FALLBACK;
+    ? game.studios.join(", ") : fallbackDisplay;
   const devStr = (game.developers && game.developers.length)
-    ? game.developers.join(", ") : EXTRA_INFO_FALLBACK;
-  const dateStr   = game.releaseDateFull || EXTRA_INFO_FALLBACK;
-  const statusStr = game.releaseStatus   || EXTRA_INFO_FALLBACK;
+    ? game.developers.join(", ") : fallbackDisplay;
+  // Data: calculada on-the-fly a partir do timestamp, para usar o locale
+  // do idioma activo (pt-PT ou en-GB).
+  const dateStr = game.firstReleaseTs
+    ? fullReleaseDateStr(game.firstReleaseTs)
+    : (game.releaseDateFull || fallbackDisplay);
+  // Release status: o valor interno é PT (identificador); traduz para exibição
+  const statusStr = game.releaseStatus ? t(game.releaseStatus) : fallbackDisplay;
   const engineStr = (game.engines && game.engines.length)
-    ? game.engines.join(", ") : EXTRA_INFO_FALLBACK;
-  const languageStrVal = game.language || EXTRA_INFO_FALLBACK;
+    ? game.engines.join(", ") : fallbackDisplay;
+  const languageStrVal = game.language || fallbackDisplay;
 
   // Modos de jogo (multiplayer, co-op, etc.) são mostrados nos tags — excluir daqui
   // Géneros substituem os themes no extra-info
+  // (em PT, traduz tags via glossário; em EN, mantém original)
   const genresStr = (game.genres && game.genres.length)
-    ? game.genres.join(", ") : EXTRA_INFO_FALLBACK;
+    ? game.genres.map(translateTagSync).join(", ") : fallbackDisplay;
 
   const rows = [
-    ["Estúdio", studioStr],
-    ["Desenvolvedor", devStr],
-    ["Data de lançamento", dateStr],
-    ["Estado de lançamento", statusStr],
-    ["Engine", engineStr],
-    ["Linguagem", languageStrVal],
-    ["Géneros", genresStr],
+    [t("Estúdio"), studioStr],
+    [t("Desenvolvedor"), devStr],
+    [t("Data de lançamento"), dateStr],
+    [t("Estado de lançamento"), statusStr],
+    [t("Engine"), engineStr],
+    [t("Linguagem"), languageStrVal],
+    [t("Géneros"), genresStr],
   ];
 
   $modalExtraInfo.innerHTML = rows.map(([label, value]) => `
     <div class="extra-info-row">
       <span class="extra-info-label">${escHtml(label)}</span>
-      <span class="extra-info-value${value === EXTRA_INFO_FALLBACK ? " unknown" : ""}">${escHtml(value)}</span>
+      <span class="extra-info-value${value === fallbackDisplay ? " unknown" : ""}">${escHtml(value)}</span>
     </div>
   `).join("");
 }
@@ -925,12 +1030,12 @@ function openModal(gameIdx) {
   buildModalMedia(game);
   const ratingVal = ratingStr(game.rating);
 
-  const themeTagsHtml = (game.themes || []).map(t =>
-    `<span class="tag">${escHtml(t)}</span>`
+  const themeTagsHtml = (game.themes || []).map(tag =>
+    `<span class="tag">${escHtml(translateTagSync(tag))}</span>`
   ).join("");
 
   const modeTagsHtml = game.modes.map(m =>
-    `<span class="tag ${modeClass(m)}">${escHtml(m)}</span>`
+    `<span class="tag ${modeClass(m)}">${escHtml(translateTagSync(m))}</span>`
   ).join("");
 
   const ratingHtml = ratingVal
@@ -961,7 +1066,7 @@ function openModal(gameIdx) {
     <div class="modal-info-actions">
       ${modalQuickLinksHtml}
       ${infoSteamHtml}
-      <button class="modal-info-expand-btn" id="modal-info-expand-btn" aria-label="Expandir descrição">
+      <button class="modal-info-expand-btn" id="modal-info-expand-btn" aria-label="${escHtml(t("Expandir descrição"))}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
           <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
           <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
@@ -970,13 +1075,13 @@ function openModal(gameIdx) {
     </div>
     <div class="modal-title-row">
       <h2 class="modal-title">${escHtml(game.name)}</h2>
-      <button class="modal-copy-btn" id="modal-copy-btn" aria-label="Copiar nome" title="Copiar nome do jogo">
+      <button class="modal-copy-btn" id="modal-copy-btn" aria-label="${escHtml(t("Copiar nome"))}" title="${escHtml(t("Copiar nome do jogo"))}">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       </button>
     </div>
     <div class="modal-tags">${themeTagsHtml}${modeTagsHtml}</div>
     <div class="modal-meta">${ratingHtml}</div>
-    <p class="modal-desc">${escHtml(game.summary || "Sem descrição disponível.")}</p>
+    <p class="modal-desc" id="modal-desc">${escHtml(game.summary || t("Sem descrição disponível."))}</p>
   `;
 
   document.getElementById("modal-info-expand-btn")
@@ -1006,6 +1111,31 @@ function openModal(gameIdx) {
   // Parallax 3D subtil — segue o rato dentro da zona de media
   $modalMedia.addEventListener("mousemove", onModalMediaParallax);
   $modalMedia.addEventListener("mouseleave", resetModalMediaParallax);
+
+  // Traduz assíncronamente o sumário do jogo (Google Translate API)
+  // Usa a mesma cache do translateCardSummaries para consistência.
+  // Em modo EN, translateText devolve o texto as-is (sem chamadas à API).
+  if (game.summary) {
+    const descEl = document.getElementById("modal-desc");
+    if (descEl) {
+      const lang = isPt() ? "pt" : "en";
+      const cacheKey = `${game.firebaseId}::${lang}`;
+      const cached = _summaryTranslated.get(cacheKey);
+
+      if (cached != null) {
+        // Já temos a tradução em cache — aplica imediatamente
+        descEl.textContent = cached;
+      } else {
+        // Traduz em background e actualiza quando estiver pronto
+        translateText(game.summary, lang).then(translated => {
+          if (translated) {
+            descEl.textContent = translated;
+            _summaryTranslated.set(cacheKey, translated);
+          }
+        }).catch(() => {});
+      }
+    }
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -1220,7 +1350,7 @@ $adminTestsBtn.addEventListener("click", toggleTestsPanel);
 function setForcedLoadingUI(active) {
   forcedLoadingActive = active;
   $adminForceLoadingBtn.classList.toggle("active", active);
-  $adminForceLoadingLabel.textContent = active ? "A Forçar Loading..." : "Forçar Loading";
+  $adminForceLoadingLabel.textContent = active ? t("A Forçar Loading...") : t("Forçar Loading");
 }
 
 $adminForceLoadingBtn.addEventListener("click", () => {
@@ -1268,14 +1398,14 @@ async function doSearch() {
   $adminResults.innerHTML = `
     <div class="search-loading">
       <div class="loading-spinner"></div>
-      A pesquisar...
+      ${escHtml(t("A pesquisar..."))}
     </div>`;
 
   try {
     const results = await searchGames(term);
 
     if (!results || results.length === 0) {
-      $adminResults.innerHTML = `<div class="search-loading">Nenhum resultado encontrado.</div>`;
+      $adminResults.innerHTML = `<div class="search-loading">${escHtml(t("Nenhum resultado encontrado."))}</div>`;
       return;
     }
 
@@ -1300,7 +1430,7 @@ async function doSearch() {
           <button class="search-result-add${added ? " added" : ""}"
                   data-igdb="${game.id}"
                   ${added ? "disabled" : ""}>
-            ${added ? "✓ Adicionado" : "+ Adicionar"}
+            ${added ? t("✓ Adicionado") : t("+ Adicionar")}
           </button>
         </div>
       `;
@@ -1313,7 +1443,7 @@ async function doSearch() {
 
   } catch(err) {
     console.error(err);
-    $adminResults.innerHTML = `<div class="search-loading" style="color:#ff9a9a">Erro ao pesquisar. Verifica as credenciais IGDB.</div>`;
+    $adminResults.innerHTML = `<div class="search-loading" style="color:#ff9a9a">${escHtml(t("Erro ao pesquisar. Verifica as credenciais IGDB."))}</div>`;
   }
 }
 
@@ -1322,22 +1452,22 @@ async function doSearch() {
 // ─────────────────────────────────────────────
 async function addGame(igdbId, btn) {
   btn.disabled = true;
-  btn.textContent = "A adicionar...";
+  btn.textContent = t("A adicionar...");
 
   try {
     await addDoc(collection(db, "games"), {
       igdbId,
       addedAt: serverTimestamp(),
     });
-    btn.textContent = "✓ Adicionado";
+    btn.textContent = t("✓ Adicionado");
     btn.classList.add("added");
     clearCache();
-    showStatus("Jogo adicionado com sucesso!", "success");
+    showStatus(t("Jogo adicionado com sucesso!"), "success");
   } catch(err) {
     console.error(err);
     btn.disabled = false;
-    btn.textContent = "+ Adicionar";
-    showStatus("Erro ao adicionar jogo.", "error");
+    btn.textContent = t("+ Adicionar");
+    showStatus(t("Erro ao adicionar jogo."), "error");
   }
 }
 
@@ -1345,10 +1475,10 @@ async function removeGame(firebaseId) {
   try {
     await deleteDoc(doc(db, "games", firebaseId));
     clearCache();
-    showStatus("Jogo removido.", "success");
+    showStatus(t("Jogo removido."), "success");
   } catch(err) {
     console.error(err);
-    showStatus("Erro ao remover jogo.", "error");
+    showStatus(t("Erro ao remover jogo."), "error");
   }
 }
 
@@ -1374,7 +1504,7 @@ function openKeyArtPicker(game) {
   $keyartTitle.textContent = `Key Art — ${game.name}`;
 
   if (candidates.length === 0) {
-    $keyartGrid.innerHTML = `<div class="keyart-empty">Sem imagens disponíveis.</div>`;
+    $keyartGrid.innerHTML = `<div class="keyart-empty">${escHtml(t("Sem imagens disponíveis."))}</div>`;
   } else {
     $keyartGrid.innerHTML = candidates.map(url => `
       <button class="keyart-thumb${url === current ? " selected" : ""}" data-url="${escHtml(url)}">
@@ -1403,10 +1533,10 @@ async function setPreferredKeyArt(game, url) {
     saveCache(gamesData);
     closeKeyArtPicker();
     renderGameList(gamesData);
-    showStatus("Key art atualizada.", "success");
+    showStatus(t("Key art atualizada."), "success");
   } catch(err) {
     console.error(err);
-    showStatus("Erro ao atualizar key art.", "error");
+    showStatus(t("Erro ao atualizar key art."), "error");
   }
 }
 
@@ -1421,7 +1551,7 @@ document.addEventListener("keydown", e => {
 // ─────────────────────────────────────────────
 function renderAdminList(games) {
   if (games.length === 0) {
-    $adminGameList.innerHTML = `<div class="admin-empty">Nenhum jogo adicionado ainda.</div>`;
+    $adminGameList.innerHTML = `<div class="admin-empty">${escHtml(t("Nenhum jogo adicionado ainda."))}</div>`;
     return;
   }
 
@@ -1431,13 +1561,15 @@ function renderAdminList(games) {
         ? `<img class="admin-game-cover" src="${escHtml(game.cover)}" alt="" loading="lazy"/>`
         : `<div class="admin-game-cover" style="background:var(--surface2);border-radius:4px"></div>`}
       <span class="admin-game-name">${escHtml(game.name)}</span>
-      <button class="admin-game-remove" data-fbid="${escHtml(game.firebaseId)}">Remover</button>
+      <button class="admin-game-remove" data-fbid="${escHtml(game.firebaseId)}">${escHtml(t("Remover"))}</button>
     </div>
   `).join("");
 
   $adminGameList.querySelectorAll(".admin-game-remove").forEach(btn => {
     btn.addEventListener("click", () => {
-      if (confirm(`Remover "${btn.closest(".admin-game-item").querySelector(".admin-game-name").textContent}"?`)) {
+      const name = btn.closest(".admin-game-item").querySelector(".admin-game-name").textContent;
+      const confirmMsg = isPt() ? `Remover "${name}"?` : `Remove "${name}"?`;
+      if (confirm(confirmMsg)) {
         removeGame(btn.dataset.fbid);
       }
     });
@@ -1509,7 +1641,7 @@ async function createTab(label) {
     // O listener onSnapshot actualiza tabsData e re-renderiza automaticamente
   } catch(e) {
     console.error("Erro ao criar tab:", e);
-    showStatus("Erro ao criar tab.", "error");
+    showStatus(t("Erro ao criar tab."), "error");
   }
 }
 
@@ -1521,7 +1653,7 @@ async function deleteTab(id) {
     // O listener onSnapshot trata do re-render
   } catch(e) {
     console.error("Erro ao apagar tab:", e);
-    showStatus("Erro ao apagar tab.", "error");
+    showStatus(t("Erro ao apagar tab."), "error");
   }
 }
 
@@ -1532,7 +1664,7 @@ async function saveTabGames(tabId, gameIdsSet) {
     });
   } catch(e) {
     console.error("Erro ao guardar jogos da tab:", e);
-    showStatus("Erro ao guardar jogos da tab.", "error");
+    showStatus(t("Erro ao guardar jogos da tab:"), "error");
   }
 }
 
@@ -1542,7 +1674,7 @@ async function saveTabGames(tabId, gameIdsSet) {
 function renderTabs() {
   // Opções do menu: "Todos" + tabs criadas
   const options = [
-    { id: "all", label: "Todos", count: gamesData.length, deletable: false },
+    { id: "all", label: t("Todos"), count: gamesData.length, deletable: false },
     ...tabsData.map(tab => {
       const set = tabGamesMap[tab.id] || new Set();
       return {
@@ -1566,7 +1698,7 @@ function renderTabs() {
       <span class="tabs-dropdown-item-label">${escHtml(opt.label)}</span>
       <span class="tab-count">${opt.count}</span>
       ${opt.deletable ? `
-        <button class="tab-delete" data-tabid="${escHtml(opt.id)}" aria-label="Apagar tab" title="Apagar tab" tabindex="-1">
+        <button class="tab-delete" data-tabid="${escHtml(opt.id)}" aria-label="${escHtml(t("Apagar tab"))}" title="${escHtml(t("Apagar tab"))}" tabindex="-1">
           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       ` : ""}
@@ -1592,7 +1724,11 @@ function renderTabs() {
   $tabsDropdownMenu.querySelectorAll(".tab-delete").forEach(btn => {
     btn.addEventListener("click", e => {
       e.stopPropagation();
-      if (confirm(`Apagar a tab "${tabsData.find(t => t.id === btn.dataset.tabid)?.label}"?`)) {
+      const tabLabel = tabsData.find(tt => tt.id === btn.dataset.tabid)?.label || "";
+      const confirmMsg = isPt()
+        ? `Apagar a tab "${tabLabel}"?`
+        : `Delete tab "${tabLabel}"?`;
+      if (confirm(confirmMsg)) {
         deleteTab(btn.dataset.tabid);
       }
     });
@@ -1688,7 +1824,7 @@ function getAllTags() {
     (g.genres || []).forEach(t => set.add(t));
     (g.themes || []).forEach(t => set.add(t));
   });
-  return [...set].sort((a, b) => a.localeCompare(b, "pt"));
+  return [...set].sort((a, b) => a.localeCompare(b, isPt() ? "pt" : "en"));
 }
 
 // Collect all release-status strings actually present in the loaded games,
@@ -1712,10 +1848,11 @@ function renderTagFilter() {
   $tagFilterCount.classList.toggle("hidden", !hasActive);
   $tagFilterClear.classList.toggle("hidden", !hasActive);
 
-  // Build genre/theme tag pill list
+  // Build genre/theme tag pill list — em PT, traduz via glossário
   $tagFilterList.innerHTML = tags.map(tag => {
     const active = activeTagFilters.has(tag);
-    return `<button class="tag-filter-item${active ? " active" : ""}" data-tag="${escHtml(tag)}" role="option" aria-selected="${active}">${escHtml(tag)}</button>`;
+    const display = translateTagSync(tag);
+    return `<button class="tag-filter-item${active ? " active" : ""}" data-tag="${escHtml(tag)}" role="option" aria-selected="${active}">${escHtml(display)}</button>`;
   }).join("");
 
   $tagFilterList.querySelectorAll(".tag-filter-item").forEach(btn => {
@@ -1732,10 +1869,11 @@ function renderTagFilter() {
     });
   });
 
-  // Build release-status pill list
+  // Build release-status pill list — traduz para exibição
   $tagFilterListStatus.innerHTML = statuses.map(status => {
     const active = activeStatusFilters.has(status);
-    return `<button class="tag-filter-item${active ? " active" : ""}" data-status="${escHtml(status)}" role="option" aria-selected="${active}">${escHtml(status)}</button>`;
+    const display = t(status);
+    return `<button class="tag-filter-item${active ? " active" : ""}" data-status="${escHtml(status)}" role="option" aria-selected="${active}">${escHtml(display)}</button>`;
   }).join("");
 
   $tagFilterListStatus.querySelectorAll(".tag-filter-item").forEach(btn => {
@@ -1761,7 +1899,7 @@ function setTagFilterSubtab(subtab) {
   $tagFilterSubtabStatus.classList.toggle("active", !showTags);
   $tagFilterList.classList.toggle("hidden", !showTags);
   $tagFilterListStatus.classList.toggle("hidden", showTags);
-  $tagFilterHeaderLabel.textContent = showTags ? "Géneros & Temas" : "Estado de Lançamento";
+  $tagFilterHeaderLabel.textContent = showTags ? t("Géneros & Temas") : t("Estado de Lançamento");
 }
 
 $tagFilterSubtabTags.addEventListener("click", e => {
@@ -1808,10 +1946,16 @@ document.addEventListener("click", e => {
 // ─────────────────────────────────────────────
 function openAddTabModal(game) {
   addTabTargetGame = game;
-  $addtabTitle.textContent = `Adicionar "${game.name}" a Tab`;
+  // Título: "Adicionar "{name}" a Tab" / "Add "{name}" to Tab"
+  const titlePrefix = isPt() ? "Adicionar" : "Add";
+  const titleSuffix = isPt() ? "a Tab" : "to Tab";
+  $addtabTitle.textContent = `${titlePrefix} "${game.name}" ${titleSuffix}`;
 
   if (tabsData.length === 0) {
-    $addtabList.innerHTML = `<div class="addtab-empty">Nenhuma tab criada ainda.<br>Cria uma tab primeiro.</div>`;
+    const emptyMsg = isPt()
+      ? "Nenhuma tab criada ainda.<br>Cria uma tab primeiro."
+      : "No tabs created yet.<br>Create a tab first.";
+    $addtabList.innerHTML = `<div class="addtab-empty">${emptyMsg}</div>`;
   } else {
     $addtabList.innerHTML = tabsData.map(tab => {
       const set = tabGamesMap[tab.id] || new Set();
@@ -1909,8 +2053,8 @@ function renderCarousel() {
   grid.innerHTML = BG_IMAGES.map((url, i) => `
     <button class="bg-carousel-thumb${i === currentBgIndex ? " active" : ""}"
             data-idx="${i}"
-            title="Fundo ${i + 1}">
-      <img src="${url}" alt="Fundo ${i + 1}" loading="lazy"/>
+            title="${escHtml(t("Fundo"))} ${i + 1}">
+      <img src="${url}" alt="${escHtml(t("Fundo"))} ${i + 1}" loading="lazy"/>
     </button>
   `).join("");
 
@@ -1942,7 +2086,7 @@ function initSettings() {
   const label  = document.getElementById("blur-value-label");
   if (slider && label) {
     slider.value = currentBlur;
-    label.textContent = currentBlur === 0 ? "Off" : `${currentBlur}px`;
+    label.textContent = currentBlur === 0 ? t("Off") : `${currentBlur}px`;
     applyBlur(currentBlur); // garante que o track está correcto no arranque
 
     slider.addEventListener("input", e => {
@@ -1950,7 +2094,7 @@ function initSettings() {
       const val = parseFloat(slider.value);
       currentBlur = val;
       localStorage.setItem(BLUR_KEY, val);
-      label.textContent = val === 0 ? "Off" : `${val}px`;
+      label.textContent = val === 0 ? t("Off") : `${val}px`;
       applyBlur(val);
     });
   }
@@ -2002,6 +2146,55 @@ function init() {
   listenToTabGames();   // tab→jogos primeiro (para estar pronto quando as tabs chegarem)
   listenToTabs();       // tabs — re-renderiza quando houver dados
   listenToGames();      // jogos
+
+  // Safety net: se o Firebase não responder em 6s (config inválida,
+  // permissões, rede, etc.), dispensa o loader para não bloquear a UI.
+  // O listener onSnapshot continuará activo e actualizará quando receber dados.
+  setTimeout(() => {
+    if (gamesData.length === 0 && typeof window.dismissLoader === "function") {
+      window.dismissLoader();
+    }
+  }, 6000);
+
+  // ── i18n: handler de mudança de idioma ─────────────────────────
+  // Quando o utilizador muda de idioma, re-renderiza tudo para que
+  // as strings estáticas (data-i18n) e o conteúdo dinâmico (tags,
+  // estados, datas, sumários) sejam traduzidos.
+  if (window.i18n) {
+    window.i18n.onLanguageChange((newLang) => {
+      // Re-aplica traduções estáticas (data-i18n attrs no HTML)
+      applyTranslations();
+      // Re-renderiza a lista de jogos (cards com tags traduzidos,
+      // datas com locale correcto, etc.)
+      renderGameList(gamesData);
+      renderAdminList(gamesData);
+      renderTagFilter();
+      renderTabs();
+      // Re-renderiza as miniaturas de fundo (títulos traduzidos)
+      renderCarousel();
+      // Atualiza o label do blur (Off / Desligado)
+      const blurLabel = document.getElementById("blur-value-label");
+      if (blurLabel) {
+        blurLabel.textContent = currentBlur === 0 ? t("Off") : `${currentBlur}px`;
+      }
+      // Se o modal estiver aberto, re-renderiza o conteúdo traduzido
+      if (modalOpen && _modalCurrentGame) {
+        const gameIdx = gamesData.indexOf(_modalCurrentGame);
+        if (gameIdx >= 0) {
+          // Re-renderiza o modal sem alterar o indice de media
+          const savedMediaIdx = modalIndex;
+          openModal(gameIdx);
+          if (savedMediaIdx < modalMediaList.length) {
+            renderModalMedia(savedMediaIdx);
+          }
+        }
+      }
+      // Atualiza o estado activo do selector de idioma
+      document.querySelectorAll(".lang-option").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.lang === newLang);
+      });
+    });
+  }
 }
 
 init();
