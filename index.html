@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="pt">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Jogos com Eles</title>
+  <title data-i18n="Jogos com Eles">Games with Them</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
@@ -54,7 +54,7 @@
       <div id="admin-tests-panel" class="admin-tests-panel">
         <button id="admin-force-loading-btn" class="admin-test-btn" type="button">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
-          <span id="admin-force-loading-label">Forçar Loading</span>
+          <span id="admin-force-loading-label" data-i18n="Forçar Loading">Forçar Loading</span>
         </button>
       </div>
 
@@ -62,7 +62,7 @@
         <button class="admin-fab admin-tests-fab" id="admin-tests-btn" aria-label="Testes" title="Testes">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2v6.5L4.5 17a2 2 0 0 0 1.8 3h11.4a2 2 0 0 0 1.8-3L15 8.5V2"/><line x1="9" y1="2" x2="15" y2="2"/><line x1="9.5" y1="13" x2="14.5" y2="13"/></svg>
         </button>
-        <button class="admin-fab" id="admin-fab" aria-label="Abrir painel de administrador">
+        <button class="admin-fab" id="admin-fab" data-i18n-aria-label="Abrir painel de administrador" aria-label="Abrir painel de administrador">
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
         </button>
       </div>
@@ -71,18 +71,18 @@
         <div class="admin-header">
           <div class="admin-badge">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            Modo Administrador
+            <span data-i18n="Modo Administrador">Modo Administrador</span>
           </div>
-          <button class="admin-close" id="admin-close" aria-label="Sair do modo administrador">
+          <button class="admin-close" id="admin-close" data-i18n-aria-label="Sair do modo administrador" aria-label="Sair do modo administrador">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
 
         <div class="admin-search-section">
-          <label class="admin-label" for="admin-search-input">Pesquisar Jogo</label>
+          <label class="admin-label" for="admin-search-input" data-i18n="Pesquisar Jogo">Pesquisar Jogo</label>
           <div class="admin-search-row">
-            <input type="text" id="admin-search-input" class="admin-input" placeholder="Nome do jogo..." autocomplete="off" />
-            <button id="admin-search-btn" class="admin-search-btn" aria-label="Pesquisar">
+            <input type="text" id="admin-search-input" class="admin-input" data-i18n-placeholder="Nome do jogo..." placeholder="Nome do jogo..." autocomplete="off" />
+            <button id="admin-search-btn" class="admin-search-btn" data-i18n-aria-label="Pesquisar" aria-label="Pesquisar">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             </button>
           </div>
@@ -90,11 +90,11 @@
         </div>
 
         <div class="admin-divider">
-          <span>Na lista</span>
+          <span data-i18n="Na lista">Na lista</span>
         </div>
 
         <div id="admin-game-list" class="admin-game-list">
-          <div class="admin-empty">Nenhum jogo adicionado ainda.</div>
+          <div class="admin-empty" data-i18n="Nenhum jogo adicionado ainda.">Nenhum jogo adicionado ainda.</div>
         </div>
 
         <div id="admin-status" class="admin-status hidden"></div>
@@ -108,8 +108,8 @@
     <div class="keyart-backdrop" id="keyart-backdrop"></div>
     <div class="keyart-panel">
       <div class="keyart-header">
-        <span class="keyart-title" id="keyart-title">Escolher Key Art</span>
-        <button class="keyart-close" id="keyart-close" aria-label="Fechar">
+        <span class="keyart-title" id="keyart-title" data-i18n="Escolher Key Art">Escolher Key Art</span>
+        <button class="keyart-close" id="keyart-close" data-i18n-aria-label="Fechar" aria-label="Fechar">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -122,8 +122,8 @@
     <div class="addtab-backdrop" id="addtab-backdrop"></div>
     <div class="addtab-panel">
       <div class="addtab-header">
-        <span class="addtab-title" id="addtab-title">Adicionar a Tab</span>
-        <button class="addtab-close" id="addtab-close" aria-label="Fechar">
+        <span class="addtab-title" id="addtab-title" data-i18n="Adicionar a Tab">Adicionar a Tab</span>
+        <button class="addtab-close" id="addtab-close" data-i18n-aria-label="Fechar" aria-label="Fechar">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
@@ -140,7 +140,7 @@
         <!-- Dropdown de tabs — pill activa funciona como trigger; hover revela as restantes opções -->
         <div class="tabs-dropdown" id="tabs-dropdown">
           <button class="tabs-dropdown-trigger" id="tabs-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false">
-            <span class="tabs-dropdown-label" id="tabs-dropdown-label">Todos</span>
+            <span class="tabs-dropdown-label" id="tabs-dropdown-label" data-i18n="Todos">Todos</span>
             <span class="tab-count" id="tabs-dropdown-count">0</span>
             <svg class="tabs-dropdown-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
@@ -148,13 +148,13 @@
         </div>
         <!-- Criar Tab (só visível em editor-mode) -->
         <div class="create-tab-wrap editor-only hidden" id="create-tab-wrap">
-          <button class="create-tab-btn" id="create-tab-btn" title="Criar nova tab">
+          <button class="create-tab-btn" id="create-tab-btn" data-i18n-title="Criar nova tab" title="Criar nova tab">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Criar_Tab
+            <span data-i18n="Criar_Tab">Criar_Tab</span>
           </button>
           <div class="create-tab-input-wrap hidden" id="create-tab-input-wrap">
-            <input type="text" class="create-tab-input" id="create-tab-input" placeholder="Nome da tab..." maxlength="32" autocomplete="off"/>
-            <button class="create-tab-confirm" id="create-tab-confirm" aria-label="Confirmar">
+            <input type="text" class="create-tab-input" id="create-tab-input" data-i18n-placeholder="Nome da tab..." placeholder="Nome da tab..." maxlength="32" autocomplete="off"/>
+            <button class="create-tab-confirm" id="create-tab-confirm" data-i18n-aria-label="Confirmar" aria-label="Confirmar">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             </button>
           </div>
@@ -164,17 +164,17 @@
         <div class="tag-filter" id="tag-filter">
           <button class="tag-filter-trigger" id="tag-filter-trigger" aria-haspopup="listbox" aria-expanded="false">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            <span class="tag-filter-label" id="tag-filter-label">Filtrar</span>
+            <span class="tag-filter-label" id="tag-filter-label" data-i18n="Filtrar">Filtrar</span>
             <span class="tag-filter-count hidden" id="tag-filter-count">0</span>
           </button>
           <div class="tag-filter-menu" id="tag-filter-menu" role="listbox" aria-multiselectable="true">
             <div class="tag-filter-subtabs" id="tag-filter-subtabs">
-              <button class="tag-filter-subtab active" data-subtab="tags" id="tag-filter-subtab-tags">Géneros &amp; Temas</button>
-              <button class="tag-filter-subtab" data-subtab="status" id="tag-filter-subtab-status">Estado de Lançamento</button>
+              <button class="tag-filter-subtab active" data-subtab="tags" id="tag-filter-subtab-tags" data-i18n="Géneros & Temas">Géneros &amp; Temas</button>
+              <button class="tag-filter-subtab" data-subtab="status" id="tag-filter-subtab-status" data-i18n="Estado de Lançamento">Estado de Lançamento</button>
             </div>
             <div class="tag-filter-header">
-              <span class="tag-filter-header-label" id="tag-filter-header-label">Géneros &amp; Temas</span>
-              <button class="tag-filter-clear hidden" id="tag-filter-clear">Limpar</button>
+              <span class="tag-filter-header-label" id="tag-filter-header-label" data-i18n="Géneros & Temas">Géneros &amp; Temas</span>
+              <button class="tag-filter-clear hidden" id="tag-filter-clear" data-i18n="Limpar">Limpar</button>
             </div>
             <div class="tag-filter-list" id="tag-filter-list"><!-- tags injetadas pelo JS --></div>
             <div class="tag-filter-list hidden" id="tag-filter-list-status"><!-- estados injetados pelo JS --></div>
@@ -185,7 +185,7 @@
       <div class="toolbar-right">
         <!-- Settings — pill + dropdown (mesmo padrão do tag-filter) -->
         <div class="settings-wrap" id="settings-wrap">
-          <button class="settings-trigger" id="settings-trigger" aria-haspopup="true" aria-expanded="false" aria-label="Aspeto" title="Aspeto">
+          <button class="settings-trigger" id="settings-trigger" aria-haspopup="true" aria-expanded="false" data-i18n-aria-label="Aspeto" data-i18n-title="Aspeto" aria-label="Aspeto" title="Aspeto">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
               <circle cx="12" cy="12" r="3"/>
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -194,17 +194,29 @@
           <div class="settings-menu" id="settings-menu">
             <!-- Secção: fundo -->
             <div class="settings-section">
-              <span class="settings-section-label">Fundo</span>
+              <span class="settings-section-label" data-i18n="Fundo">Fundo</span>
               <div class="bg-carousel-grid" id="bg-carousel-grid">
                 <!-- miniaturas injetadas pelo JS -->
               </div>
             </div>
             <!-- Secção: desfoque -->
             <div class="settings-section">
-              <span class="settings-section-label">Desfoque de fundo</span>
+              <span class="settings-section-label" data-i18n="Desfoque de fundo">Desfoque de fundo</span>
               <div class="blur-slider-row">
                 <input type="range" class="blur-slider" id="blur-slider" min="0" max="20" step="0.5" value="2"/>
                 <span class="blur-value-label" id="blur-value-label">2px</span>
+              </div>
+            </div>
+            <!-- Secção: idioma (NOVO) -->
+            <div class="settings-section">
+              <span class="settings-section-label" data-i18n="Idioma">Idioma</span>
+              <div class="lang-options" id="lang-options">
+                <button class="lang-option" data-lang="pt" type="button">
+                  <span>Português</span>
+                </button>
+                <button class="lang-option active" data-lang="en" type="button">
+                  <span>English</span>
+                </button>
               </div>
             </div>
           </div>
@@ -212,23 +224,23 @@
 
         <!-- Sort -->
         <div class="sort-group">
-          <button class="sort-btn active" data-sort="random" title="Ordem aleatória">
+          <button class="sort-btn active" data-sort="random" data-i18n-title="Ordem aleatória" title="Ordem aleatória">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
-            Aleatório
+            <span data-i18n="Aleatório">Aleatório</span>
           </button>
-          <button class="sort-btn" data-sort="name" title="Ordenar por nome">
+          <button class="sort-btn" data-sort="name" data-i18n-title="Ordenar por nome" title="Ordenar por nome">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="9" y2="18"/></svg>
-            A–Z
+            <span data-i18n="A–Z">A–Z</span>
           </button>
-          <button class="sort-btn" data-sort="rating" title="Ordenar por nota">
+          <button class="sort-btn" data-sort="rating" data-i18n-title="Ordenar por nota" title="Ordenar por nota">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
-            Nota
+            <span data-i18n="Nota">Nota</span>
           </button>
         </div>
 
         <!-- View mode -->
         <div class="view-group">
-          <button class="view-btn" data-view="grid" title="Grelha (4 col)">
+          <button class="view-btn" data-view="grid" data-i18n-title="Grelha (4 col)" title="Grelha (4 col)">
             <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
               <rect x="1"  y="1"  width="8" height="8" rx="1.2"/>
               <rect x="11" y="1"  width="8" height="8" rx="1.2"/>
@@ -236,7 +248,7 @@
               <rect x="11" y="11" width="8" height="8" rx="1.2"/>
             </svg>
           </button>
-          <button class="view-btn" data-view="five" title="Grelha (5 col)">
+          <button class="view-btn" data-view="five" data-i18n-title="Grelha (5 col)" title="Grelha (5 col)">
             <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
               <!-- linha de cima: 3 col -->
               <rect x="0.3" y="1" width="5.6" height="8" rx="1"/>
@@ -247,7 +259,7 @@
               <rect x="10.65" y="11" width="9.05" height="8" rx="1"/>
             </svg>
           </button>
-          <button class="view-btn" data-view="compact" title="Compacto (6 col)">
+          <button class="view-btn" data-view="compact" data-i18n-title="Compacto (6 col)" title="Compacto (6 col)">
             <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
               <rect x="0.3" y="1" width="5.6" height="8" rx="1"/>
               <rect x="7.2" y="1" width="5.6" height="8" rx="1"/>
@@ -264,13 +276,13 @@
     <div id="game-list" class="game-list">
       <div class="loading-state" id="loading-state">
         <div class="loading-spinner"></div>
-        <span>A carregar jogos...</span>
+        <span data-i18n="A carregar jogos...">Loading games...</span>
       </div>
     </div>
 
     <div id="empty-state" class="empty-state hidden">
       <div class="empty-icon">🎮</div>
-      <p>Ainda não há jogos na lista.</p>
+      <p data-i18n="Ainda não há jogos na lista.">No games in the list yet.</p>
     </div>
   </main>
 
@@ -279,7 +291,7 @@
     <div class="modal-backdrop" id="modal-backdrop"></div>
 
     <div class="modal-content">
-      <button class="modal-close" id="modal-close" aria-label="Fechar">
+      <button class="modal-close" id="modal-close" data-i18n-aria-label="Fechar" aria-label="Fechar">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
 
@@ -303,7 +315,8 @@
 
   <!-- Loader — arranca antes do Firebase/app para a animação começar de imediato -->
   <script src="loader.js"></script>
-
+  <!-- i18n — sistema de tradução (deve carregar antes do app.js) -->
+  <script src="i18n.js"></script>
   <!-- Firebase SDKs -->
   <script type="module" src="firebase.js"></script>
   <script type="module" src="app.js"></script>
