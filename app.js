@@ -592,8 +592,8 @@ function updateUserUI() {
     if ($accountSection) $accountSection.style.display = "";
     if ($accountInput) $accountInput.value = currentUser.name;
   } else {
-    // Não registado: botão "Regista-te" (traduzido), search bloqueada
-    if ($btnText) $btnText.textContent = t("Regista-te");
+    // Não registado: botão "Registar" (traduzido), search bloqueada
+    if ($btnText) $btnText.textContent = t("Registar");
     $btn.classList.remove("registered", "registering");
     $input.classList.add("hidden");
     // Esconde o botão de registo se já houver 3 ou mais utilizadores
@@ -2583,7 +2583,7 @@ function isInTrash(firebaseId) {
 // Adiciona ou remove um down-vote
 async function toggleDownvote(firebaseId) {
   if (!currentUser) {
-    showToast(t("Regista-te primeiro para pesquisar."));
+    showToast(t("Regista-te primeiro para votar."));
     return;
   }
   try {
@@ -2683,7 +2683,7 @@ function getDownvoterNames(firebaseId) {
 // Adiciona ou remove um up-vote
 async function toggleUpvote(firebaseId) {
   if (!currentUser) {
-    showToast(t("Regista-te primeiro para pesquisar."));
+    showToast(t("Regista-te primeiro para votar."));
     return;
   }
   try {
@@ -3376,6 +3376,29 @@ function init() {
   initHeaderSearch();
   initAccountEdit();
   updateUserUI();
+
+  // ⚠️  Garante que as traduções estáticas são aplicadas após init().
+  // Isto resolve um bug no GitHub Pages onde o i18n.js (script regular)
+  // pode não ter aplicado as traduções antes do app.js (módulo deferred)
+  // re-renderizar elementos dinâmicos da toolbar.
+  if (window.i18n) {
+    window.i18n.applyTranslations();
+    window.i18n.updateLangButtonsActive();
+    updateUserUI(); // garantir que o botão de registo mostra o texto correcto
+  }
+
+  // ⚠️  Fix: garante que os botões de idioma funcionam mesmo se o
+  // listener de delegação do i18n.js não estiver a disparar (race condition
+  // em GitHub Pages). Adiciona listeners directos a cada botão.
+  document.querySelectorAll(".lang-option").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (window.i18n && btn.dataset.lang) {
+        window.i18n.setLang(btn.dataset.lang);
+      }
+    });
+  });
 
   // Safety net: se o Firebase não responder em 6s (config inválida,
   // permissões, rede, etc.), dispensa o loader para não bloquear a UI.
