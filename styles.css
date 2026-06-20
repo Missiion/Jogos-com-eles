@@ -402,7 +402,8 @@ body::before {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s,
+              top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 body.editor-mode .card-edit-btn,
@@ -1804,6 +1805,9 @@ body.editor-mode .card-delete-btn {
   padding: 10px 40px;
   background: none;
   flex-wrap: wrap;
+  /* Permite que o toolbar-center seja absolutamente posicionado
+     ao centro do toolbar, ignorando as larguras de left/right. */
+  position: sticky;
 }
 
 .toolbar-left {
@@ -1811,8 +1815,10 @@ body.editor-mode .card-delete-btn {
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  flex: 1;
+  flex: 0 1 auto; /* não cresce, pode encolher */
   min-width: 0;
+  position: relative;
+  z-index: 2;
 }
 
 .toolbar-right {
@@ -2383,7 +2389,8 @@ body.editor-mode .tabs-dropdown-item .tab-delete { display: flex; }
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s,
+              top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   /* sits left of edit (right:8px); edit is 26px wide + 8px from edge = right:40px */
   right: 40px;
   background: rgba(0,0,0,0.6);
@@ -2396,6 +2403,13 @@ body.editor-mode .card-addtab-btn { display: flex; }
 .card-addtab-btn:hover {
   background: rgba(255,255,255,0.2);
   color: #fff;
+}
+
+/* Hover do card → botões de admin descem abaixo dos scrub-dots */
+.game-card:hover .card-edit-btn,
+.game-card:hover .card-delete-btn,
+.game-card:hover .card-addtab-btn {
+  top: 20px;
 }
 
 /* ═══════════════════════════════════════════════
@@ -2958,3 +2972,655 @@ body.editor-mode .card-release-status {
 }
 
 /* (translate-banner removido — não é necessário) */
+
+/* ═══════════════════════════════════════════════════════════════
+   TOOLBAR CENTER — Register + Search (centro do header)
+   ═══════════════════════════════════════════════════════════════ */
+
+.toolbar-center {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Largura fixa para que o conjunto register+search seja sempre igual,
+     independentemente do tamanho do nome do utilizador. */
+  width: 440px;
+  max-width: calc(100vw - 80px); /* respeita o padding do toolbar */
+  z-index: 1;
+}
+
+.register-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  /* Não usa max-width para evitar que o wrap encolha e desloque tudo */
+}
+
+/* ── Botão Regista-te / Nome do utilizador ──
+   Agora é totalmente redondo (border-radius 16px em todos os lados),
+   sem cor de fundo especial (translúcido como a search bar).
+   Largura fixa para que o search não encolha quando o nome cresce. */
+.register-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 16px; /* totalmente redondo */
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.16);
+  color: var(--text);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 110px; /* largura fixa — não cresce com o nome */
+  text-align: center;
+  height: 30px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.register-btn:hover {
+  background: rgba(255,255,255,0.14);
+  border-color: rgba(255,255,255,0.26);
+}
+
+.register-btn .register-btn-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.register-btn .register-btn-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.register-btn .register-btn-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 90px;
+}
+
+/* Estado registado: mantém o mesmo estilo translúcido (sem cor amber) */
+.register-btn.registered {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.22);
+  color: var(--text);
+  cursor: default;
+}
+
+.register-btn.registered:hover {
+  background: rgba(255,255,255,0.14);
+}
+
+/* ── Input de registo (inline, substitui o botão) ── */
+.register-input {
+  flex: 0 0 130px;
+  padding: 6px 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid var(--amber);
+  color: var(--text);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 500;
+  outline: none;
+  height: 30px;
+  box-sizing: border-box;
+}
+
+.register-input:focus {
+  background: rgba(255,255,255,0.14);
+  box-shadow: 0 0 0 2px rgba(255,179,71,0.2);
+}
+
+/* ── Barra de pesquisa (header) — totalmente redonda ── */
+.header-search-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.header-search-input {
+  width: 100%;
+  padding: 6px 32px 6px 14px;
+  border-radius: 16px; /* totalmente redondo */
+  background: rgba(255,255,255,0.12); /* mais visível */
+  border: 1px solid rgba(255,255,255,0.22);
+  color: var(--text);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 500;
+  outline: none;
+  transition: all 0.2s;
+  height: 30px;
+  box-sizing: border-box;
+}
+
+.header-search-input:focus {
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.36);
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.08);
+}
+
+.header-search-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.header-search-input::placeholder {
+  color: rgba(238,238,248,0.55); /* muito mais visível */
+  font-weight: 500;
+}
+
+.header-search-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header-search-btn:hover {
+  color: var(--text);
+}
+
+/* ── Resultados da pesquisa (dropdown) ── */
+.header-search-results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: rgba(20,20,29,0.97);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 36px rgba(0,0,0,0.5);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  max-height: 420px;
+  overflow-y: auto;
+  z-index: 200;
+  padding: 4px;
+}
+
+.header-search-results .search-section-label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 10px 4px;
+}
+
+.header-search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.header-search-result-item:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.header-search-result-cover {
+  width: 32px;
+  height: 42px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface2);
+}
+
+.header-search-result-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.header-search-result-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.header-search-result-year {
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+
+.header-search-result-add {
+  padding: 5px 10px;
+  border-radius: 12px;
+  background: var(--amber-dim);
+  border: 1px solid rgba(255,179,71,0.3);
+  color: var(--amber);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.header-search-result-add:hover {
+  background: rgba(255,179,71,0.25);
+  border-color: var(--amber);
+}
+
+.header-search-result-add.added {
+  background: var(--green-dim);
+  border-color: rgba(77,217,138,0.3);
+  color: var(--green);
+  cursor: default;
+}
+
+.header-search-result-badge {
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: var(--green-dim);
+  border: 1px solid rgba(77,217,138,0.3);
+  color: var(--green);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.6rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.header-search-loading {
+  padding: 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ── Secção Conta (no settings menu) ── */
+.account-edit-wrap {
+  display: flex;
+  gap: 6px;
+  padding: 0 calc(4px * var(--settings-size, 1.5)) calc(4px * var(--settings-size, 1.5));
+}
+
+.account-name-input {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: var(--text);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: calc(0.75rem * var(--settings-size, 1.5));
+  outline: none;
+}
+
+.account-name-input:focus {
+  border-color: var(--amber);
+  background: rgba(255,255,255,0.1);
+}
+
+.account-save-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: var(--amber-dim);
+  border: 1px solid rgba(255,179,71,0.3);
+  color: var(--amber);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: calc(0.75rem * var(--settings-size, 1.5));
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.account-save-btn:hover {
+  background: rgba(255,179,71,0.25);
+  border-color: var(--amber);
+}
+
+/* ── Toast (aviso flutuante) ── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(20,20,29,0.97);
+  border: 1px solid var(--amber);
+  color: var(--text);
+  padding: 12px 22px;
+  border-radius: 24px;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s, transform 0.3s, visibility 0.3s;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.toast.show {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* ── Responsive: toolbar center em ecrãs pequenos ── */
+@media (max-width: 900px) {
+  .toolbar-center {
+    order: 3;
+    flex-basis: 100%;
+    max-width: 100%;
+    margin-top: 8px;
+  }
+  .register-search-wrap {
+    max-width: 100%;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DOWN-VOTE BUTTON — nos cards (canto superior esquerdo)
+   Seta para baixo + contador. Sem background redondo.
+   Animação de descida em hover (igual ao card-release-status)
+   para sair da frente dos scrub-dots.
+   ═══════════════════════════════════════════════════════════════ */
+
+.card-downvote-btn {
+  position: absolute;
+  top: 8px;            /* repouso: canto superior esquerdo */
+  left: 8px;
+  z-index: 5;
+  background: none;
+  border: none;
+  color: rgba(238,238,248,0.85);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 2px 4px;
+  font-family: 'Space Grotesk', sans-serif;
+  /* Animação smooth no hover do card (igual ao card-release-status) */
+  transition: top 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              color 0.15s,
+              transform 0.12s;
+  pointer-events: auto;
+}
+
+/* Seta — preenchida, estilo Reddit */
+.card-downvote-btn .downvote-arrow {
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+  transition: filter 0.15s;
+}
+
+/* Hover do botão em si */
+.card-downvote-btn:hover {
+  color: var(--red);
+  transform: scale(1.15);
+}
+
+.card-downvote-btn:hover .downvote-arrow {
+  filter: drop-shadow(0 1px 3px rgba(255,80,80,0.4));
+}
+
+/* Hover do card → desce abaixo dos scrub-dots (que estão em top:8px) */
+.game-card:hover .card-downvote-btn {
+  top: 20px;
+}
+
+.card-downvote-btn.voted {
+  color: var(--red);
+}
+
+.card-downvote-btn.voted .downvote-arrow {
+  filter: drop-shadow(0 1px 3px rgba(255,80,80,0.5));
+}
+
+.card-downvote-btn.in-trash {
+  color: var(--red);
+  opacity: 0.85;
+}
+
+.card-downvote-btn .downvote-count {
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  /* Shadow subtil e profissional (não agressivo) */
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MODAL VOTE BUTTONS — up-vote (bottom-left) e down-vote (bottom-right)
+   no modal-banner. Up-vote = laranja, Down-vote = roxo indigo.
+   Hover/click: só muda outline + SVG, nunca o background.
+   ═══════════════════════════════════════════════════════════════ */
+
+.modal-vote-btn {
+  position: absolute;
+  bottom: 6px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.85);
+  cursor: pointer;
+  /* Só border-color e color transitam — background fica fixo */
+  transition: border-color 0.18s, color 0.18s, transform 0.12s;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.modal-vote-btn:hover {
+  transform: scale(1.1);
+}
+
+.modal-vote-btn .vote-arrow {
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+  transition: filter 0.18s;
+}
+
+.modal-vote-btn .vote-count {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 10px;
+  text-align: center;
+}
+
+/* Up-vote — laranja (amber/orange) */
+.modal-upvote-btn {
+  left: 6px;
+}
+
+/* Hover: só outline + SVG ficam laranja, background mantém-se */
+.modal-upvote-btn:hover {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+.modal-upvote-btn:hover .vote-arrow {
+  filter: drop-shadow(0 1px 3px rgba(255,148,102,0.5));
+}
+
+.modal-upvote-btn.voted {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+.modal-upvote-btn.voted .vote-arrow {
+  filter: drop-shadow(0 1px 3px rgba(255,148,102,0.6));
+}
+
+/* Down-vote — roxo meia-noite / indigo triste */
+.modal-downvote-btn {
+  right: 6px;
+  color: rgba(180,170,220,0.85);
+}
+
+/* Hover: só outline + SVG ficam roxo, background mantém-se */
+.modal-downvote-btn:hover {
+  border-color: #8a7dc8;
+  color: #a99ee8;
+}
+
+.modal-downvote-btn:hover .vote-arrow {
+  filter: drop-shadow(0 1px 3px rgba(140,120,200,0.5));
+}
+
+.modal-downvote-btn.voted {
+  border-color: #8a7dc8;
+  color: #a99ee8;
+}
+
+.modal-downvote-btn.voted .vote-arrow {
+  filter: drop-shadow(0 1px 3px rgba(140,120,200,0.6));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MODAL VOTE NAMES — nomes dos votantes acima de cada botão
+   Sem background, apenas texto simples. Animação bottom-up.
+   ═══════════════════════════════════════════════════════════════ */
+
+.modal-vote-names {
+  position: absolute;
+  bottom: 38px; /* acima do botão (botão tem ~30px de altura + 6px de margem) */
+  z-index: 11;
+  display: flex;
+  flex-direction: column-reverse; /* nomes mais recentes aparecem em baixo, perto do botão */
+  align-items: center;
+  gap: 2px;
+  max-width: 140px;
+  pointer-events: none;
+  /* Escondidos por defeito — só aparecem no hover do upvote-btn */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+/* Mostra os nomes quando o upvote-btn está em hover.
+   Usa :has() — suportado em todos os browsers modernos. */
+.modal-banner:has(.modal-upvote-btn:hover) .modal-vote-names {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Fallback para browsers sem :has() — JS adiciona classe 'show-names' */
+.modal-banner.show-names .modal-vote-names {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* Centrados relativamente ao botão correspondente */
+.modal-upvote-names {
+  left: 6px;
+  /* O botão upvote está em left:6px; centra os nomes nessa posição */
+  width: 60px;
+  margin-left: -5px;
+  align-items: center;
+}
+
+.modal-downvote-names {
+  right: 6px;
+  width: 60px;
+  margin-right: -5px;
+  align-items: center;
+}
+
+.vote-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.9);
+  /* Animação: aparece de baixo para cima, rápido */
+  opacity: 0;
+  transform: translateY(8px);
+  animation: vote-name-appear 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.vote-name-up {
+  color: var(--orange);
+}
+
+.vote-name-down {
+  color: #a99ee8;
+}
+
+@keyframes vote-name-appear {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SORT BTN VOTES — botão de ordenação por upvotes (3 estados)
+   - Inactivo: icon upvote (default)
+   - Mais votados: cor laranja (upvote)
+   - Menos votados (reverse): icon downvote + cor roxo indigo (downvote)
+   - Background activo = igual aos outros sort-btn (rgba 0.09)
+   ═══════════════════════════════════════════════════════════════ */
+
+.sort-btn-votes .sort-icon-up,
+.sort-btn-votes .sort-icon-down {
+  display: block;
+}
+
+.sort-btn-votes.reverse .sort-icon-up {
+  display: none;
+}
+
+.sort-btn-votes.reverse .sort-icon-down {
+  display: block;
+}
+
+/* Estado activo "Mais votados" — cor laranja (upvote) */
+.sort-btn-votes.active:not(.reverse) {
+  color: var(--orange);
+}
+
+/* Estado activo "Menos votados" (reverse) — cor roxo indigo (downvote) */
+.sort-btn-votes.active.reverse {
+  color: #a99ee8;
+}
