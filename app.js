@@ -2614,6 +2614,12 @@ async function toggleDownvote(firebaseId) {
         for (const d of usnap.docs) {
           await deleteDoc(doc(db, "upvotes", d.id));
         }
+        // ⚠️ Remove o jogo da tab do user (tinha up-vote → agora tem down-vote)
+        if (currentUser.tabId) {
+          const set = new Set(tabGamesMap[currentUser.tabId] || []);
+          set.delete(firebaseId);
+          await saveTabGames(currentUser.tabId, set);
+        }
       }
       // Adiciona down-vote
       await addDoc(collection(db, "downvotes"), {
