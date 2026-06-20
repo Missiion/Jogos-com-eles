@@ -3,7 +3,7 @@
 import { db } from "./firebase.js";
 import {
   collection, doc, getDocs, addDoc, deleteDoc, updateDoc, setDoc,
-  onSnapshot, query, orderBy, serverTimestamp
+  onSnapshot, query, orderBy, where, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // ─────────────────────────────────────────────
@@ -22,6 +22,87 @@ const applyTranslations = (root) => {
 async function translateTag(tag) {
   if (!tag) return tag;
   return translateText(tag);
+}
+
+// ─────────────────────────────────────────────
+//  USER STATE — registo + sessão
+//  Coleção Firebase "users": { name, isAdmin, tabId, createdAt }
+//  Sessão persistida em localStorage (jce_user_id)
+// ─────────────────────────────────────────────
+let currentUser = null;       // { id, name, isAdmin, tabId } ou null
+let allUsers = [];            // array de { id, name, isAdmin, tabId }
+const USER_ID_KEY = "jce_user_id";
+
+// Capitaliza: primeira letra uppercase, resto lowercase
+function capitalizeName(name) {
+  if (!name) return name;
+  const trimmed = String(name).trim();
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
+}
+
+// ─────────────────────────────────────────────
+//  TOAST — aviso flutuante
+// ─────────────────────────────────────────────
+let _toastTimer = null;
+function showToast(message, duration = 3000) {
+  const toast = document.getElementById("toast");
+  const toastText = document.getElementById("toast-text");
+  if (!toast || !toastText) return;
+  toastText.textContent = message;
+  toast.classList.add("show");
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => toast.classList.remove("show"), duration);
+}
+
+// ─────────────────────────────────────────────
+//  FUZZY MATCH — para encontrar jogos já na lista
+//  com nomes parecidos ou com erros de escrita
+// ─────────────────────────────────────────────
+function normalizeStr(str) {
+  if (!str) return "";
+  return String(str)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .replace(/[^a-z0-9]/g, "");      // remove caracteres especiais
+}
+
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+// Verifica se um jogo da lista corresponde à pesquisa (fuzzy)
+function fuzzyMatchGame(query, game) {
+  const nq = normalizeStr(query);
+  if (!nq) return false;
+  const nn = normalizeStr(game.name);
+  if (nn.includes(nq)) return true;
+  if (nq.length >= 3 && nn.length >= 3) {
+    const dist = levenshtein(nq, nn);
+    // Tolerância: 1 erro para nomes curtos, 2 para médios, 3 para longos
+    const tolerance = nn.length <= 6 ? 1 : nn.length <= 12 ? 2 : 3;
+    if (dist <= tolerance) return true;
+  }
+  return false;
 }
 
 // ─────────────────────────────────────────────
@@ -61,7 +142,14 @@ let activeTab   = "all"; // "all" | tabId
 // tabId → Set of firebaseIds
 let tabGamesMap = {};    // {tabId: Set<firebaseId>}
 
-// Sort: "random" | "name" | "rating"
+// Down-votes: { firebaseId: Set<userId> }
+// Quando um jogo tem >=2 down-votes, é movido para a tab "Lixo".
+let downvotesMap = {};   // {firebaseId: Set<userId>}
+let upvotesMap = {};     // {firebaseId: Set<userId>}
+let trashTabId = null;   // ID da tab "Lixo" (criada automaticamente)
+const DOWNVOTE_THRESHOLD = 2;
+
+// Sort: "random" | "name" | "upvotes" | "upvotes-rev" | "rating"
 const SORT_KEY  = "jce_sort";
 let currentSort = localStorage.getItem(SORT_KEY) || "random";
 
@@ -104,6 +192,8 @@ const $adminTestsBtn = document.getElementById("admin-tests-btn");
 const $adminTestsPanel = document.getElementById("admin-tests-panel");
 const $adminForceLoadingBtn = document.getElementById("admin-force-loading-btn");
 const $adminForceLoadingLabel = document.getElementById("admin-force-loading-label");
+const $adminCreateTrashBtn = document.getElementById("admin-create-trash-btn");
+const $adminClearTrashBtn = document.getElementById("admin-clear-trash-btn");
 const $adminGameList = document.getElementById("admin-game-list");
 const $adminStatus   = document.getElementById("admin-status");
 const $adminHint     = document.getElementById("admin-hint");
@@ -404,6 +494,255 @@ function clearCache() {
 }
 
 // ─────────────────────────────────────────────
+//  USERS — Listener em tempo real (Firebase "users" collection)
+//  Sincroniza todos os utilizadores registados.
+//  Cada user: { name, isAdmin, tabId, createdAt }
+// ─────────────────────────────────────────────
+
+// Snapshot anterior de users — para detectar remoções (cascade delete)
+let prevUserIds = new Set();
+
+function listenToUsers() {
+  if (!db) return;
+  const q = query(collection(db, "users"), orderBy("createdAt", "asc"));
+  onSnapshot(q, (snapshot) => {
+    const newUserIds = new Set(snapshot.docs.map(d => d.id));
+
+    // Detecta users removidos desde o último snapshot
+    // (só após o primeiro snapshot, para não disparar no arranque)
+    if (prevUserIds.size > 0) {
+      for (const oldId of prevUserIds) {
+        if (!newUserIds.has(oldId)) {
+          // User foi removido — cascade delete dos seus down-votes E up-votes
+          deleteUserDownvotes(oldId);
+          deleteUserUpvotes(oldId);
+        }
+      }
+    }
+    prevUserIds = newUserIds;
+
+    allUsers = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Se há um currentUser guardado em localStorage, tenta restaurar a sessão
+    restoreSession();
+    // Actualiza UI (botão de registo / nome)
+    updateUserUI();
+  }, (err) => {
+    console.warn("[app.js] Erro no listener de users:", err);
+  });
+}
+
+// Apaga todos os down-votes de um user removido do Firebase.
+// Isto garante que votos "órfãos" não afectam a contagem nem mantêm
+// jogos no lixo que já não deveriam estar.
+async function deleteUserDownvotes(userId) {
+  if (!db) return;
+  try {
+    const q = query(
+      collection(db, "downvotes"),
+      where("userId", "==", userId)
+    );
+    const snap = await getDocs(q);
+    const promises = snap.docs.map(d => deleteDoc(doc(db, "downvotes", d.id)));
+    await Promise.all(promises);
+    if (snap.size > 0) {
+      console.log(`[cascade] Removidos ${snap.size} down-votes do user ${userId}`);
+    }
+  } catch (err) {
+    console.error("[deleteUserDownvotes] erro:", err);
+  }
+}
+
+// Restaura a sessão a partir de localStorage (jce_user_id)
+function restoreSession() {
+  if (currentUser) return; // já tem sessão
+  let savedId = null;
+  try { savedId = localStorage.getItem(USER_ID_KEY); } catch (_) {}
+  if (!savedId) return;
+  const user = allUsers.find(u => u.id === savedId);
+  if (user) {
+    currentUser = { id: user.id, name: user.name, isAdmin: !!user.isAdmin, tabId: user.tabId || null };
+  } else {
+    // User foi removido do Firebase — limpa localStorage
+    try { localStorage.removeItem(USER_ID_KEY); } catch (_) {}
+  }
+}
+
+// Actualiza a UI consoante o estado de currentUser
+function updateUserUI() {
+  const $btn = document.getElementById("register-btn");
+  const $input = document.getElementById("register-input");
+  const $searchInput = document.getElementById("header-search-input");
+  const $accountSection = document.getElementById("account-section");
+  const $accountInput = document.getElementById("account-name-input");
+  const $btnText = document.getElementById("register-btn")
+    ? document.getElementById("register-btn").querySelector(".register-btn-text")
+    : null;
+
+  if (!$btn) return;
+
+  if (currentUser) {
+    // Registado: botão mostra o nome, search desbloqueada
+    if ($btnText) $btnText.textContent = currentUser.name;
+    $btn.classList.add("registered");
+    $btn.classList.remove("registering");
+    $btn.style.display = "";
+    $input.classList.add("hidden");
+    if ($searchInput) $searchInput.disabled = false;
+    // Mostra a secção "Conta" no settings
+    if ($accountSection) $accountSection.style.display = "";
+    if ($accountInput) $accountInput.value = currentUser.name;
+  } else {
+    // Não registado: botão "Regista-te" (traduzido), search bloqueada
+    if ($btnText) $btnText.textContent = t("Regista-te");
+    $btn.classList.remove("registered", "registering");
+    $input.classList.add("hidden");
+    // Esconde o botão de registo se já houver 3 ou mais utilizadores
+    // (incluindo o admin). Sinaliza que o grupo está completo.
+    if (allUsers.length >= 3) {
+      $btn.style.display = "none";
+    } else {
+      $btn.style.display = "";
+    }
+    if ($searchInput) {
+      $searchInput.disabled = true;
+      $searchInput.value = "";
+    }
+    // Esconde a secção "Conta"
+    if ($accountSection) $accountSection.style.display = "none";
+    // Esconde resultados de pesquisa
+    const $results = document.getElementById("header-search-results");
+    if ($results) $results.classList.add("hidden");
+  }
+}
+
+// Verifica se já existe um admin registado
+function adminExists() {
+  return allUsers.some(u => u.isAdmin);
+}
+
+// Verifica se um nome já está a ser usado
+function nameExists(name) {
+  const normalized = normalizeStr(name);
+  return allUsers.some(u => normalizeStr(u.name) === normalized);
+}
+
+// Regista um novo utilizador
+// - Cria doc em "users"
+// - Cria tab com o nome capitalizado
+// - Associa tabId ao user
+async function registerUser(rawName) {
+  const ADMIN_CODE = "admin1";
+  let name, isAdmin = false;
+
+  if (rawName.trim().toLowerCase() === ADMIN_CODE) {
+    // Código admin — só funciona se ainda não houver admin
+    if (adminExists()) {
+      showToast(t("Código admin já utilizado."));
+      return false;
+    }
+    name = "Leo";
+    isAdmin = true;
+  } else {
+    name = capitalizeName(rawName);
+    if (name.length < 2) {
+      showToast(isPt() ? "Nome muito curto (mín 2 caracteres)." : "Name too short (min 2 chars).");
+      return false;
+    }
+    if (nameExists(name)) {
+      showToast(t("Nome já existe."));
+      return false;
+    }
+  }
+
+  // Desabilita o input enquanto processa
+  const $input = document.getElementById("register-input");
+  if ($input) $input.disabled = true;
+
+  try {
+    // Timeout: se Firebase não responder em 10s, aborta
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), 10000)
+    );
+
+    // 1. Cria a tab com o nome do utilizador
+    const tabPromise = addDoc(collection(db, "tabs"), {
+      label: name,
+      createdAt: serverTimestamp(),
+    });
+
+    const tabRef = await Promise.race([tabPromise, timeout]);
+
+    // 2. Cria o user com tabId associado
+    const userRef = await addDoc(collection(db, "users"), {
+      name: name,
+      isAdmin: isAdmin,
+      tabId: tabRef.id,
+      createdAt: serverTimestamp(),
+    });
+
+    // 3. Inicializa tabGames vazio para a tab do user
+    await setDoc(doc(db, "tabGames", tabRef.id), { gameIds: [] });
+
+    // 4. Guarda sessão localmente
+    currentUser = { id: userRef.id, name, isAdmin, tabId: tabRef.id };
+    try { localStorage.setItem(USER_ID_KEY, userRef.id); } catch (_) {}
+
+    updateUserUI();
+    showToast(isPt() ? `Bem-vindo, ${name}!` : `Welcome, ${name}!`);
+    return true;
+  } catch (err) {
+    console.error("[registerUser] erro:", err);
+    const msg = err.message === "timeout"
+      ? (isPt() ? "Servidor não responde." : "Server not responding.")
+      : (isPt() ? "Erro ao registar." : "Registration failed.");
+    showToast(msg);
+    // Restaura o input para tentar de novo
+    if ($input) {
+      $input.disabled = false;
+      $input.classList.add("hidden");
+      const $btn = document.getElementById("register-btn");
+      if ($btn) $btn.style.display = "";
+    }
+    return false;
+  }
+}
+
+// Edita o nome do utilizador actual
+// - Actualiza o doc em "users"
+// - Actualiza o label da tab correspondente
+async function editUserName(newRawName) {
+  if (!currentUser) return false;
+  const newName = capitalizeName(newRawName);
+  if (newName.length < 2) {
+    showToast(isPt() ? "Nome muito curto." : "Name too short.");
+    return false;
+  }
+  // Verifica se o nome já existe (excluindo o próprio)
+  const normalized = normalizeStr(newName);
+  const taken = allUsers.some(u => u.id !== currentUser.id && normalizeStr(u.name) === normalized);
+  if (taken) {
+    showToast(t("Nome já existe."));
+    return false;
+  }
+  try {
+    // Actualiza o user
+    await updateDoc(doc(db, "users", currentUser.id), { name: newName });
+    // Actualiza a tab
+    if (currentUser.tabId) {
+      await updateDoc(doc(db, "tabs", currentUser.tabId), { label: newName });
+    }
+    currentUser.name = newName;
+    updateUserUI();
+    showToast(t("Nome atualizado!"));
+    return true;
+  } catch (err) {
+    console.error("[editUserName] erro:", err);
+    showToast(isPt() ? "Erro ao atualizar nome." : "Failed to update name.");
+    return false;
+  }
+}
+
+// ─────────────────────────────────────────────
 //  FIREBASE — Real-time listener
 // ─────────────────────────────────────────────
 function listenToGames() {
@@ -446,6 +785,8 @@ function listenToGames() {
     renderGameList(gamesData);
     renderAdminList(gamesData);
     renderTagFilter(); // refresh available tags after new game data
+    // Processa adições pendentes (jogos adicionados por users → tab do user)
+    processPendingTabAdds();
   }, (err) => {
     console.warn("[app.js] Erro no listener do Firebase:", err);
     // Em caso de erro (permissões, config inválida, etc.), mostra estado
@@ -466,6 +807,9 @@ function getFilteredSortedGames() {
   if (activeTab !== "all") {
     const allowed = tabGamesMap[activeTab] || new Set();
     list = list.filter(g => allowed.has(g.firebaseId));
+  } else {
+    // Na tab "all", exclui jogos que estão no lixo (>= threshold down-votes)
+    list = list.filter(g => !isInTrash(g.firebaseId));
   }
 
   // 2. Tag filter (genres + themes, OR logic)
@@ -484,6 +828,12 @@ function getFilteredSortedGames() {
   // 3. Sort
   if (currentSort === "name") {
     list.sort((a, b) => (a.name || "").localeCompare(b.name || "", isPt() ? "pt" : "en"));
+  } else if (currentSort === "upvotes") {
+    // Mais votados primeiro > menos votados segundo
+    list.sort((a, b) => getUpvoteCount(b.firebaseId) - getUpvoteCount(a.firebaseId));
+  } else if (currentSort === "upvotes-rev") {
+    // Menos votados primeiro > mais votados segundo
+    list.sort((a, b) => getUpvoteCount(a.firebaseId) - getUpvoteCount(b.firebaseId));
   } else if (currentSort === "rating") {
     list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
   } else {
@@ -502,8 +852,16 @@ function markLastRowCards() {
   cards.forEach(c => c.classList.remove("last-row"));
   if (!cards.length) return;
 
-  // Find the maximum top offset among all cards — cards sharing that value are on the last row
+  // Conta o número de colunas da grelha (cards com o mesmo top = mesma linha)
   const tops = cards.map(c => c.getBoundingClientRect().top);
+  const uniqueTops = [...new Set(tops.map(t => Math.round(t)))];
+  const rowCount = uniqueTops.length;
+
+  // Se só há uma linha, NÃO marca como "last-row" — o card-expand
+  // deve abrir para baixo (default), não para cima.
+  if (rowCount <= 1) return;
+
+  // Find the maximum top offset among all cards — cards sharing that value are on the last row
   const maxTop = Math.max(...tops);
   cards.forEach((c, i) => {
     if (Math.abs(tops[i] - maxTop) < 2) c.classList.add("last-row");
@@ -965,11 +1323,103 @@ function scheduleModalAutoAdvance(item) {
 // ─────────────────────────────────────────────
 //  MODAL — Banner do jogo (capa), fora do modal-media,
 //  do lado esquerdo. Fallback discreto se não houver capa.
+//  Inclui os botões de up-vote (bottom-left) e down-vote (bottom-right),
+//  com os nomes dos votantes acima de cada botão (sem background).
 // ─────────────────────────────────────────────
 function renderModalBanner(game) {
-  $modalBanner.innerHTML = game.cover
-    ? `<img src="${escHtml(game.cover)}" alt="${escHtml(game.name)}" loading="lazy"/>`
-    : `<div class="modal-banner-empty"></div>`;
+  const upCount = getUpvoteCount(game.firebaseId);
+  const downCount = getDownvoteCount(game.firebaseId);
+  const upVoted = hasUserUpvoted(game.firebaseId);
+  const downVoted = hasUserDownvoted(game.firebaseId);
+  const upNames = getUpvoterNames(game.firebaseId);
+  const downNames = getDownvoterNames(game.firebaseId);
+
+  $modalBanner.innerHTML = `
+    ${game.cover
+      ? `<img src="${escHtml(game.cover)}" alt="${escHtml(game.name)}" loading="lazy"/>`
+      : `<div class="modal-banner-empty"></div>`}
+    <button class="modal-vote-btn modal-upvote-btn${upVoted ? " voted" : ""}" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="${escHtml(t("Votar a favor"))}" title="${escHtml(t("Votar a favor"))}">
+      <svg class="vote-arrow" width="16" height="16" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" stroke="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 19a3.966 3.966 0 01-3.96-3.962V10.98H2.838c-.706 0-1.335-.42-1.605-1.073-.27-.652-.122-1.396.377-1.895l7.754-7.759a.925.925 0 011.272 0l7.754 7.76a1.734 1.734 0 01.376 1.894c-.27.652-.9 1.073-1.605 1.073h-3.202v4.058A3.965 3.965 0 0110 19zm-7.01-9.82h4.85v4.73c0 1.13.81 2.163 1.934 2.278a2.163 2.163 0 002.386-2.15V9.18h4.85L10 2.164 2.99 9.18z"/></svg>
+      <span class="vote-count">${upCount}</span>
+    </button>
+    <button class="modal-vote-btn modal-downvote-btn${downVoted ? " voted" : ""}" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="${escHtml(t("Votar contra"))}" title="${escHtml(t("Votar contra"))} (${downCount}/${DOWNVOTE_THRESHOLD})">
+      <svg class="vote-arrow" width="16" height="16" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" stroke="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 1a3.966 3.966 0 013.96 3.962V9.02h3.202c.706 0 1.335.42 1.605 1.073.27.652.122 1.396-.377 1.895l-7.754 7.759a.925.925 0 01-1.272 0l-7.754-7.76a1.734 1.734 0 01-.376-1.894c.27-.652.9-1.073 1.605-1.073h3.202V4.962A3.965 3.965 0 0110 1zm7.01 9.82h-4.85V5.09c0-1.13-.81-2.163-1.934-2.278a2.163 2.163 0 00-2.386 2.15v5.859H2.989l7.01 7.016 7.012-7.016z"/></svg>
+      <span class="vote-count">${downCount}</span>
+    </button>
+    <div class="modal-vote-names modal-upvote-names" data-fbid="${escHtml(game.firebaseId || "")}"></div>
+    <div class="modal-vote-names modal-downvote-names" data-fbid="${escHtml(game.firebaseId || "")}"></div>
+  `;
+
+  // Liga os handlers dos botões de voto
+  const upBtn = $modalBanner.querySelector(".modal-upvote-btn");
+  const downBtn = $modalBanner.querySelector(".modal-downvote-btn");
+  if (upBtn) {
+    upBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleUpvote(game.firebaseId);
+    });
+    // Fallback para browsers sem :has() — mostra nomes no hover
+    upBtn.addEventListener("mouseenter", () => $modalBanner.classList.add("show-names"));
+    upBtn.addEventListener("mouseleave", () => $modalBanner.classList.remove("show-names"));
+  }
+  if (downBtn) {
+    downBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleDownvote(game.firebaseId);
+    });
+  }
+
+  // Renderiza os nomes dos votantes acima de cada botão (com animação)
+  renderVoteNames($modalBanner.querySelector(".modal-upvote-names"), upNames, "up");
+  renderVoteNames($modalBanner.querySelector(".modal-downvote-names"), downNames, "down");
+}
+
+// Renderiza os nomes dos votantes numa zona acima do botão.
+// Animação: cada nome aparece de baixo para cima, um de cada vez, rápido.
+function renderVoteNames(container, names, type) {
+  if (!container) return;
+  container.innerHTML = "";
+  if (!names || names.length === 0) return;
+
+  names.forEach((name, i) => {
+    const span = document.createElement("span");
+    span.className = `vote-name vote-name-${type}`;
+    span.textContent = name;
+    span.style.animationDelay = `${i * 60}ms`;
+    container.appendChild(span);
+  });
+  // Força reflow para a animação disparar
+  void container.offsetHeight;
+}
+
+// Actualiza apenas os contadores, estados dos botões e nomes dos votantes no modal
+// (chamada quando os upvotes/downvotes mudam, sem re-renderizar todo o modal)
+function updateModalVoteButtons(game) {
+  if (!game) return;
+  const upBtn = $modalBanner.querySelector(".modal-upvote-btn");
+  const downBtn = $modalBanner.querySelector(".modal-downvote-btn");
+  if (upBtn) {
+    const count = getUpvoteCount(game.firebaseId);
+    upBtn.querySelector(".vote-count").textContent = count;
+    upBtn.classList.toggle("voted", hasUserUpvoted(game.firebaseId));
+  }
+  if (downBtn) {
+    const count = getDownvoteCount(game.firebaseId);
+    downBtn.querySelector(".vote-count").textContent = count;
+    downBtn.classList.toggle("voted", hasUserDownvoted(game.firebaseId));
+    downBtn.title = `${t("Votar contra")} (${count}/${DOWNVOTE_THRESHOLD})`;
+  }
+  // Actualiza os nomes dos votantes acima de cada botão
+  renderVoteNames(
+    $modalBanner.querySelector(".modal-upvote-names"),
+    getUpvoterNames(game.firebaseId),
+    "up"
+  );
+  renderVoteNames(
+    $modalBanner.querySelector(".modal-downvote-names"),
+    getDownvoterNames(game.firebaseId),
+    "down"
+  );
 }
 
 // ─────────────────────────────────────────────
@@ -1265,6 +1715,11 @@ document.addEventListener("keydown", e => {
     adminBuffer = "";
     clearTimeout(adminHintTimer);
     $adminHint.classList.remove("show");
+    // ⚠️  Só o admin (Leo) pode usar o comando "qdmin".
+    // Se não houver currentUser ou não for admin, ignora silenciosamente.
+    if (!currentUser || !currentUser.isAdmin) {
+      return;
+    }
     // Se o admin já está aberto, a mesma palavra fecha-o (e tudo o que
     // depende dele); caso contrário, abre o modo admin como antes.
     if (adminOpen) {
@@ -1359,6 +1814,43 @@ $adminForceLoadingBtn.addEventListener("click", () => {
     window.forceShowLoader(next);
   }
   setForcedLoadingUI(next);
+});
+
+// Botão "Criar Lixo" — só admin. Cria a pasta lixo manualmente.
+$adminCreateTrashBtn.addEventListener("click", () => {
+  createTrashTab();
+});
+
+// Botão "Limpar Lixo" — só admin. Remove todos os jogos que estão no lixo
+// (com >= 2 down-votes). Pede confirmação antes de executar.
+$adminClearTrashBtn.addEventListener("click", async () => {
+  if (!currentUser || !currentUser.isAdmin) {
+    showToast(isPt() ? "Apenas o admin pode limpar o lixo." : "Only admin can clear trash.");
+    return;
+  }
+  if (!trashTabId) {
+    showToast(isPt() ? "Não há lixo para limpar." : "No trash to clear.");
+    return;
+  }
+  const trashSet = tabGamesMap[trashTabId] || new Set();
+  if (trashSet.size === 0) {
+    showToast(isPt() ? "O lixo está vazio." : "Trash is empty.");
+    return;
+  }
+  // Confirmação
+  const confirmMsg = isPt()
+    ? `${t("Confirmar limpeza do lixo?")} (${trashSet.size} ${isPt() ? "jogos" : "games"})`
+    : `${t("Confirm trash cleanup?")} (${trashSet.size} games)`;
+  if (!confirm(confirmMsg)) return;
+
+  try {
+    // Esvazia a tab lixo (remove todos os gameIds)
+    await saveTabGames(trashTabId, new Set());
+    showToast(isPt() ? "Lixo limpo!" : "Trash cleared!");
+  } catch (err) {
+    console.error("[clearTrash] erro:", err);
+    showToast(isPt() ? "Erro ao limpar lixo." : "Failed to clear trash.");
+  }
 });
 
 // ─────────────────────────────────────────────
@@ -1480,6 +1972,415 @@ async function removeGame(firebaseId) {
     console.error(err);
     showStatus(t("Erro ao remover jogo."), "error");
   }
+}
+
+// ─────────────────────────────────────────────
+//  HEADER SEARCH — pesquisa de jogos (após registo)
+//  Mostra primeiro jogos já na lista (fuzzy match),
+//  depois resultados do IGDB em tempo real.
+//  Permite adicionar jogos → vão para "all" + tab do user.
+// ─────────────────────────────────────────────
+let headerSearchDebounce = null;
+const HEADER_SEARCH_DEBOUNCE_MS = 350;
+
+function initHeaderSearch() {
+  const $input = document.getElementById("header-search-input");
+  const $btn = document.getElementById("header-search-btn");
+  const $results = document.getElementById("header-search-results");
+  const $wrap = document.getElementById("header-search-wrap");
+
+  if (!$input) return;
+
+  // Click no botão de pesquisa
+  if ($btn) {
+    $btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!currentUser) {
+        showToast(t("Regista-te primeiro para pesquisar."));
+        return;
+      }
+      doHeaderSearch();
+    });
+  }
+
+  // Click no input desabilitado → avisa para se registar
+  $input.addEventListener("click", () => {
+    if (!currentUser) {
+      showToast(t("Regista-te primeiro para pesquisar."));
+    }
+  });
+  // Click no wrap (área da pesquisa) → também avisa
+  if ($wrap) {
+    $wrap.addEventListener("click", (e) => {
+      if (!currentUser && e.target !== $input) {
+        // Só mostra se não foi click no input (que já tem o seu handler)
+        // Actually, deixar o handler do input tratar — mas para o botão já tratado acima
+      }
+    });
+  }
+
+  // Input com debounce (só funciona se registado)
+  $input.addEventListener("input", () => {
+    if (!currentUser) {
+      showToast(t("Regista-te primeiro para pesquisar."));
+      $input.value = "";
+      return;
+    }
+    clearTimeout(headerSearchDebounce);
+    const term = $input.value.trim();
+    if (!term) {
+      $results.classList.add("hidden");
+      $results.innerHTML = "";
+      return;
+    }
+    headerSearchDebounce = setTimeout(doHeaderSearch, HEADER_SEARCH_DEBOUNCE_MS);
+  });
+
+  // Enter para pesquisar
+  $input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      clearTimeout(headerSearchDebounce);
+      doHeaderSearch();
+    }
+    if (e.key === "Escape") {
+      $results.classList.add("hidden");
+      $input.blur();
+    }
+  });
+
+  // Fecha resultados ao clicar fora
+  document.addEventListener("click", (e) => {
+    const wrap = document.getElementById("header-search-wrap");
+    if (wrap && !wrap.contains(e.target)) {
+      $results.classList.add("hidden");
+    }
+  });
+}
+
+async function doHeaderSearch() {
+  if (!currentUser) {
+    showToast(t("Regista-te primeiro para pesquisar."));
+    return;
+  }
+
+  const $input = document.getElementById("header-search-input");
+  const $results = document.getElementById("header-search-results");
+  const term = $input.value.trim();
+  if (!term) {
+    $results.classList.add("hidden");
+    return;
+  }
+
+  $results.classList.remove("hidden");
+  $results.innerHTML = `<div class="header-search-loading"><div class="loading-spinner"></div>${escHtml(t("A pesquisar..."))}</div>`;
+
+  // 1. Procura jogos já na lista (fuzzy match)
+  const localMatches = gamesData.filter(g => fuzzyMatchGame(term, g));
+
+  let localHtml = "";
+  if (localMatches.length > 0) {
+    localHtml = `<div class="search-section-label">${escHtml(t("Já na lista"))}</div>`;
+    localHtml += localMatches.map(game => {
+      const cover = game.cover || "";
+      const year = game.year || "";
+      return `
+        <div class="header-search-result-item" data-game-idx="${gamesData.indexOf(game)}">
+          ${cover
+            ? `<img class="header-search-result-cover" src="${escHtml(cover)}" alt="" loading="lazy"/>`
+            : `<div class="header-search-result-cover" style="background:var(--surface2)"></div>`}
+          <div class="header-search-result-info">
+            <div class="header-search-result-name">${escHtml(game.name)}</div>
+            ${year ? `<div class="header-search-result-year">${year}</div>` : ""}
+          </div>
+          <span class="header-search-result-badge">${escHtml(t("Já na lista"))}</span>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // 2. Procura no IGDB em tempo real
+  let igdbHtml = "";
+  try {
+    const results = await searchGames(term);
+    if (results && results.length > 0) {
+      const alreadyAdded = new Set(gamesData.map(g => g.igdbId));
+      igdbHtml = `<div class="search-section-label">IGDB</div>`;
+      igdbHtml += results.map(game => {
+        const cover = coverUrl(game.cover?.url);
+        const year = game.first_release_date
+          ? new Date(game.first_release_date * 1000).getFullYear()
+          : "";
+        const added = alreadyAdded.has(game.id);
+        return `
+          <div class="header-search-result-item">
+            ${cover
+              ? `<img class="header-search-result-cover" src="${escHtml(cover)}" alt="" loading="lazy"/>`
+              : `<div class="header-search-result-cover" style="background:var(--surface2)"></div>`}
+            <div class="header-search-result-info">
+              <div class="header-search-result-name">${escHtml(game.name)}</div>
+              ${year ? `<div class="header-search-result-year">${year}</div>` : ""}
+            </div>
+            <button class="header-search-result-add${added ? " added" : ""}"
+                    data-igdb="${game.id}"
+                    ${added ? "disabled" : ""}>
+              ${added ? "✓" : t("+ Adicionar")}
+            </button>
+          </div>
+        `;
+      }).join("");
+    }
+  } catch (err) {
+    console.error("[headerSearch] IGDB erro:", err);
+    igdbHtml = `<div class="header-search-loading" style="color:#ff9a9a">${escHtml(t("Nenhum resultado."))}</div>`;
+  }
+
+  if (!localHtml && !igdbHtml) {
+    $results.innerHTML = `<div class="header-search-loading">${escHtml(t("Nenhum resultado."))}</div>`;
+    return;
+  }
+
+  $results.innerHTML = localHtml + igdbHtml;
+
+  // Click em "Já na lista" → abre o modal do jogo
+  $results.querySelectorAll(".header-search-result-item[data-game-idx]").forEach(item => {
+    item.addEventListener("click", () => {
+      const idx = parseInt(item.dataset.gameIdx);
+      $results.classList.add("hidden");
+      $input.value = "";
+      openModal(idx);
+    });
+  });
+
+  // Click em "Adicionar" (IGDB)
+  $results.querySelectorAll(".header-search-result-add:not(.added)").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const igdbId = parseInt(btn.dataset.igdb);
+      btn.disabled = true;
+      btn.textContent = "...";
+      const success = await addGameForUser(igdbId);
+      if (success) {
+        btn.classList.add("added");
+        btn.textContent = "✓";
+      } else {
+        btn.disabled = false;
+        btn.textContent = t("+ Adicionar");
+      }
+    });
+  });
+}
+
+// Verifica se um jogo do IGDB tem multiplayer online.
+// Procura em game_modes, genres, themes e keywords por menções a online/multiplayer/co-op.
+function hasOnlinePlay(igdbGame) {
+  if (!igdbGame) return false;
+
+  const modes = (igdbGame.game_modes || []).map(m => (m.name || "").toLowerCase());
+  const genres = (igdbGame.genres || []).map(g => (g.name || "").toLowerCase());
+  const themes = (igdbGame.themes || []).map(t => (t.name || "").toLowerCase());
+  const keywords = (igdbGame.keywords || []).map(k => (k.name || "").toLowerCase());
+  const summary = (igdbGame.summary || "").toLowerCase();
+
+  // Termos que indicam online play
+  const onlineTerms = [
+    "multiplayer", "co-op", "cooperative", "cooperative",
+    "online", "massively multiplayer", "mmo",
+    "battle royale", "pvp", "versus",
+    "split screen", "cross-platform", "cross-platform multiplayer",
+    "online co-op", "online multiplayer", "multi-player",
+  ];
+
+  // Procura em game_modes (mais fiável)
+  const modeMatch = modes.some(m =>
+    onlineTerms.some(term => m.includes(term))
+  );
+  if (modeMatch) return true;
+
+  // Procura em genres
+  const genreMatch = genres.some(g =>
+    onlineTerms.some(term => g.includes(term))
+  );
+  if (genreMatch) return true;
+
+  // Procura em themes
+  const themeMatch = themes.some(th =>
+    onlineTerms.some(term => th.includes(term))
+  );
+  if (themeMatch) return true;
+
+  // Procura em keywords
+  const keywordMatch = keywords.some(k =>
+    onlineTerms.some(term => k.includes(term))
+  );
+  if (keywordMatch) return true;
+
+  // Procura no summary (último recurso — menos fiável)
+  const summaryMatch = onlineTerms.some(term => summary.includes(term));
+  if (summaryMatch) return true;
+
+  return false;
+}
+
+// Adiciona um jogo do IGDB → "all" (games collection) + tab do user
+// Antes de adicionar, verifica se o jogo tem online play.
+async function addGameForUser(igdbId) {
+  if (!currentUser) {
+    showToast(t("Regista-te primeiro para pesquisar."));
+    return false;
+  }
+  try {
+    // 1. Busca os dados completos do jogo no IGDB para verificar online play
+    const igdbGame = await fetchGameById(igdbId);
+    if (!igdbGame) {
+      showToast(isPt() ? "Jogo não encontrado." : "Game not found.");
+      return false;
+    }
+
+    // 2. Verifica se tem online play
+    if (!hasOnlinePlay(igdbGame)) {
+      showToast(
+        `${t("Jogo rejeitado:")} ${igdbGame.name}\n${t("Apenas jogos com online play são permitidos.")}`,
+        5000
+      );
+      return false;
+    }
+
+    // 3. Adiciona à colecção "games" (aparece em "all")
+    await addDoc(collection(db, "games"), {
+      igdbId,
+      addedAt: serverTimestamp(),
+      addedBy: currentUser.name,
+    });
+
+    // 4. Adiciona à tab do user
+    if (currentUser.tabId) {
+      pendingTabAdds.push({ igdbId, tabId: currentUser.tabId });
+    }
+
+    clearCache();
+    showToast(isPt() ? "Jogo adicionado!" : "Game added!");
+    return true;
+  } catch (err) {
+    console.error("[addGameForUser] erro:", err);
+    showToast(isPt() ? "Erro ao adicionar." : "Failed to add.");
+    return false;
+  }
+}
+
+// Fila de adições pendentes: quando um user adiciona um jogo,
+// precisamos do firebaseId (que só vem no snapshot) para adicioná-lo à tab.
+const pendingTabAdds = [];
+
+// Processa adições pendentes após cada snapshot de games
+function processPendingTabAdds() {
+  if (pendingTabAdds.length === 0) return;
+  const remaining = [];
+  for (const pending of pendingTabAdds) {
+    const game = gamesData.find(g => g.igdbId === pending.igdbId);
+    if (game && game.firebaseId) {
+      // Adiciona à tab do user
+      const set = tabGamesMap[pending.tabId] || new Set();
+      set.add(game.firebaseId);
+      saveTabGames(pending.tabId, set);
+    } else {
+      // Ainda não chegou — mantém na fila
+      remaining.push(pending);
+    }
+  }
+  pendingTabAdds.length = 0;
+  pendingTabAdds.push(...remaining);
+}
+
+// ─────────────────────────────────────────────
+//  REGISTRATION UI — flow do botão "Regista-te"
+// ─────────────────────────────────────────────
+function initRegisterButton() {
+  const $btn = document.getElementById("register-btn");
+  const $input = document.getElementById("register-input");
+
+  if (!$btn || !$input) return;
+
+  // Flag anti-duplo-submit: enquanto um registo está em curso,
+  // ignora novos Enter/clicks para não criar duplicados.
+  let registering = false;
+
+  // Click no botão "Regista-te" → mostra input
+  $btn.addEventListener("click", () => {
+    if (currentUser) return; // já registado — não faz nada
+    if (registering) return;
+    $btn.style.display = "none";
+    $input.classList.remove("hidden");
+    $input.value = "";
+    $input.focus();
+  });
+
+  // Enter no input → regista
+  $input.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (registering) return; // já em curso — ignora
+      const name = $input.value.trim();
+      if (!name) {
+        $input.classList.add("hidden");
+        $btn.style.display = "";
+        return;
+      }
+      registering = true;
+      $input.disabled = true;
+      const success = await registerUser(name);
+      registering = false;
+      if (!success) {
+        // Falha — volta a mostrar o botão e habilita input
+        $input.disabled = false;
+        $input.classList.add("hidden");
+        $btn.style.display = "";
+      }
+      // Em caso de sucesso, updateUserUI() já esconde o input e mostra o nome
+    }
+    if (e.key === "Escape") {
+      if (registering) return;
+      $input.classList.add("hidden");
+      $btn.style.display = "";
+    }
+  });
+
+  // Blur sem texto → volta ao botão
+  $input.addEventListener("blur", () => {
+    setTimeout(() => {
+      if (!$input.value.trim()) {
+        $input.classList.add("hidden");
+        $btn.style.display = "";
+      }
+    }, 200);
+  });
+}
+
+// ─────────────────────────────────────────────
+//  ACCOUNT — editar nome no settings menu
+// ─────────────────────────────────────────────
+function initAccountEdit() {
+  const $input = document.getElementById("account-name-input");
+  const $btn = document.getElementById("account-save-btn");
+
+  if (!$input || !$btn) return;
+
+  $btn.addEventListener("click", async () => {
+    const newName = $input.value.trim();
+    if (!newName) return;
+    $btn.disabled = true;
+    $btn.textContent = "...";
+    await editUserName(newName);
+    $btn.disabled = false;
+    $btn.textContent = t("Guardar");
+  });
+
+  $input.addEventListener("keydown", async (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      $btn.click();
+    }
+  });
 }
 
 // ─────────────────────────────────────────────
@@ -1627,9 +2528,277 @@ function listenToTabGames() {
     snapshot.docs.forEach(d => {
       tabGamesMap[d.id] = new Set(d.data().gameIds || []);
     });
+    // Encontra a tab "Lixo" (se existir)
+    const trashTab = tabsData.find(t => t.label === "Lixo" || t.label === "Trash");
+    trashTabId = trashTab ? trashTab.id : null;
     renderTabs();
     renderGameList(gamesData);
   });
+}
+
+// ─────────────────────────────────────────────
+//  DOWNVOTES — Listener em tempo real
+//  Coleção "downvotes": { gameId, userId, userName, createdAt }
+//  Quando um jogo atinge DOWNVOTE_THRESHOLD (2) down-votes,
+//  é movido para a tab "Lixo" (criada automaticamente se não existir).
+// ─────────────────────────────────────────────
+function listenToDownvotes() {
+  if (!db) return;
+  onSnapshot(collection(db, "downvotes"), (snapshot) => {
+    downvotesMap = {};
+    snapshot.docs.forEach(d => {
+      const data = d.data();
+      if (!data.gameId) return;
+      if (!downvotesMap[data.gameId]) downvotesMap[data.gameId] = new Set();
+      downvotesMap[data.gameId].add(data.userId || d.id);
+    });
+    // Verifica se algum jogo atingiu o threshold e deve ser movido para o lixo
+    processDownvoteThresholds();
+    renderGameList(gamesData);
+    // Se o modal estiver aberto, actualiza os contadores
+    if (modalOpen && _modalCurrentGame) {
+      updateModalVoteButtons(_modalCurrentGame);
+    }
+  });
+}
+
+// Conta os down-votes de um jogo
+function getDownvoteCount(firebaseId) {
+  const set = downvotesMap[firebaseId];
+  return set ? set.size : 0;
+}
+
+// Verifica se o user actual já votou contra este jogo
+function hasUserDownvoted(firebaseId) {
+  if (!currentUser) return false;
+  const set = downvotesMap[firebaseId];
+  return set ? set.has(currentUser.id) : false;
+}
+
+// Verifica se um jogo está no lixo (tem >= threshold down-votes)
+function isInTrash(firebaseId) {
+  return getDownvoteCount(firebaseId) >= DOWNVOTE_THRESHOLD;
+}
+
+// Adiciona ou remove um down-vote
+async function toggleDownvote(firebaseId) {
+  if (!currentUser) {
+    showToast(t("Regista-te primeiro para pesquisar."));
+    return;
+  }
+  try {
+    if (hasUserDownvoted(firebaseId)) {
+      // Remove o down-vote existente
+      const q = query(
+        collection(db, "downvotes"),
+        where("gameId", "==", firebaseId),
+        where("userId", "==", currentUser.id)
+      );
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await deleteDoc(doc(db, "downvotes", d.id));
+      }
+    } else {
+      // ⚠️ Mutual exclusivity: ao dar down-vote, remove o up-vote se existir
+      if (hasUserUpvoted(firebaseId)) {
+        const uq = query(
+          collection(db, "upvotes"),
+          where("gameId", "==", firebaseId),
+          where("userId", "==", currentUser.id)
+        );
+        const usnap = await getDocs(uq);
+        for (const d of usnap.docs) {
+          await deleteDoc(doc(db, "upvotes", d.id));
+        }
+      }
+      // Adiciona down-vote
+      await addDoc(collection(db, "downvotes"), {
+        gameId: firebaseId,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        createdAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    console.error("[toggleDownvote] erro:", err);
+    showToast(t("Erro ao votar."));
+  }
+}
+
+// ─────────────────────────────────────────────
+//  UPVOTES — Listener em tempo real
+//  Coleção "upvotes": { gameId, userId, userName, createdAt }
+//  Os up-votes não movem jogos para lado nenhum — servem apenas
+//  para ordenação (Mais votados / Menos votados) e exibição no modal.
+// ─────────────────────────────────────────────
+function listenToUpvotes() {
+  if (!db) return;
+  onSnapshot(collection(db, "upvotes"), (snapshot) => {
+    upvotesMap = {};
+    snapshot.docs.forEach(d => {
+      const data = d.data();
+      if (!data.gameId) return;
+      if (!upvotesMap[data.gameId]) upvotesMap[data.gameId] = new Set();
+      upvotesMap[data.gameId].add(data.userId || d.id);
+    });
+    renderGameList(gamesData);
+    // Se o modal estiver aberto, actualiza os contadores
+    if (modalOpen && _modalCurrentGame) {
+      updateModalVoteButtons(_modalCurrentGame);
+    }
+  });
+}
+
+function getUpvoteCount(firebaseId) {
+  const set = upvotesMap[firebaseId];
+  return set ? set.size : 0;
+}
+
+function hasUserUpvoted(firebaseId) {
+  if (!currentUser) return false;
+  const set = upvotesMap[firebaseId];
+  return set ? set.has(currentUser.id) : false;
+}
+
+// Devolve os nomes dos users que deram up-vote a um jogo
+function getUpvoterNames(firebaseId) {
+  const userIds = upvotesMap[firebaseId];
+  if (!userIds) return [];
+  return Array.from(userIds).map(uid => {
+    const u = allUsers.find(usr => usr.id === uid);
+    return u ? u.name : null;
+  }).filter(Boolean);
+}
+
+// Devolve os nomes dos users que deram down-vote a um jogo
+function getDownvoterNames(firebaseId) {
+  const userIds = downvotesMap[firebaseId];
+  if (!userIds) return [];
+  return Array.from(userIds).map(uid => {
+    const u = allUsers.find(usr => usr.id === uid);
+    return u ? u.name : null;
+  }).filter(Boolean);
+}
+
+// Adiciona ou remove um up-vote
+async function toggleUpvote(firebaseId) {
+  if (!currentUser) {
+    showToast(t("Regista-te primeiro para pesquisar."));
+    return;
+  }
+  try {
+    if (hasUserUpvoted(firebaseId)) {
+      // Remove o up-vote existente
+      const q = query(
+        collection(db, "upvotes"),
+        where("gameId", "==", firebaseId),
+        where("userId", "==", currentUser.id)
+      );
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        await deleteDoc(doc(db, "upvotes", d.id));
+      }
+    } else {
+      // ⚠️ Mutual exclusivity: ao dar up-vote, remove o down-vote se existir
+      if (hasUserDownvoted(firebaseId)) {
+        const dq = query(
+          collection(db, "downvotes"),
+          where("gameId", "==", firebaseId),
+          where("userId", "==", currentUser.id)
+        );
+        const dsnap = await getDocs(dq);
+        for (const d of dsnap.docs) {
+          await deleteDoc(doc(db, "downvotes", d.id));
+        }
+      }
+      // Adiciona o up-vote
+      await addDoc(collection(db, "upvotes"), {
+        gameId: firebaseId,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        createdAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    console.error("[toggleUpvote] erro:", err);
+    showToast(t("Erro ao votar."));
+  }
+}
+
+// Apaga todos os up-votes de um user removido (cascade delete)
+async function deleteUserUpvotes(userId) {
+  if (!db) return;
+  try {
+    const q = query(
+      collection(db, "upvotes"),
+      where("userId", "==", userId)
+    );
+    const snap = await getDocs(q);
+    const promises = snap.docs.map(d => deleteDoc(doc(db, "upvotes", d.id)));
+    await Promise.all(promises);
+    if (snap.size > 0) {
+      console.log(`[cascade] Removidos ${snap.size} up-votes do user ${userId}`);
+    }
+  } catch (err) {
+    console.error("[deleteUserUpvotes] erro:", err);
+  }
+}
+
+// Verifica se algum jogo atingiu o threshold e deve ser movido para o lixo.
+// ⚠️  NÃO cria a pasta lixo automaticamente — o admin tem de a criar
+// manualmente através do botão no painel de testes (admin-tests-fab).
+// Se não houver pasta lixo, os jogos continuam com down-votes mas
+// não são movidos (aparecem apenas com o indicador vermelho).
+async function processDownvoteThresholds() {
+  if (!db) return;
+  if (!trashTabId) return; // sem lixo → não move
+
+  for (const [fbid, voters] of Object.entries(downvotesMap)) {
+    if (voters.size >= DOWNVOTE_THRESHOLD) {
+      // Verifica se o jogo já está no lixo
+      const trashSet = tabGamesMap[trashTabId] || new Set();
+      if (trashSet.has(fbid)) continue; // já está no lixo
+
+      // Adiciona o jogo ao lixo existente
+      const newSet = new Set(trashSet);
+      newSet.add(fbid);
+      await saveTabGames(trashTabId, newSet);
+
+      showToast(`${t("Movido para o lixo.")} (${voters.size} ${t("votos contra")})`);
+    }
+  }
+}
+
+// Cria a pasta lixo (chamada pelo botão no painel de testes do admin).
+// Só funciona se o user for admin e se ainda não existir uma pasta lixo.
+async function createTrashTab() {
+  if (!currentUser || !currentUser.isAdmin) {
+    showToast(isPt() ? "Apenas o admin pode criar o lixo." : "Only admin can create trash.");
+    return;
+  }
+  // Verifica se já existe uma tab "Lixo"/"Trash" em tabsData (não só em trashTabId,
+  // que pode estar desactualizado se o listener ainda não correu)
+  const existingTrash = tabsData.find(t => t.label === "Lixo" || t.label === "Trash");
+  if (trashTabId || existingTrash) {
+    showToast(isPt() ? "O lixo já existe." : "Trash already exists.");
+    // Sincroniza trashTabId caso não estivesse actualizado
+    if (!trashTabId && existingTrash) trashTabId = existingTrash.id;
+    return;
+  }
+  try {
+    const trashRef = await addDoc(collection(db, "tabs"), {
+      label: "Lixo",
+      createdAt: serverTimestamp(),
+    });
+    await setDoc(doc(db, "tabGames", trashRef.id), { gameIds: [] });
+    trashTabId = trashRef.id;
+    showToast(isPt() ? "Lixo criado!" : "Trash created!");
+    // Processa jogos que já têm down-votes suficientes
+    processDownvoteThresholds();
+  } catch (err) {
+    console.error("[createTrashTab] erro:", err);
+    showToast(isPt() ? "Erro ao criar lixo." : "Failed to create trash.");
+  }
 }
 
 async function createTab(label) {
@@ -1673,15 +2842,24 @@ async function saveTabGames(tabId, gameIdsSet) {
 // ─────────────────────────────────────────────
 function renderTabs() {
   // Opções do menu: "Todos" + tabs criadas
+  // A tab "Lixo" aparece sempre em último lugar.
+  const sortedTabs = [...tabsData].sort((a, b) => {
+    const aIsTrash = (a.label === "Lixo" || a.label === "Trash") ? 1 : 0;
+    const bIsTrash = (b.label === "Lixo" || b.label === "Trash") ? 1 : 0;
+    if (aIsTrash !== bIsTrash) return aIsTrash - bIsTrash;
+    return 0; // mantém ordem original (createdAt)
+  });
+
   const options = [
-    { id: "all", label: t("Todos"), count: gamesData.length, deletable: false },
-    ...tabsData.map(tab => {
+    { id: "all", label: t("Todos"), count: gamesData.filter(g => !isInTrash(g.firebaseId)).length, deletable: false },
+    ...sortedTabs.map(tab => {
       const set = tabGamesMap[tab.id] || new Set();
+      const isTrash = (tab.label === "Lixo" || tab.label === "Trash");
       return {
         id: tab.id,
-        label: tab.label,
+        label: isTrash ? t("Lixo") : tab.label,
         count: gamesData.filter(g => set.has(g.firebaseId)).length,
-        deletable: true,
+        deletable: !isTrash, // lixo não é apagável
       };
     }),
   ];
@@ -1782,13 +2960,57 @@ $createTabInput.addEventListener("keydown", e => {
 
 // ─────────────────────────────────────────────
 //  SORT — toolbar buttons
+//  O botão de upvotes tem 3 estados: off → upvotes (mais votados) → upvotes-rev (menos votados) → off
 // ─────────────────────────────────────────────
+function updateSortButtonsUI() {
+  document.querySelectorAll(".sort-btn").forEach(b => {
+    b.classList.remove("active", "reverse");
+    if (b.dataset.sort === currentSort) {
+      b.classList.add("active");
+    } else if (b.dataset.sort === "upvotes" && currentSort === "upvotes-rev") {
+      // Estado reverso: mesmo botão, mas com classe "reverse" (mostra downvote icon)
+      b.classList.add("active", "reverse");
+    }
+  });
+  // Toggle visibilidade dos icones up/down no botão de upvotes
+  const votesBtn = document.querySelector(".sort-btn-votes");
+  if (votesBtn) {
+    const upIcon = votesBtn.querySelector(".sort-icon-up");
+    const downIcon = votesBtn.querySelector(".sort-icon-down");
+    const isReverse = currentSort === "upvotes-rev";
+    if (upIcon) upIcon.style.display = isReverse ? "none" : "";
+    if (downIcon) downIcon.style.display = isReverse ? "" : "none";
+    // Actualiza o title consoante o estado
+    if (isReverse) {
+      votesBtn.title = t("Menos votados");
+    } else if (currentSort === "upvotes") {
+      votesBtn.title = t("Mais votados");
+    } else {
+      votesBtn.title = t("Mais votados");
+    }
+  }
+}
+
 document.querySelectorAll(".sort-btn").forEach(btn => {
   btn.classList.toggle("active", btn.dataset.sort === currentSort);
   btn.addEventListener("click", () => {
-    currentSort = btn.dataset.sort;
+    const sortType = btn.dataset.sort;
+
+    if (sortType === "upvotes") {
+      // 3-state cycle: off → upvotes → upvotes-rev → off
+      if (currentSort === "upvotes") {
+        currentSort = "upvotes-rev";
+      } else if (currentSort === "upvotes-rev") {
+        currentSort = "random";
+      } else {
+        currentSort = "upvotes";
+      }
+    } else {
+      currentSort = sortType;
+    }
+
     localStorage.setItem(SORT_KEY, currentSort);
-    document.querySelectorAll(".sort-btn").forEach(b => b.classList.toggle("active", b.dataset.sort === currentSort));
+    updateSortButtonsUI();
     renderGameList(gamesData);
   });
 });
@@ -2121,7 +3343,7 @@ function initSettings() {
 
 function init() {
   // Restore sort/view button state
-  document.querySelectorAll(".sort-btn").forEach(b => b.classList.toggle("active", b.dataset.sort === currentSort));
+  updateSortButtonsUI();
   applyViewButtons();
 
   // Init settings panel (bg carousel + blur)
@@ -2145,6 +3367,15 @@ function init() {
   listenToTabGames();   // tab→jogos primeiro (para estar pronto quando as tabs chegarem)
   listenToTabs();       // tabs — re-renderiza quando houver dados
   listenToGames();      // jogos
+  listenToUsers();      // users — registo + sessão
+  listenToDownvotes();  // down-votes — sistema de votação
+  listenToUpvotes();    // up-votes — sistema de votação + ordenação
+
+  // Init registo + pesquisa + conta
+  initRegisterButton();
+  initHeaderSearch();
+  initAccountEdit();
+  updateUserUI();
 
   // Safety net: se o Firebase não responder em 6s (config inválida,
   // permissões, rede, etc.), dispensa o loader para não bloquear a UI.
@@ -2163,6 +3394,10 @@ function init() {
     window.i18n.onLanguageChange((newLang) => {
       // Re-aplica traduções estáticas (data-i18n attrs no HTML)
       applyTranslations();
+      // ⚠️  Importante: chamar updateUserUI() DEPOIS de applyTranslations()
+      // para que o nome do utilizador (se registado) não seja sobrescrito
+      // pela tradução "Sign Up" / "Regista-te".
+      updateUserUI();
       // Re-renderiza a lista de jogos (cards com tags traduzidos,
       // datas com locale correcto, etc.)
       renderGameList(gamesData);
