@@ -3000,16 +3000,15 @@ body.editor-mode .card-release-status {
 }
 
 /* ── Botão Regista-te / Nome do utilizador ──
-   Agora é totalmente redondo (border-radius 16px em todos os lados),
-   sem cor de fundo especial (translúcido como a search bar).
-   Largura fixa para que o search não encolha quando o nome cresce. */
+   Totalmente redondo, translúcido.
+   Largura fixa suficiente para 8 caracteres (máximo do registo). */
 .register-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   padding: 6px 14px;
-  border-radius: 16px; /* totalmente redondo */
+  border-radius: 16px;
   background: rgba(255,255,255,0.08);
   border: 1px solid rgba(255,255,255,0.16);
   color: var(--text);
@@ -3019,7 +3018,7 @@ body.editor-mode .card-release-status {
   white-space: nowrap;
   cursor: pointer;
   transition: all 0.2s;
-  width: 110px; /* largura fixa — não cresce com o nome */
+  width: 130px; /* largura fixa — cabe "Carvalho" (8 chars) + ícone */
   text-align: center;
   height: 30px;
   box-sizing: border-box;
@@ -3048,7 +3047,8 @@ body.editor-mode .card-release-status {
 .register-btn .register-btn-text {
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 90px;
+  /* max-width suficiente para 8 caracteres + ícone (130px - 13px icon - 6px gap - 28px padding) */
+  max-width: 83px;
 }
 
 /* Estado registado: mantém o mesmo estilo translúcido (sem cor amber) */
@@ -3266,11 +3266,17 @@ body.editor-mode .card-release-status {
 .account-edit-wrap {
   display: flex;
   gap: 6px;
-  padding: 0 calc(4px * var(--settings-size, 1.5)) calc(4px * var(--settings-size, 1.5));
+  /* Usa o mesmo padding lateral que o settings-menu (8px) para alinhar */
+  padding: 0 8px calc(4px * var(--settings-size, 1.5));
+  /* Garante que o conteúdo nunca transborda o menu */
+  box-sizing: border-box;
+  width: 100%;
+  overflow: hidden;
 }
 
 .account-name-input {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0; /* permite encolher para não transbordar */
   padding: 6px 10px;
   border-radius: 6px;
   background: rgba(255,255,255,0.06);
@@ -3279,6 +3285,7 @@ body.editor-mode .card-release-status {
   font-family: 'Space Grotesk', sans-serif;
   font-size: calc(0.75rem * var(--settings-size, 1.5));
   outline: none;
+  box-sizing: border-box;
 }
 
 .account-name-input:focus {
@@ -3287,16 +3294,19 @@ body.editor-mode .card-release-status {
 }
 
 .account-save-btn {
-  padding: 6px 14px;
+  flex: 0 0 auto; /* não encolhe nem cresce */
+  padding: 6px 12px;
   border-radius: 6px;
   background: var(--amber-dim);
   border: 1px solid rgba(255,179,71,0.3);
   color: var(--amber);
   font-family: 'Space Grotesk', sans-serif;
-  font-size: calc(0.75rem * var(--settings-size, 1.5));
+  font-size: calc(0.72rem * var(--settings-size, 1.5));
   font-weight: 700;
   cursor: pointer;
   transition: all 0.15s;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
 .account-save-btn:hover {
