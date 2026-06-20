@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title data-i18n="Jogos com Eles">Games with Them</title>
+  <title>CASA - NORTE | JOGOS</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico" />
+  <link rel="shortcut icon" type="image/x-icon" href="favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
@@ -55,6 +57,14 @@
         <button id="admin-force-loading-btn" class="admin-test-btn" type="button">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
           <span id="admin-force-loading-label" data-i18n="Forçar Loading">Forçar Loading</span>
+        </button>
+        <button id="admin-create-trash-btn" class="admin-test-btn" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          <span data-i18n="Criar Lixo">Criar Lixo</span>
+        </button>
+        <button id="admin-clear-trash-btn" class="admin-test-btn" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+          <span data-i18n="Limpar Lixo">Limpar Lixo</span>
         </button>
       </div>
 
@@ -131,6 +141,11 @@
     </div>
   </div>
 
+  <!-- Toast — aviso flutuante (ex: "Regista-te primeiro para pesquisar") -->
+  <div id="toast" class="toast">
+    <span id="toast-text"></span>
+  </div>
+
   <!-- Main Content -->
   <main class="main">
 
@@ -182,6 +197,32 @@
         </div>
       </div>
 
+      <!-- Toolbar center: Register + Search (centro do header) -->
+      <div class="toolbar-center">
+        <div class="register-search-wrap" id="register-search-wrap">
+          <!-- Botão Regista-te / Nome do utilizador -->
+          <button class="register-btn" id="register-btn" type="button">
+            <span class="register-btn-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="8" r="4"/>
+                <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
+              </svg>
+            </span>
+            <span class="register-btn-text" data-i18n="Regista-te">Regista-te</span>
+          </button>
+          <!-- Input de registo (escondido até clicar no botão) -->
+          <input type="text" class="register-input hidden" id="register-input" maxlength="8" data-i18n-placeholder="Nome (máx 8)..." placeholder="Nome (máx 8)..." autocomplete="off"/>
+          <!-- Barra de pesquisa -->
+          <div class="header-search-wrap" id="header-search-wrap">
+            <input type="text" class="header-search-input" id="header-search-input" data-i18n-placeholder="Pesquisar jogos..." placeholder="Pesquisar jogos..." autocomplete="off" disabled/>
+            <button class="header-search-btn" id="header-search-btn" type="button" aria-label="Pesquisar">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
+            <div class="header-search-results hidden" id="header-search-results"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="toolbar-right">
         <!-- Settings — pill + dropdown (mesmo padrão do tag-filter) -->
         <div class="settings-wrap" id="settings-wrap">
@@ -207,7 +248,7 @@
                 <span class="blur-value-label" id="blur-value-label">2px</span>
               </div>
             </div>
-            <!-- Secção: idioma (NOVO) -->
+            <!-- Secção: idioma -->
             <div class="settings-section">
               <span class="settings-section-label" data-i18n="Idioma">Idioma</span>
               <div class="lang-options" id="lang-options">
@@ -217,6 +258,14 @@
                 <button class="lang-option active" data-lang="en" type="button">
                   <span>English</span>
                 </button>
+              </div>
+            </div>
+            <!-- Secção: conta (editar nome) -->
+            <div class="settings-section" id="account-section" style="display:none;">
+              <span class="settings-section-label" data-i18n="Conta">Conta</span>
+              <div class="account-edit-wrap">
+                <input type="text" class="account-name-input" id="account-name-input" maxlength="8" data-i18n-placeholder="Novo nome..." placeholder="Novo nome..." autocomplete="off"/>
+                <button class="account-save-btn" id="account-save-btn" type="button" data-i18n="Guardar">Guardar</button>
               </div>
             </div>
           </div>
@@ -231,6 +280,11 @@
           <button class="sort-btn" data-sort="name" data-i18n-title="Ordenar por nome" title="Ordenar por nome">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="14" y2="12"/><line x1="4" y1="18" x2="9" y2="18"/></svg>
             <span data-i18n="A–Z">A–Z</span>
+          </button>
+          <button class="sort-btn sort-btn-votes" data-sort="upvotes" data-i18n-title="Mais votados" title="Mais votados">
+            <svg class="sort-icon-up" width="13" height="13" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" stroke="none"><path d="M10 19a3.966 3.966 0 01-3.96-3.962V10.98H2.838c-.706 0-1.335-.42-1.605-1.073-.27-.652-.122-1.396.377-1.895l7.754-7.759a.925.925 0 011.272 0l7.754 7.76a1.734 1.734 0 01.376 1.894c-.27.652-.9 1.073-1.605 1.073h-3.202v4.058A3.965 3.965 0 0110 19zm-7.01-9.82h4.85v4.73c0 1.13.81 2.163 1.934 2.278a2.163 2.163 0 002.386-2.15V9.18h4.85L10 2.164 2.99 9.18z"/></svg>
+            <svg class="sort-icon-down" width="13" height="13" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" stroke="none" style="display:none"><path d="M10 1a3.966 3.966 0 013.96 3.962V9.02h3.202c.706 0 1.335.42 1.605 1.073.27.652.122 1.396-.377 1.895l-7.754 7.759a.925.925 0 01-1.272 0l-7.754-7.76a1.734 1.734 0 01-.376-1.894c.27-.652.9-1.073 1.605-1.073h3.202V4.962A3.965 3.965 0 0110 1zm7.01 9.82h-4.85V5.09c0-1.13-.81-2.163-1.934-2.278a2.163 2.163 0 00-2.386 2.15v5.859H2.989l7.01 7.016 7.012-7.016z"/></svg>
+            <span data-i18n="Votos">Votos</span>
           </button>
           <button class="sort-btn" data-sort="rating" data-i18n-title="Ordenar por nota" title="Ordenar por nota">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
