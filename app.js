@@ -785,8 +785,8 @@ function listenToGames() {
     renderGameList(gamesData);
     renderAdminList(gamesData);
     renderTagFilter(); // refresh available tags after new game data
-    // Processa adições pendentes (jogos adicionados por users → tab do user)
-    processPendingTabAdds();
+    // Processa up-votes pendentes (jogos adicionados por users → up-vote automático)
+    processPendingUpvotes();
   }, (err) => {
     console.warn("[app.js] Erro no listener do Firebase:", err);
     // Em caso de erro (permissões, config inválida, etc.), mostra estado
@@ -2233,7 +2233,7 @@ async function addGameForUser(igdbId) {
     // 1. Busca os dados completos do jogo no IGDB para verificar online play
     const igdbGame = await fetchGameById(igdbId);
     if (!igdbGame) {
-      showToast(isPt() ? "Jogo não encontrado." : "Game not found.");
+      showToast(t("Jogo não encontrado."));
       return false;
     }
 
@@ -2253,43 +2253,47 @@ async function addGameForUser(igdbId) {
       addedBy: currentUser.name,
     });
 
-    // 4. Adiciona à tab do user
-    if (currentUser.tabId) {
-      pendingTabAdds.push({ igdbId, tabId: currentUser.tabId });
-    }
+    // 4. Up-vote automático do user que adicionou.
+    //    O up-vote fará com que o jogo apareça na tab do user
+    //    (processado pelo listener de upvotes).
+    pendingUpvotes.push({ igdbId, userId: currentUser.id, userName: currentUser.name });
 
     clearCache();
-    showToast(isPt() ? "Jogo adicionado!" : "Game added!");
+    showToast(t("Jogo adicionado!"));
     return true;
   } catch (err) {
     console.error("[addGameForUser] erro:", err);
-    showToast(isPt() ? "Erro ao adicionar." : "Failed to add.");
+    showToast(t("Erro ao adicionar."));
     return false;
   }
 }
 
-// Fila de adições pendentes: quando um user adiciona um jogo,
-// precisamos do firebaseId (que só vem no snapshot) para adicioná-lo à tab.
-const pendingTabAdds = [];
+// Fila de up-votes pendentes: quando um user adiciona um jogo,
+// precisamos do firebaseId (que só vem no snapshot) para fazer up-vote.
+// O up-vote adiciona automaticamente o jogo à tab do user.
+const pendingUpvotes = [];
 
-// Processa adições pendentes após cada snapshot de games
-function processPendingTabAdds() {
-  if (pendingTabAdds.length === 0) return;
+// Processa up-votes pendentes após cada snapshot de games
+function processPendingUpvotes() {
+  if (pendingUpvotes.length === 0) return;
   const remaining = [];
-  for (const pending of pendingTabAdds) {
+  for (const pending of pendingUpvotes) {
     const game = gamesData.find(g => g.igdbId === pending.igdbId);
     if (game && game.firebaseId) {
-      // Adiciona à tab do user
-      const set = tabGamesMap[pending.tabId] || new Set();
-      set.add(game.firebaseId);
-      saveTabGames(pending.tabId, set);
+      // Faz up-vote (adiciona à colecção "upvotes")
+      addDoc(collection(db, "upvotes"), {
+        gameId: game.firebaseId,
+        userId: pending.userId,
+        userName: pending.userName,
+        createdAt: serverTimestamp(),
+      }).catch(err => console.error("[pendingUpvotes] erro:", err));
     } else {
       // Ainda não chegou — mantém na fila
       remaining.push(pending);
     }
   }
-  pendingTabAdds.length = 0;
-  pendingTabAdds.push(...remaining);
+  pendingUpvotes.length = 0;
+  pendingUpvotes.push(...remaining);
 }
 
 // ─────────────────────────────────────────────
@@ -2698,6 +2702,12 @@ async function toggleUpvote(firebaseId) {
       for (const d of snap.docs) {
         await deleteDoc(doc(db, "upvotes", d.id));
       }
+      // Remove o jogo da tab do user (já não tem up-vote)
+      if (currentUser.tabId) {
+        const set = new Set(tabGamesMap[currentUser.tabId] || []);
+        set.delete(firebaseId);
+        await saveTabGames(currentUser.tabId, set);
+      }
     } else {
       // ⚠️ Mutual exclusivity: ao dar up-vote, remove o down-vote se existir
       if (hasUserDownvoted(firebaseId)) {
@@ -2718,6 +2728,12 @@ async function toggleUpvote(firebaseId) {
         userName: currentUser.name,
         createdAt: serverTimestamp(),
       });
+      // Adiciona o jogo à tab do user (up-vote = quer jogar)
+      if (currentUser.tabId) {
+        const set = new Set(tabGamesMap[currentUser.tabId] || []);
+        set.add(firebaseId);
+        await saveTabGames(currentUser.tabId, set);
+      }
     }
   } catch (err) {
     console.error("[toggleUpvote] erro:", err);
