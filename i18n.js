@@ -197,6 +197,7 @@
 
     // ── Down-vote & Up-vote system ──────────────
     "Lixo": "Trash",
+    "Aprovados": "Approved",
     "Criar Lixo": "Create Trash",
     "Limpar Lixo": "Clear Trash",
     "Confirmar limpeza do lixo?": "Confirm trash cleanup?",
@@ -213,6 +214,9 @@
     "Menos votados": "Least voted",
     "Votos": "Votes",
     "Nenhum voto": "No votes",
+    "Opções": "Options",
+    "Mostrar jogos escondidos": "Show hidden games",
+    "YouTube autoplay": "YouTube autoplay",
 
     // ── Release statuses (IGDB status enum) ─────
     "Lançado": "Released",
