@@ -2287,6 +2287,15 @@ function processPendingUpvotes() {
         userName: pending.userName,
         createdAt: serverTimestamp(),
       }).catch(err => console.error("[pendingUpvotes] erro:", err));
+
+      // ⚠️ Adiciona o jogo à tab do user (igual ao toggleUpvote)
+      // Encontra o user para obter o tabId
+      const user = allUsers.find(u => u.id === pending.userId);
+      if (user && user.tabId) {
+        const set = new Set(tabGamesMap[user.tabId] || []);
+        set.add(game.firebaseId);
+        saveTabGames(user.tabId, set);
+      }
     } else {
       // Ainda não chegou — mantém na fila
       remaining.push(pending);
