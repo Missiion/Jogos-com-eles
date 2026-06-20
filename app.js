@@ -147,7 +147,9 @@ let tabGamesMap = {};    // {tabId: Set<firebaseId>}
 let downvotesMap = {};   // {firebaseId: Set<userId>}
 let upvotesMap = {};     // {firebaseId: Set<userId>}
 let trashTabId = null;   // ID da tab "Lixo" (criada automaticamente)
+let approvedTabId = null; // ID da tab "Aprovados" (criada automaticamente)
 const DOWNVOTE_THRESHOLD = 2;
+const APPROVED_UPVOTE_COUNT = 3; // exatamente 3 upvotes = aprovado
 
 // Sort: "random" | "name" | "upvotes" | "upvotes-rev" | "rating"
 const SORT_KEY  = "jce_sort";
@@ -174,6 +176,37 @@ let addTabTargetGame = null;
 let activeTagFilters = new Set(); // set of tag strings currently active
 let activeStatusFilters = new Set(); // set of release-status strings currently active
 let currentTagSubtab = "tags"; // "tags" | "status"
+
+// Jogos escondidos localmente (pelo user actual dar down-vote)
+// Persistido em localStorage. Quando o user dá down-vote, o jogo é escondido.
+// Pode ser revertido via "Mostrar jogos escondidos" no menu da engrenagem.
+const HIDDEN_GAMES_KEY = "jce_hidden_games";
+let hiddenGames = new Set();
+let showHiddenGames = false; // default: não mostrar
+let youtubeAutoplay = true; // default: autoplay on
+
+// Carrega jogos escondidos do localStorage
+function loadHiddenGames() {
+  try {
+    const raw = localStorage.getItem(HIDDEN_GAMES_KEY);
+    if (raw) hiddenGames = new Set(JSON.parse(raw));
+  } catch (_) { hiddenGames = new Set(); }
+}
+
+// Guarda jogos escondidos no localStorage
+function saveHiddenGames() {
+  try { localStorage.setItem(HIDDEN_GAMES_KEY, JSON.stringify([...hiddenGames])); } catch (_) {}
+}
+
+// Carrega preferências do localStorage
+function loadPreferences() {
+  try {
+    showHiddenGames = localStorage.getItem("jce_show_hidden") === "1";
+  } catch (_) {}
+  try {
+    youtubeAutoplay = localStorage.getItem("jce_yt_autoplay") !== "0";
+  } catch (_) {}
+}
 
 // ─────────────────────────────────────────────
 //  DOM REFS
@@ -309,7 +342,8 @@ function artworkUrl(url) {
 }
 
 function youtubeEmbed(videoId) {
-  return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&controls=1&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&enablejsapi=1`;
+  const autoplay = youtubeAutoplay ? "1" : "0";
+  return `https://www.youtube.com/embed/${videoId}?autoplay=${autoplay}&mute=0&controls=1&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&enablejsapi=1`;
 }
 
 function youtubeThumbnail(videoId) {
@@ -810,6 +844,12 @@ function getFilteredSortedGames() {
   } else {
     // Na tab "all", exclui jogos que estão no lixo (>= threshold down-votes)
     list = list.filter(g => !isInTrash(g.firebaseId));
+  }
+
+  // 1b. Esconde jogos que o user actual deu down-vote (localmente)
+  // A menos que "Mostrar jogos escondidos" esteja activo.
+  if (!showHiddenGames) {
+    list = list.filter(g => !hiddenGames.has(g.firebaseId));
   }
 
   // 2. Tag filter (genres + themes, OR logic)
@@ -2544,6 +2584,9 @@ function listenToTabGames() {
     // Encontra a tab "Lixo" (se existir)
     const trashTab = tabsData.find(t => t.label === "Lixo" || t.label === "Trash");
     trashTabId = trashTab ? trashTab.id : null;
+    // Encontra a tab "Aprovados" (se existir)
+    const approvedTab = tabsData.find(t => t.label === "Aprovados" || t.label === "Approved");
+    approvedTabId = approvedTab ? approvedTab.id : null;
     renderTabs();
     renderGameList(gamesData);
   });
@@ -2611,6 +2654,9 @@ async function toggleDownvote(firebaseId) {
       for (const d of snap.docs) {
         await deleteDoc(doc(db, "downvotes", d.id));
       }
+      // Remove o jogo da lista de escondidos (já não tem down-vote)
+      hiddenGames.delete(firebaseId);
+      saveHiddenGames();
     } else {
       // ⚠️ Mutual exclusivity: ao dar down-vote, remove o up-vote se existir
       if (hasUserUpvoted(firebaseId)) {
@@ -2637,6 +2683,9 @@ async function toggleDownvote(firebaseId) {
         userName: currentUser.name,
         createdAt: serverTimestamp(),
       });
+      // ⚠️ Esconde o jogo localmente (só para este user)
+      hiddenGames.add(firebaseId);
+      saveHiddenGames();
     }
   } catch (err) {
     console.error("[toggleDownvote] erro:", err);
@@ -2660,12 +2709,75 @@ function listenToUpvotes() {
       if (!upvotesMap[data.gameId]) upvotesMap[data.gameId] = new Set();
       upvotesMap[data.gameId].add(data.userId || d.id);
     });
+    // Processa jogos que devem ir para / sair da lista "Aprovados"
+    processApprovedThresholds();
     renderGameList(gamesData);
     // Se o modal estiver aberto, actualiza os contadores
     if (modalOpen && _modalCurrentGame) {
       updateModalVoteButtons(_modalCurrentGame);
     }
   });
+}
+
+// Verifica quais jogos têm exatamente APPROVED_UPVOTE_COUNT (3) upvotes
+// e garante que estão na lista "Aprovados". Remove os que já não têm.
+// Cria a lista "Aprovados" automaticamente se não existir.
+async function processApprovedThresholds() {
+  if (!db) return;
+
+  // Garante que approvedTabId está actualizado (procura em tabsData)
+  if (!approvedTabId) {
+    const approvedTab = tabsData.find(t => t.label === "Aprovados" || t.label === "Approved");
+    if (approvedTab) approvedTabId = approvedTab.id;
+  }
+
+  // Garante que a tab "Aprovados" existe (só cria se realmente não existir)
+  if (!approvedTabId) {
+    // Verificação dupla em tabsData para evitar criar duplicados
+    const existing = tabsData.find(t => t.label === "Aprovados" || t.label === "Approved");
+    if (existing) {
+      approvedTabId = existing.id;
+    } else {
+      try {
+        const ref = await addDoc(collection(db, "tabs"), {
+          label: "Aprovados",
+          createdAt: serverTimestamp(),
+        });
+        await setDoc(doc(db, "tabGames", ref.id), { gameIds: [] });
+        approvedTabId = ref.id;
+      } catch (err) {
+        console.error("[processApprovedThresholds] erro ao criar tab:", err);
+        return;
+      }
+    }
+  }
+
+  const approvedSet = tabGamesMap[approvedTabId] || new Set();
+  let changed = false;
+  const newSet = new Set(approvedSet);
+
+  // 1. Adiciona jogos que têm exatamente 3 upvotes
+  for (const [fbid, voters] of Object.entries(upvotesMap)) {
+    if (voters.size === APPROVED_UPVOTE_COUNT) {
+      if (!newSet.has(fbid)) {
+        newSet.add(fbid);
+        changed = true;
+      }
+    }
+  }
+
+  // 2. Remove jogos que já não têm exatamente 3 upvotes
+  for (const fbid of approvedSet) {
+    const count = getUpvoteCount(fbid);
+    if (count !== APPROVED_UPVOTE_COUNT) {
+      newSet.delete(fbid);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    await saveTabGames(approvedTabId, newSet);
+  }
 }
 
 function getUpvoteCount(firebaseId) {
@@ -2782,12 +2894,13 @@ async function deleteUserUpvotes(userId) {
 // não são movidos (aparecem apenas com o indicador vermelho).
 async function processDownvoteThresholds() {
   if (!db) return;
-  if (!trashTabId) return; // sem lixo → não move
+  if (!trashTabId) return; // sem lixo → não processa
 
+  const trashSet = tabGamesMap[trashTabId] || new Set();
+
+  // 1. Move jogos que atingiram o threshold para o lixo
   for (const [fbid, voters] of Object.entries(downvotesMap)) {
     if (voters.size >= DOWNVOTE_THRESHOLD) {
-      // Verifica se o jogo já está no lixo
-      const trashSet = tabGamesMap[trashTabId] || new Set();
       if (trashSet.has(fbid)) continue; // já está no lixo
 
       // Adiciona o jogo ao lixo existente
@@ -2796,6 +2909,23 @@ async function processDownvoteThresholds() {
       await saveTabGames(trashTabId, newSet);
 
       showToast(`${t("Movido para o lixo.")} (${voters.size} ${t("votos contra")})`);
+    }
+  }
+
+  // 2. Remove do lixo jogos que já não têm threshold suficiente
+  //    (alguém removeu o down-vote e o jogo voltou a ter < 2)
+  if (trashSet.size > 0) {
+    let removed = false;
+    const newSet = new Set(trashSet);
+    for (const fbid of trashSet) {
+      const count = getDownvoteCount(fbid);
+      if (count < DOWNVOTE_THRESHOLD) {
+        newSet.delete(fbid);
+        removed = true;
+      }
+    }
+    if (removed) {
+      await saveTabGames(trashTabId, newSet);
     }
   }
 }
@@ -2873,11 +3003,19 @@ async function saveTabGames(tabId, gameIdsSet) {
 // ─────────────────────────────────────────────
 function renderTabs() {
   // Opções do menu: "Todos" + tabs criadas
-  // A tab "Lixo" aparece sempre em último lugar.
+  // Ordenação: "Aprovados" em 2º (sempre abaixo de Todos), "Lixo" em último.
   const sortedTabs = [...tabsData].sort((a, b) => {
+    const aIsApproved = (a.label === "Aprovados" || a.label === "Approved") ? 1 : 0;
+    const bIsApproved = (b.label === "Aprovados" || b.label === "Approved") ? 1 : 0;
     const aIsTrash = (a.label === "Lixo" || a.label === "Trash") ? 1 : 0;
     const bIsTrash = (b.label === "Lixo" || b.label === "Trash") ? 1 : 0;
-    if (aIsTrash !== bIsTrash) return aIsTrash - bIsTrash;
+
+    // Aprovados tem prioridade 0 (vem primeiro entre as tabs)
+    // Outras tabs têm prioridade 1
+    // Lixo tem prioridade 2 (vem sempre em último)
+    const aPriority = aIsTrash ? 2 : (aIsApproved ? 0 : 1);
+    const bPriority = bIsTrash ? 2 : (bIsApproved ? 0 : 1);
+    if (aPriority !== bPriority) return aPriority - bPriority;
     return 0; // mantém ordem original (createdAt)
   });
 
@@ -2886,11 +3024,12 @@ function renderTabs() {
     ...sortedTabs.map(tab => {
       const set = tabGamesMap[tab.id] || new Set();
       const isTrash = (tab.label === "Lixo" || tab.label === "Trash");
+      const isApproved = (tab.label === "Aprovados" || tab.label === "Approved");
       return {
         id: tab.id,
-        label: isTrash ? t("Lixo") : tab.label,
+        label: isTrash ? t("Lixo") : (isApproved ? t("Aprovados") : tab.label),
         count: gamesData.filter(g => set.has(g.firebaseId)).length,
-        deletable: !isTrash, // lixo não é apagável
+        deletable: !isTrash && !isApproved, // lixo e aprovados não são apagáveis
       };
     }),
   ];
@@ -3369,6 +3508,28 @@ function initSettings() {
       }
     });
   }
+
+  // 5. Ligar checkboxes de opções
+  const showHiddenChk = document.getElementById("option-show-hidden");
+  if (showHiddenChk) {
+    showHiddenChk.checked = showHiddenGames;
+    showHiddenChk.addEventListener("change", e => {
+      e.stopPropagation();
+      showHiddenGames = showHiddenChk.checked;
+      try { localStorage.setItem("jce_show_hidden", showHiddenGames ? "1" : "0"); } catch (_) {}
+      renderGameList(gamesData);
+    });
+  }
+
+  const ytAutoplayChk = document.getElementById("option-yt-autoplay");
+  if (ytAutoplayChk) {
+    ytAutoplayChk.checked = youtubeAutoplay;
+    ytAutoplayChk.addEventListener("change", e => {
+      e.stopPropagation();
+      youtubeAutoplay = ytAutoplayChk.checked;
+      try { localStorage.setItem("jce_yt_autoplay", youtubeAutoplay ? "1" : "0"); } catch (_) {}
+    });
+  }
 }
 
 
@@ -3377,7 +3538,11 @@ function init() {
   updateSortButtonsUI();
   applyViewButtons();
 
-  // Init settings panel (bg carousel + blur)
+  // Carrega preferências e jogos escondidos do localStorage
+  loadPreferences();
+  loadHiddenGames();
+
+  // Init settings panel (bg carousel + blur + options)
   initSettings();
 
   // Render tabs (vazio até o Firestore responder)
