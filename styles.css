@@ -3487,10 +3487,11 @@ body.editor-mode .card-release-status {
   filter: drop-shadow(0 1px 3px rgba(255,148,102,0.6));
 }
 
-/* Down-vote — roxo meia-noite / indigo triste */
+/* Down-vote — roxo meia-noite / indigo triste (só no hover/voted) */
 .modal-downvote-btn {
   right: 6px;
-  color: rgba(180,170,220,0.85);
+  /* Estado normal: igual ao upvote (branco) */
+  color: rgba(255,255,255,0.85);
 }
 
 /* Hover: só outline + SVG ficam roxo, background mantém-se */
