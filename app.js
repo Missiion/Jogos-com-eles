@@ -263,6 +263,7 @@ const $tagFilterTrigger = document.getElementById("tag-filter-trigger");
 const $tagFilterLabel   = document.getElementById("tag-filter-label");
 const $tagFilterCount   = document.getElementById("tag-filter-count");
 const $tagFilterClear   = document.getElementById("tag-filter-clear");
+const $tagFilterQuickClear = document.getElementById("tag-filter-quick-clear");
 const $tagFilterList    = document.getElementById("tag-filter-list");
 const $tagFilterListStatus   = document.getElementById("tag-filter-list-status");
 const $tagFilterHeaderLabel  = document.getElementById("tag-filter-header-label");
@@ -3268,6 +3269,7 @@ function renderTagFilter() {
   $tagFilterCount.textContent = totalActive;
   $tagFilterCount.classList.toggle("hidden", !hasActive);
   $tagFilterClear.classList.toggle("hidden", !hasActive);
+  if ($tagFilterQuickClear) $tagFilterQuickClear.classList.toggle("hidden", !hasActive);
 
   // Build genre/theme tag pill list — em PT, traduz via glossário
   $tagFilterList.innerHTML = tags.map(tag => {
@@ -3394,6 +3396,41 @@ $tagFilterClear.addEventListener("click", e => {
   commonGamesFilterUserId = null;
   renderTagFilter();
   renderGameList(gamesData);
+});
+
+// Quick clear (botão "X" fora do menu)
+if ($tagFilterQuickClear) {
+  $tagFilterQuickClear.addEventListener("click", e => {
+    e.stopPropagation();
+    activeTagFilters.clear();
+    activeStatusFilters.clear();
+    commonGamesFilterUserId = null;
+    renderTagFilter();
+    renderGameList(gamesData);
+  });
+  // Hover no quick-clear NÃO abre o menu do filtro
+  $tagFilterQuickClear.addEventListener("mouseenter", e => {
+    e.stopPropagation();
+    $tagFilter.classList.remove("hover-open");
+  });
+}
+
+// Hover no trigger ou menu abre o menu (com delay via CSS .hover-open)
+// Removido apenas quando o rato sai do container inteiro (.tag-filter)
+$tagFilterTrigger.addEventListener("mouseenter", () => {
+  $tagFilter.classList.add("hover-open");
+});
+
+const $tagFilterMenuEl = document.getElementById("tag-filter-menu");
+if ($tagFilterMenuEl) {
+  $tagFilterMenuEl.addEventListener("mouseenter", () => {
+    $tagFilter.classList.add("hover-open");
+  });
+}
+
+// Remove hover-open apenas quando o rato sai do container inteiro
+$tagFilter.addEventListener("mouseleave", () => {
+  $tagFilter.classList.remove("hover-open");
 });
 
 // Close on outside click
