@@ -2698,12 +2698,6 @@ async function toggleDownvote(firebaseId) {
       // Remove o jogo da lista de escondidos (já não tem down-vote)
       hiddenGames.delete(firebaseId);
       saveHiddenGames();
-      // Força re-render para que o jogo apareça imediatamente
-      renderGameList(gamesData);
-      // Se o modal estiver aberto, actualiza os botões
-      if (modalOpen && _modalCurrentGame) {
-        updateModalVoteButtons(_modalCurrentGame);
-      }
     } else {
       // ⚠️ Mutual exclusivity: ao dar down-vote, remove o up-vote se existir
       if (hasUserUpvoted(firebaseId)) {
@@ -2733,12 +2727,11 @@ async function toggleDownvote(firebaseId) {
       // ⚠️ Esconde o jogo localmente (só para este user)
       hiddenGames.add(firebaseId);
       saveHiddenGames();
-      // Força re-render para que o jogo desapareça imediatamente
-      renderGameList(gamesData);
-      // Se o modal estiver aberto, actualiza os botões
-      if (modalOpen && _modalCurrentGame) {
-        updateModalVoteButtons(_modalCurrentGame);
-      }
+    }
+    // ⚠️ Força re-render final (depois de TODAS as operações async terminarem)
+    renderGameList(gamesData);
+    if (modalOpen && _modalCurrentGame) {
+      updateModalVoteButtons(_modalCurrentGame);
     }
   } catch (err) {
     console.error("[toggleDownvote] erro:", err);
@@ -2903,8 +2896,6 @@ async function toggleUpvote(firebaseId) {
         // Remove o jogo da lista de escondidos (tinha down-vote → agora tem up-vote)
         hiddenGames.delete(firebaseId);
         saveHiddenGames();
-        // Força re-render imediato
-        renderGameList(gamesData);
       }
       // Adiciona o up-vote
       await addDoc(collection(db, "upvotes"), {
@@ -2920,8 +2911,8 @@ async function toggleUpvote(firebaseId) {
         await saveTabGames(currentUser.tabId, set);
       }
     }
-    // ⚠️ Força re-render final para garantir que a lista reflecte o estado actual
-    // dos hiddenGames (importante quando se troca down-vote → up-vote)
+    // ⚠️ Força re-render final (depois de TODAS as operações async terminarem)
+    // para garantir que a lista reflecte o estado actual dos hiddenGames
     renderGameList(gamesData);
     if (modalOpen && _modalCurrentGame) {
       updateModalVoteButtons(_modalCurrentGame);
