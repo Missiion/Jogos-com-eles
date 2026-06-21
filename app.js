@@ -175,7 +175,8 @@ let addTabTargetGame = null;
 // ── Tag filter state ──────────────────────────
 let activeTagFilters = new Set(); // set of tag strings currently active
 let activeStatusFilters = new Set(); // set of release-status strings currently active
-let currentTagSubtab = "tags"; // "tags" | "status"
+let currentTagSubtab = "tags"; // "tags" | "status" | "common"
+let commonGamesFilterUserId = null; // userId para filtro "Jogos em comum"
 
 // Jogos escondidos localmente (pelo user actual dar down-vote)
 // Persistido em localStorage. Quando o user dá down-vote, o jogo é escondido.
@@ -844,12 +845,21 @@ function getFilteredSortedGames() {
   } else {
     // Na tab "all", exclui jogos que estão no lixo (>= threshold down-votes)
     list = list.filter(g => !isInTrash(g.firebaseId));
+    // 1b. Esconde jogos que o user actual deu down-vote (localmente)
+    // Apenas na lista "Todos". Outras tabs (users, lixo) mostram tudo.
+    if (!showHiddenGames) {
+      list = list.filter(g => !hiddenGames.has(g.firebaseId));
+    }
   }
 
-  // 1b. Esconde jogos que o user actual deu down-vote (localmente)
-  // A menos que "Mostrar jogos escondidos" esteja activo.
-  if (!showHiddenGames) {
-    list = list.filter(g => !hiddenGames.has(g.firebaseId));
+  // 1c. Filtro "Jogos em comum" — mostra apenas jogos em que o user actual
+  // e o user seleccionado deram ambos up-vote.
+  if (commonGamesFilterUserId) {
+    list = list.filter(g => {
+      const myUp = hasUserUpvoted(g.firebaseId);
+      const theirUp = upvotesMap[g.firebaseId] && upvotesMap[g.firebaseId].has(commonGamesFilterUserId);
+      return myUp && theirUp;
+    });
   }
 
   // 2. Tag filter (genres + themes, OR logic)
@@ -2907,8 +2917,6 @@ async function processDownvoteThresholds() {
       const newSet = new Set(trashSet);
       newSet.add(fbid);
       await saveTabGames(trashTabId, newSet);
-
-      showToast(`${t("Movido para o lixo.")} (${voters.size} ${t("votos contra")})`);
     }
   }
 
@@ -3232,8 +3240,8 @@ function renderTagFilter() {
   const tags = getAllTags();
   const statuses = getAllReleaseStatuses();
 
-  // Update trigger appearance (count reflects both filter kinds combined)
-  const totalActive = activeTagFilters.size + activeStatusFilters.size;
+  // Update trigger appearance (count reflects all filter kinds combined)
+  const totalActive = activeTagFilters.size + activeStatusFilters.size + (commonGamesFilterUserId ? 1 : 0);
   const hasActive = totalActive > 0;
   $tagFilterTrigger.classList.toggle("has-active", hasActive);
   $tagFilterCount.textContent = totalActive;
@@ -3281,17 +3289,51 @@ function renderTagFilter() {
       renderGameList(gamesData);
     });
   });
+
+  // Build "Jogos em comum" — lista de outros utilizadores
+  const $commonList = document.getElementById("tag-filter-list-common");
+  if ($commonList) {
+    // Filtra utilizadores que não são o currentUser
+    const otherUsers = allUsers.filter(u => u.id !== (currentUser ? currentUser.id : null));
+    if (otherUsers.length === 0) {
+      $commonList.innerHTML = `<div style="padding:12px;color:var(--muted);font-size:0.75rem;text-align:center;">${escHtml(t("Nenhum outro utilizador registado."))}</div>`;
+    } else {
+      $commonList.innerHTML = otherUsers.map(u => {
+        const active = commonGamesFilterUserId === u.id;
+        return `<button class="tag-filter-item${active ? " active" : ""}" data-commonuid="${escHtml(u.id)}" role="option" aria-selected="${active}">${escHtml(u.name)}</button>`;
+      }).join("");
+
+      $commonList.querySelectorAll(".tag-filter-item").forEach(btn => {
+        btn.addEventListener("click", e => {
+          e.stopPropagation();
+          const uid = btn.dataset.commonuid;
+          if (commonGamesFilterUserId === uid) {
+            commonGamesFilterUserId = null; // toggle off
+          } else {
+            commonGamesFilterUserId = uid;
+          }
+          renderTagFilter();
+          renderGameList(gamesData);
+        });
+      });
+    }
+  }
 }
 
-// Switch between the "Géneros & Temas" and "Estado de Lançamento" sub-tabs
+// Switch between the "Géneros & Temas", "Estado de Lançamento" and "Jogos em comum" sub-tabs
 function setTagFilterSubtab(subtab) {
   currentTagSubtab = subtab;
-  const showTags = subtab === "tags";
-  $tagFilterSubtabTags.classList.toggle("active", showTags);
-  $tagFilterSubtabStatus.classList.toggle("active", !showTags);
-  $tagFilterList.classList.toggle("hidden", !showTags);
-  $tagFilterListStatus.classList.toggle("hidden", showTags);
-  $tagFilterHeaderLabel.textContent = showTags ? t("Géneros & Temas") : t("Estado de Lançamento");
+  const $subtabCommon = document.getElementById("tag-filter-subtab-common");
+  const $commonList = document.getElementById("tag-filter-list-common");
+  $tagFilterSubtabTags.classList.toggle("active", subtab === "tags");
+  $tagFilterSubtabStatus.classList.toggle("active", subtab === "status");
+  if ($subtabCommon) $subtabCommon.classList.toggle("active", subtab === "common");
+  $tagFilterList.classList.toggle("hidden", subtab !== "tags");
+  $tagFilterListStatus.classList.toggle("hidden", subtab !== "status");
+  if ($commonList) $commonList.classList.toggle("hidden", subtab !== "common");
+  $tagFilterHeaderLabel.textContent = subtab === "tags" ? t("Géneros & Temas")
+    : subtab === "status" ? t("Estado de Lançamento")
+    : t("Jogos em comum");
 }
 
 $tagFilterSubtabTags.addEventListener("click", e => {
@@ -3302,6 +3344,13 @@ $tagFilterSubtabStatus.addEventListener("click", e => {
   e.stopPropagation();
   setTagFilterSubtab("status");
 });
+const $tagFilterSubtabCommon = document.getElementById("tag-filter-subtab-common");
+if ($tagFilterSubtabCommon) {
+  $tagFilterSubtabCommon.addEventListener("click", e => {
+    e.stopPropagation();
+    setTagFilterSubtab("common");
+  });
+}
 setTagFilterSubtab("tags"); // ensure initial sync with markup
 
 // Toggle open/close (click, for touch/keyboard; hover is handled via CSS)
@@ -3316,11 +3365,12 @@ $tagFilterTrigger.addEventListener("click", e => {
 // without going through the click handler above.
 $tagFilter.addEventListener("mouseenter", () => renderTagFilter());
 
-// Clear all (both genre/theme tags and release-status filters)
+// Clear all (genre/theme tags, release-status filters, and common-games filter)
 $tagFilterClear.addEventListener("click", e => {
   e.stopPropagation();
   activeTagFilters.clear();
   activeStatusFilters.clear();
+  commonGamesFilterUserId = null;
   renderTagFilter();
   renderGameList(gamesData);
 });
