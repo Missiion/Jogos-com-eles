@@ -214,6 +214,8 @@
     "Menos votados": "Least voted",
     "Votos": "Votes",
     "Nenhum voto": "No votes",
+    "Jogos em comum": "Games in common",
+    "Nenhum outro utilizador registado.": "No other users registered.",
     "Opções": "Options",
     "Mostrar jogos escondidos": "Show hidden games",
     "YouTube autoplay": "YouTube autoplay",
