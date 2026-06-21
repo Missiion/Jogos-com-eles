@@ -3552,15 +3552,16 @@ body.editor-mode .card-release-status {
   transition: opacity 0.25s ease, visibility 0.25s ease;
 }
 
-/* Mostra os nomes quando o upvote-btn está em hover.
-   Usa :has() — suportado em todos os browsers modernos. */
-.modal-banner:has(.modal-upvote-btn:hover) .modal-vote-names {
+/* Mostra os nomes do upvote quando o upvote-btn está em hover */
+.modal-banner:has(.modal-upvote-btn:hover) .modal-upvote-names,
+.modal-banner.show-upvote-names .modal-upvote-names {
   opacity: 1;
   visibility: visible;
 }
 
-/* Fallback para browsers sem :has() — JS adiciona classe 'show-names' */
-.modal-banner.show-names .modal-vote-names {
+/* Mostra os nomes do downvote quando o downvote-btn está em hover */
+.modal-banner:has(.modal-downvote-btn:hover) .modal-downvote-names,
+.modal-banner.show-downvote-names .modal-downvote-names {
   opacity: 1;
   visibility: visible;
 }
