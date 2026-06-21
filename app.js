@@ -1408,15 +1408,17 @@ function renderModalBanner(game) {
       e.stopPropagation();
       toggleUpvote(game.firebaseId);
     });
-    // Fallback para browsers sem :has() — mostra nomes no hover
-    upBtn.addEventListener("mouseenter", () => $modalBanner.classList.add("show-names"));
-    upBtn.addEventListener("mouseleave", () => $modalBanner.classList.remove("show-names"));
+    // Fallback para browsers sem :has() — mostra nomes independentemente no hover de cada botão
+    upBtn.addEventListener("mouseenter", () => $modalBanner.classList.add("show-upvote-names"));
+    upBtn.addEventListener("mouseleave", () => $modalBanner.classList.remove("show-upvote-names"));
   }
   if (downBtn) {
     downBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleDownvote(game.firebaseId);
     });
+    downBtn.addEventListener("mouseenter", () => $modalBanner.classList.add("show-downvote-names"));
+    downBtn.addEventListener("mouseleave", () => $modalBanner.classList.remove("show-downvote-names"));
   }
 
   // Renderiza os nomes dos votantes acima de cada botão (com animação)
@@ -2104,6 +2106,25 @@ function initHeaderSearch() {
     const wrap = document.getElementById("header-search-wrap");
     if (wrap && !wrap.contains(e.target)) {
       $results.classList.add("hidden");
+    }
+  });
+
+  // Fecha resultados ao fazer scroll fora do header-search-results
+  // Isto evita que os resultados fiquem abertos enquanto a pessoa
+  // navega na página. Reabre ao clicar na pesquisa novamente.
+  let _searchScrollClosed = false;
+  window.addEventListener("scroll", () => {
+    if (!$results.classList.contains("hidden")) {
+      $results.classList.add("hidden");
+      _searchScrollClosed = true;
+    }
+  }, { passive: true, capture: true });
+
+  // Reabre os resultados ao clicar no input (se foram fechados por scroll)
+  $input.addEventListener("focus", () => {
+    if (_searchScrollClosed && $input.value.trim()) {
+      _searchScrollClosed = false;
+      doHeaderSearch();
     }
   });
 }
