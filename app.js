@@ -632,9 +632,13 @@ function updateUserUI() {
     if ($btnText) $btnText.textContent = t("Registar");
     $btn.classList.remove("registered", "registering");
     $input.classList.add("hidden");
-    // ⚠️ TEMPORÁRIO: botão sempre visível para permitir recuperação de sessão admin.
-    // Reverter para: if (allUsers.length >= 3) { $btn.style.display = "none"; } else { $btn.style.display = ""; }
-    $btn.style.display = "";
+    // Esconde o botão de registo se já houver 3 ou mais utilizadores
+    // (incluindo o admin). Sinaliza que o grupo está completo.
+    if (allUsers.length >= 3) {
+      $btn.style.display = "none";
+    } else {
+      $btn.style.display = "";
+    }
     if ($searchInput) {
       $searchInput.disabled = true;
       $searchInput.value = "";
@@ -2694,6 +2698,12 @@ async function toggleDownvote(firebaseId) {
       // Remove o jogo da lista de escondidos (já não tem down-vote)
       hiddenGames.delete(firebaseId);
       saveHiddenGames();
+      // Força re-render para que o jogo apareça imediatamente
+      renderGameList(gamesData);
+      // Se o modal estiver aberto, actualiza os botões
+      if (modalOpen && _modalCurrentGame) {
+        updateModalVoteButtons(_modalCurrentGame);
+      }
     } else {
       // ⚠️ Mutual exclusivity: ao dar down-vote, remove o up-vote se existir
       if (hasUserUpvoted(firebaseId)) {
@@ -2723,6 +2733,12 @@ async function toggleDownvote(firebaseId) {
       // ⚠️ Esconde o jogo localmente (só para este user)
       hiddenGames.add(firebaseId);
       saveHiddenGames();
+      // Força re-render para que o jogo desapareça imediatamente
+      renderGameList(gamesData);
+      // Se o modal estiver aberto, actualiza os botões
+      if (modalOpen && _modalCurrentGame) {
+        updateModalVoteButtons(_modalCurrentGame);
+      }
     }
   } catch (err) {
     console.error("[toggleDownvote] erro:", err);
