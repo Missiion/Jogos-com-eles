@@ -2900,6 +2900,9 @@ async function toggleUpvote(firebaseId) {
         for (const d of dsnap.docs) {
           await deleteDoc(doc(db, "downvotes", d.id));
         }
+        // Remove o jogo da lista de escondidos (tinha down-vote → agora tem up-vote)
+        hiddenGames.delete(firebaseId);
+        saveHiddenGames();
       }
       // Adiciona o up-vote
       await addDoc(collection(db, "upvotes"), {
