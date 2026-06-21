@@ -632,13 +632,9 @@ function updateUserUI() {
     if ($btnText) $btnText.textContent = t("Registar");
     $btn.classList.remove("registered", "registering");
     $input.classList.add("hidden");
-    // Esconde o botão de registo se já houver 3 ou mais utilizadores
-    // (incluindo o admin). Sinaliza que o grupo está completo.
-    if (allUsers.length >= 3) {
-      $btn.style.display = "none";
-    } else {
-      $btn.style.display = "";
-    }
+    // ⚠️ TEMPORÁRIO: botão sempre visível para permitir recuperação de sessão admin.
+    // Reverter para: if (allUsers.length >= 3) { $btn.style.display = "none"; } else { $btn.style.display = ""; }
+    $btn.style.display = "";
     if ($searchInput) {
       $searchInput.disabled = true;
       $searchInput.value = "";
@@ -671,8 +667,17 @@ async function registerUser(rawName) {
   let name, isAdmin = false;
 
   if (rawName.trim().toLowerCase() === ADMIN_CODE) {
-    // Código admin — só funciona se ainda não houver admin
+    // Código admin — se já houver admin (Leo), restaura a sessão em vez de bloquear
     if (adminExists()) {
+      const adminUser = allUsers.find(u => u.isAdmin);
+      if (adminUser) {
+        // Restaura a sessão do admin
+        currentUser = { id: adminUser.id, name: adminUser.name, isAdmin: true, tabId: adminUser.tabId || null };
+        try { localStorage.setItem(USER_ID_KEY, adminUser.id); } catch (_) {}
+        updateUserUI();
+        showToast(isPt() ? `Bem-vindo de volta, ${adminUser.name}!` : `Welcome back, ${adminUser.name}!`);
+        return true;
+      }
       showToast(t("Código admin já utilizado."));
       return false;
     }
