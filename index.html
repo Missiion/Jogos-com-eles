@@ -186,6 +186,7 @@
             <div class="tag-filter-subtabs" id="tag-filter-subtabs">
               <button class="tag-filter-subtab active" data-subtab="tags" id="tag-filter-subtab-tags" data-i18n="Géneros & Temas">Géneros &amp; Temas</button>
               <button class="tag-filter-subtab" data-subtab="status" id="tag-filter-subtab-status" data-i18n="Estado de Lançamento">Estado de Lançamento</button>
+              <button class="tag-filter-subtab" data-subtab="common" id="tag-filter-subtab-common" data-i18n="Jogos em comum">Jogos em comum</button>
             </div>
             <div class="tag-filter-header">
               <span class="tag-filter-header-label" id="tag-filter-header-label" data-i18n="Géneros & Temas">Géneros &amp; Temas</span>
@@ -193,6 +194,7 @@
             </div>
             <div class="tag-filter-list" id="tag-filter-list"><!-- tags injetadas pelo JS --></div>
             <div class="tag-filter-list hidden" id="tag-filter-list-status"><!-- estados injetados pelo JS --></div>
+            <div class="tag-filter-list hidden" id="tag-filter-list-common"><!-- users injetados pelo JS --></div>
           </div>
         </div>
       </div>
@@ -266,6 +268,20 @@
               <div class="account-edit-wrap">
                 <input type="text" class="account-name-input" id="account-name-input" maxlength="8" data-i18n-placeholder="Novo nome..." placeholder="Novo nome..." autocomplete="off"/>
                 <button class="account-save-btn" id="account-save-btn" type="button" data-i18n="Guardar">Guardar</button>
+              </div>
+            </div>
+            <!-- Secção: opções -->
+            <div class="settings-section">
+              <span class="settings-section-label" data-i18n="Opções">Opções</span>
+              <div class="options-row">
+                <label class="option-toggle">
+                  <input type="checkbox" id="option-show-hidden" />
+                  <span data-i18n="Mostrar jogos escondidos">Mostrar jogos escondidos</span>
+                </label>
+                <label class="option-toggle">
+                  <input type="checkbox" id="option-yt-autoplay" checked />
+                  <span data-i18n="YouTube autoplay">YouTube autoplay</span>
+                </label>
               </div>
             </div>
           </div>
