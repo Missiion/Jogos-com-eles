@@ -908,13 +908,21 @@ body.editor-mode .card-delete-btn {
   top: 0;
   left: 100%;
   margin-left: 1.75rem;   /* 28px @ 16px base */
-  height: 100%;
+  /* Altura dinâmica — só ocupa o espaço do conteúdo, sem interceptar cliques */
+  height: auto;
+  max-height: 100%;
   width: 15rem;           /* 240px @ 16px base */
   max-width: 320px;       /* cap em 4K */
   display: none;
   flex-direction: column;
   justify-content: flex-start;
   gap: 22px;
+  pointer-events: none;   /* não intercepta cliques na área vazia */
+}
+
+/* Mas os filhos (rows) continuam a receber cliques se necessário */
+.modal-extra-info > * {
+  pointer-events: auto;
 }
 
 .extra-info-row {
@@ -3634,4 +3642,62 @@ body.editor-mode .card-release-status {
 /* Estado activo "Menos votados" (reverse) — cor roxo indigo (downvote) */
 .sort-btn-votes.active.reverse {
   color: #a99ee8;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   OPTIONS — checkboxes no settings menu
+   ═══════════════════════════════════════════════════════════════ */
+
+.options-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 8px calc(4px * var(--settings-size, 1.5));
+}
+
+.option-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: calc(0.72rem * var(--settings-size, 1.5));
+  font-weight: 500;
+  color: var(--text);
+  user-select: none;
+}
+
+.option-toggle input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.2);
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.option-toggle input[type="checkbox"]:checked {
+  background: var(--amber);
+  border-color: var(--amber);
+}
+
+.option-toggle input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid #1a1a24;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.option-toggle span {
+  line-height: 1.2;
 }
