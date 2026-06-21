@@ -2903,6 +2903,8 @@ async function toggleUpvote(firebaseId) {
         // Remove o jogo da lista de escondidos (tinha down-vote → agora tem up-vote)
         hiddenGames.delete(firebaseId);
         saveHiddenGames();
+        // Força re-render imediato
+        renderGameList(gamesData);
       }
       // Adiciona o up-vote
       await addDoc(collection(db, "upvotes"), {
@@ -2917,6 +2919,12 @@ async function toggleUpvote(firebaseId) {
         set.add(firebaseId);
         await saveTabGames(currentUser.tabId, set);
       }
+    }
+    // ⚠️ Força re-render final para garantir que a lista reflecte o estado actual
+    // dos hiddenGames (importante quando se troca down-vote → up-vote)
+    renderGameList(gamesData);
+    if (modalOpen && _modalCurrentGame) {
+      updateModalVoteButtons(_modalCurrentGame);
     }
   } catch (err) {
     console.error("[toggleUpvote] erro:", err);
