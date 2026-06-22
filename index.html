@@ -200,6 +200,14 @@
             <div class="tag-filter-list hidden" id="tag-filter-list-common"><!-- users injetados pelo JS --></div>
           </div>
         </div>
+
+        <!-- Discover button — opens discovery mode -->
+        <div class="discover-wrap" id="discover-wrap">
+          <button class="discover-trigger" id="discover-trigger" aria-label="Descobre" data-i18n-aria-label="Descobre" title="Descobre">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 6.1L20 11l-6.1 1.9L12 19l-1.9-6.1L4 11l6.1-1.9L12 3z"/><path d="M18 14l.8 2.2L21 17l-2.2.8L18 20l-.8-2.2L15 17l2.2-.8L18 14z"/><path d="M5 3l.6 1.4L7 5l-1.4.6L5 7l-.6-1.4L3 5l1.4-.6L5 3z"/></svg>
+            <span class="discover-label" id="discover-label" data-i18n="Descobre">Descobre</span>
+          </button>
+        </div>
       </div>
 
       <!-- Toolbar center: Register + Search (centro do header) -->
@@ -383,6 +391,10 @@
       <!-- Box 2: Description / info (glass) -->
       <div class="modal-info" id="modal-info"></div>
     </div>
+
+    <!-- Discover navigation cards — only visible in discover mode -->
+    <div class="discover-nav discover-nav-prev hidden" id="discover-nav-prev"></div>
+    <div class="discover-nav discover-nav-next hidden" id="discover-nav-next"></div>
 
   </div>
 
