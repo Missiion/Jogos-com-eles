@@ -82,6 +82,9 @@
     "Estado de Lançamento": "Release Status",
     "Limpar": "Clear",
 
+    // ── Discover button ─────────────────────────
+    "Descobre": "Discover",
+
     // ── Settings (gear menu) ────────────────────
     "Aspeto": "Appearance",
     "Fundo": "Background",
