@@ -271,6 +271,14 @@ const $tagFilterSubtabTags   = document.getElementById("tag-filter-subtab-tags")
 const $tagFilterSubtabStatus = document.getElementById("tag-filter-subtab-status");
 // ------------------------------------
 
+// --- Discover ---
+const $discoverWrap    = document.getElementById("discover-wrap");
+const $discoverTrigger = document.getElementById("discover-trigger");
+const $discoverLabel   = document.getElementById("discover-label");
+const $discoverNavPrev = document.getElementById("discover-nav-prev");
+const $discoverNavNext = document.getElementById("discover-nav-next");
+// ------------------------------------
+
 // Add-to-tab modal
 const $addtabModal     = document.getElementById("addtab-modal");
 const $addtabBackdrop  = document.getElementById("addtab-backdrop");
@@ -1436,7 +1444,14 @@ function renderModalBanner(game) {
   if (downBtn) {
     downBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      toggleDownvote(game.firebaseId);
+      // No modo Descoberta: down-vote novo → auto-avançar para o próximo jogo
+      if (discoverMode && !hasUserDownvoted(game.firebaseId)) {
+        toggleDownvote(game.firebaseId).then(() => {
+          navigateDiscover("next");
+        });
+      } else {
+        toggleDownvote(game.firebaseId);
+      }
     });
     downBtn.addEventListener("mouseenter", () => $modalBanner.classList.add("show-downvote-names"));
     downBtn.addEventListener("mouseleave", () => $modalBanner.classList.remove("show-downvote-names"));
@@ -1698,10 +1713,14 @@ function closeModal() {
   $modalBanner.innerHTML = "";
   $gameModal.classList.add("hidden");
   document.body.style.overflow = "";
+  // Sair do modo Descoberta ao fechar o modal
+  if (discoverMode) exitDiscover();
 }
 
 $modalClose.addEventListener("click", closeModal);
 $modalBackdrop.addEventListener("click", () => {
+  // No modo Descoberta, clicar fora do modal não faz nada
+  if (discoverMode) return;
   if (infoExpanded) { collapseInfo(); } else { closeModal(); }
 });
 
@@ -1739,6 +1758,8 @@ function toggleInfoExpand() {
 document.addEventListener("keydown", e => {
   if (!modalOpen) return;
   if (e.key === "Escape") {
+    // No modo Descoberta, ESC não fecha o modal (só o botão X fecha)
+    if (discoverMode) return;
     if (infoExpanded) { collapseInfo(); } else { closeModal(); }
     return;
   }
@@ -3563,10 +3584,10 @@ document.addEventListener("keydown", e => {
 // ─────────────────────────────────────────────
 
 const BG_IMAGES = [
-  "https://github.com/Missiion/Jogos-com-eles/blob/main/Imagem_de_fundo.jpg?raw=true",
-  "https://github.com/Missiion/Jogos-com-eles/blob/main/Imagem_de_fundo_2.png?raw=true",
-  "https://github.com/Missiion/Jogos-com-eles/blob/main/Imagem_de_fundo_3.jpg?raw=true",
-  "https://github.com/Missiion/Jogos-com-eles/blob/main/Imagem_de_fundo_4.jpg?raw=true",
+  "/Imagem_de_fundo.jpg",
+  "/Imagem_de_fundo_2.png",
+  "/Imagem_de_fundo_3.jpg",
+  "/Imagem_de_fundo_4.jpg",
 ];
 
 const BG_KEY   = "jce_bg_index";
@@ -3695,6 +3716,392 @@ function initSettings() {
     });
   }
 }
+
+// ─────────────────────────────────────────────
+//  DISCOVER MODE — Botão "Descobre"
+//  Queue aleatória + modal de descoberta + nav cards
+// ─────────────────────────────────────────────
+let discoverMode = false;       // true enquanto o modo Descoberta está activo
+let discoverQueue = [];         // array de jogos embaralhados (refs para gamesData)
+let discoverIndex = 0;          // índice actual na queue
+
+// Fisher-Yates shuffle — embaralha array in-place
+function shuffleArray(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+// Inicia o modo Descoberta:
+// 1. Cria uma queue aleatória com todos os jogos disponíveis
+//    (excluindo jogos escondidos pelo utilizador)
+// 2. Abre o modal com o primeiro jogo da queue
+function startDiscover() {
+  // Filtrar jogos disponíveis (exclui escondidos)
+  const availableGames = gamesData.filter(g => !hiddenGames.has(g.firebaseId));
+
+  if (availableGames.length === 0) {
+    showToast(isPt() ? "Nenhum jogo disponível para descobrir." : "No games available to discover.");
+    return;
+  }
+
+  // Criar queue aleatória independente
+  discoverQueue = shuffleArray([...availableGames]);
+  discoverIndex = 0;
+  discoverMode = true;
+
+  // Abrir modal com o primeiro jogo da queue
+  openDiscoverGame(0);
+}
+
+// Abre o modal para um jogo na posição da queue de descoberta.
+// NÃO abre um novo modal — reutiliza o modal existente.
+function openDiscoverGame(queueIdx) {
+  if (queueIdx < 0 || queueIdx >= discoverQueue.length) return;
+  discoverIndex = queueIdx;
+  const game = discoverQueue[queueIdx];
+  const gameIdx = gamesData.indexOf(game);
+  if (gameIdx < 0) return;
+
+  // Se o modal já está aberto no modo descoberta, só atualiza o conteúdo
+  // (não fecha/reabre — evita flicker e mantém o estado)
+  if (modalOpen && discoverMode) {
+    // Re-renderiza o conteúdo do modal para o novo jogo
+    _modalCurrentGame = game;
+    buildModalMedia(game);
+    renderModalMedia(0);
+    renderModalBanner(game);
+    renderModalExtraInfo(game);
+
+    // Re-renderiza o modal-info
+    const ratingVal = ratingStr(game.rating);
+    const themeTagsHtml = (game.themes || []).map(tag =>
+      `<span class="tag">${escHtml(translateTagSync(tag))}</span>`
+    ).join("");
+    const modeTagsHtml = game.modes.map(m =>
+      `<span class="tag ${modeClass(m)}">${escHtml(translateTagSync(m))}</span>`
+    ).join("");
+    const ratingHtml = ratingVal
+      ? `<div class="modal-rating">
+           <svg width="16" height="16" viewBox="0 0 24 24" fill="#ffc86a"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+           ${ratingVal} / 10
+         </div>` : "";
+    const infoSteamHtml = game.steamUrl
+      ? `<a class="modal-info-steam" href="${escHtml(game.steamUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+          <img src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://store.steampowered.com/t&size=128" width="11" height="11" alt="Steam" style="object-fit:contain;display:block;"/>
+          Steam
+        </a>` : "";
+    const modalQuickLinksHtml = `
+      <a class="modal-info-quicklink" href="https://online-fix.me/" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Online-Fix">
+        <img class="quicklink-icon" src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://online-fix.me/t&size=128" alt="" loading="lazy"/>
+        Online-Fix
+      </a>
+      <a class="modal-info-quicklink" href="https://cs.rin.ru/forum/index.php" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="cs.rin.ru">
+        <img class="quicklink-icon" src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://cs.rin.ru/forum/index.phpt&size=128" alt="" loading="lazy"/>
+        cs.rin.ru
+      </a>`;
+    $modalInfo.innerHTML = `
+      <div class="modal-info-actions">
+        ${modalQuickLinksHtml}
+        ${infoSteamHtml}
+        <button class="modal-info-expand-btn" id="modal-info-expand-btn" aria-label="${escHtml(t("Expandir descrição"))}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+            <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-title-row">
+        <h2 class="modal-title">${escHtml(game.name)}</h2>
+        <button class="modal-copy-btn" id="modal-copy-btn" aria-label="${escHtml(t("Copiar nome"))}" title="${escHtml(t("Copiar nome do jogo"))}">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </div>
+      <div class="modal-tags">${themeTagsHtml}${modeTagsHtml}</div>
+      <div class="modal-meta">${ratingHtml}</div>
+      <p class="modal-desc" id="modal-desc">${escHtml(game.summary || t("Sem descrição disponível."))}</p>
+    `;
+    document.getElementById("modal-info-expand-btn")
+      .addEventListener("click", (e) => { e.stopPropagation(); toggleInfoExpand(); });
+    const copyBtn = document.getElementById("modal-copy-btn");
+    if (copyBtn) {
+      copyBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(game.name).then(() => {
+          copyBtn.classList.add("copied");
+          setTimeout(() => copyBtn.classList.remove("copied"), 1400);
+        }).catch(() => {});
+      });
+    }
+
+    // Traduz o sumário async
+    if (game.summary) {
+      const descEl = document.getElementById("modal-desc");
+      if (descEl) {
+        const lang = isPt() ? "pt" : "en";
+        const cacheKey = `${game.firebaseId}::${lang}`;
+        const cached = _summaryTranslated.get(cacheKey);
+        if (cached != null) {
+          descEl.textContent = cached;
+        } else {
+          translateText(game.summary, lang).then(translated => {
+            if (translated) {
+              descEl.textContent = translated;
+              _summaryTranslated.set(cacheKey, translated);
+            }
+          }).catch(() => {});
+        }
+      }
+    }
+
+    // Re-attach parallax and auto-advance for the new content
+    $modalMedia.removeEventListener("mousemove", onModalMediaParallax);
+    $modalMedia.removeEventListener("mouseleave", resetModalMediaParallax);
+    $modalMedia.addEventListener("mousemove", onModalMediaParallax);
+    $modalMedia.addEventListener("mouseleave", resetModalMediaParallax);
+    if (infoExpanded) collapseInfo();
+  } else {
+    // Primeira abertura — abre o modal normalmente
+    openModal(gameIdx);
+  }
+
+  // Atualiza os navigation cards
+  renderDiscoverNavCards();
+
+  // Re-align após o modal estar totalmente renderizado
+  // (necessário na primeira abertura porque o layout ainda não está estável)
+  // Quando chamado de navigateDiscover, skipRafAlign é true — o alinhamento
+  // final é feito pelo navigateDiscover depois da animação whoosh terminar.
+  if (!_discoverNavigating) {
+    requestAnimationFrame(() => {
+      alignDiscoverNavCards();
+    });
+  }
+}
+
+// Navega na queue de descoberta com animação whoosh estilo carrossel.
+// direction: "next" (para o próximo jogo, whoosh para a direita)
+//            "prev" (para o jogo anterior, whoosh para a esquerda)
+let _discoverNavigating = false; // previne cliques rápidos durante animação
+
+function navigateDiscover(direction) {
+  if (!discoverMode || _discoverNavigating) return;
+  if (discoverQueue.length < 2) return;
+
+  const targetIdx = direction === "next"
+    ? (discoverIndex + 1) % discoverQueue.length
+    : (discoverIndex - 1 + discoverQueue.length) % discoverQueue.length;
+
+  // Não anima se for o mesmo jogo (queue de 1)
+  if (targetIdx === discoverIndex) return;
+
+  _discoverNavigating = true;
+
+  // Elementos que vão animar
+  const $content = document.querySelector('.modal-content');
+
+  // Classes de animação: out
+  const outClass = direction === "next" ? "discover-whoosh-out-left" : "discover-whoosh-out-right";
+  const navOutClass = direction === "next" ? "discover-nav-out-left" : "discover-nav-out-right";
+
+  // Aplica slide-out
+  $content.classList.add(outClass);
+  $discoverNavPrev.classList.add(navOutClass);
+  $discoverNavNext.classList.add(navOutClass);
+
+  // Depois da animação out (250ms), actualiza o conteúdo e faz slide-in
+  setTimeout(() => {
+    // Remove classes out
+    $content.classList.remove(outClass);
+    $discoverNavPrev.classList.remove(navOutClass);
+    $discoverNavNext.classList.remove(navOutClass);
+
+    // Actualiza o conteúdo do modal para o novo jogo (sem animação)
+    openDiscoverGame(targetIdx);
+
+    // Força reflow — o browser precisa de calcular o layout estável
+    // antes de iniciarmos a animação slide-in, para que as posições
+    // do alignDiscoverNavCards() estejam correctas.
+    void $discoverNavPrev.offsetHeight;
+
+    // Classes de animação: in
+    const inClass = direction === "next" ? "discover-whoosh-in-right" : "discover-whoosh-in-left";
+    const navInClass = direction === "next" ? "discover-nav-in-right" : "discover-nav-in-left";
+
+    // Aplica slide-in
+    $content.classList.add(inClass);
+    $discoverNavPrev.classList.add(navInClass);
+    $discoverNavNext.classList.add(navInClass);
+
+    // Limpa classes após animação in (280ms)
+    setTimeout(() => {
+      $content.classList.remove(inClass);
+      $discoverNavPrev.classList.remove(navInClass);
+      $discoverNavNext.classList.remove(navInClass);
+      // Alinhamento final — agora que a animação terminou e o layout está estável
+      alignDiscoverNavCards();
+      _discoverNavigating = false;
+    }, 300);
+  }, 260);
+}
+
+// Sai do modo Descoberta (chamado ao fechar o modal via X)
+function exitDiscover() {
+  discoverMode = false;
+  discoverQueue = [];
+  discoverIndex = 0;
+  _discoverNavigating = false;
+  // Limpa classes de animação que possam ter ficado
+  const $content = document.querySelector('.modal-content');
+  const whooshClasses = [
+    "discover-whoosh-out-left", "discover-whoosh-out-right",
+    "discover-whoosh-in-left", "discover-whoosh-in-right",
+    "discover-nav-out-left", "discover-nav-out-right",
+    "discover-nav-in-left", "discover-nav-in-right"
+  ];
+  whooshClasses.forEach(cls => {
+    $content?.classList.remove(cls);
+    $discoverNavPrev.classList.remove(cls);
+    $discoverNavNext.classList.remove(cls);
+  });
+  // Esconde os nav cards
+  $discoverNavPrev.classList.add("hidden");
+  $discoverNavNext.classList.add("hidden");
+}
+
+// Constrói o HTML de um mini game-card para navegação no modo Descoberta.
+// Cover + title + release status. Sem expand, sem scrub, sem admin buttons.
+// Hover = zoom (scale), como os cards normais.
+function buildDiscoverNavCard(game, direction) {
+  const screenshots = game.screenshots || [];
+  const artworks = game.artworks || [];
+  const coverSrc = game.preferredKeyArt || artworks[0] || screenshots[0] || game.cover || "";
+  const releaseStatusDisplay = game.releaseStatus ? t(game.releaseStatus) : "";
+
+  return `
+    <div class="game-card" tabindex="0" role="button"
+         aria-label="${escHtml(t("Ver detalhes de"))} ${escHtml(game.name)}">
+      <div class="card-top">
+        <img class="card-bg" src="${escHtml(coverSrc)}" alt="${escHtml(game.name)}" loading="lazy"/>
+        <div class="card-image-gradient"></div>
+        <div class="card-banner-badge">
+          ${game.cover
+            ? `<img class="card-banner-cover" src="${escHtml(game.cover)}" alt="" loading="lazy"/>`
+            : `<div class="card-banner-cover card-banner-cover--empty"></div>`}
+          <span class="card-banner-title">${escHtml(game.name)}</span>
+        </div>
+        ${releaseStatusDisplay ? `<span class="card-release-status card-release-status--${releaseStatusClass(game.releaseStatus)}">${escHtml(releaseStatusDisplay)}</span>` : ""}
+        <div class="discover-nav-arrows discover-nav-arrows--${direction}">
+          <span class="discover-arrow">‹</span>
+          <span class="discover-arrow">‹</span>
+          <span class="discover-arrow">‹</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Renderiza os dois navigation cards (prev/next) no modo Descoberta.
+// Circular: se estiver no primeiro jogo, o prev mostra o último da queue.
+// Os cards são posicionados ao nível vertical do modal-info.
+function renderDiscoverNavCards() {
+  if (!discoverMode || discoverQueue.length < 2) {
+    $discoverNavPrev.classList.add("hidden");
+    $discoverNavNext.classList.add("hidden");
+    return;
+  }
+
+  // Previous game (circular)
+  const prevIdx = (discoverIndex - 1 + discoverQueue.length) % discoverQueue.length;
+  const prevGame = discoverQueue[prevIdx];
+  $discoverNavPrev.innerHTML = buildDiscoverNavCard(prevGame, "prev");
+  $discoverNavPrev.classList.remove("hidden");
+
+  // Next game
+  const nextIdx = (discoverIndex + 1) % discoverQueue.length;
+  const nextGame = discoverQueue[nextIdx];
+  $discoverNavNext.innerHTML = buildDiscoverNavCard(nextGame, "next");
+  $discoverNavNext.classList.remove("hidden");
+
+  // Alinha os nav cards verticalmente com o modal-info
+  alignDiscoverNavCards();
+
+  // Attach click handlers — navega na queue de descoberta com whoosh
+  const prevCard = $discoverNavPrev.querySelector(".game-card");
+  const nextCard = $discoverNavNext.querySelector(".game-card");
+
+  if (prevCard) {
+    prevCard.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigateDiscover("prev");
+    });
+  }
+  if (nextCard) {
+    nextCard.addEventListener("click", (e) => {
+      e.stopPropagation();
+      navigateDiscover("next");
+    });
+  }
+}
+
+// Alinha os nav cards com o modal-info: centrados verticalmente
+// e centrados horizontalmente no espaço entre a parede e o modal-info.
+// A largura do card escala com o rem base (260px @ 16px) e adapta-se
+// ao espaço disponível — encolhe se não houver espaço suficiente.
+function alignDiscoverNavCards() {
+  const info = document.querySelector('.modal-info');
+  if (!info) return;
+  const infoRect = info.getBoundingClientRect();
+
+  // Espaço horizontal disponível de cada lado do modal-info
+  const leftSpace = infoRect.left;
+  const rightSpace = window.innerWidth - infoRect.right;
+
+  // Largura do card escala com o rem base (como o resto do site)
+  // 260px @ 16px base → cresce proporcionalmente em resoluções maiores
+  const currentRem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const scale = currentRem / 16;
+  const idealCardWidth = Math.round(260 * scale);
+
+  // Limites: mínimo 120px, gap mínimo 1rem de cada lado
+  const minCardWidth = Math.round(120 * scale);
+  const minGap = Math.round(16 * scale);
+  const maxFittingWidth = Math.min(leftSpace - minGap * 2, rightSpace - minGap * 2);
+  const cardWidth = Math.max(minCardWidth, Math.min(idealCardWidth, maxFittingWidth));
+
+  // Aplica a largura calculada
+  $discoverNavPrev.style.width = `${cardWidth}px`;
+  $discoverNavNext.style.width = `${cardWidth}px`;
+
+  const cardHeight = $discoverNavPrev.querySelector('.game-card')?.getBoundingClientRect().height || 140;
+
+  // Vertical: center card relative to modal-info
+  const top = infoRect.top + (infoRect.height / 2) - (cardHeight / 2);
+  $discoverNavPrev.style.top = `${top}px`;
+  $discoverNavNext.style.top = `${top}px`;
+
+  // Horizontal: center each card in its available space
+  const prevLeft = (leftSpace - cardWidth) / 2;
+  $discoverNavPrev.style.left = `${Math.max(minGap, prevLeft)}px`;
+
+  const nextLeft = infoRect.right + (rightSpace - cardWidth) / 2;
+  $discoverNavNext.style.left = `${Math.min(window.innerWidth - cardWidth - minGap, nextLeft)}px`;
+}
+
+if ($discoverTrigger) {
+  $discoverTrigger.addEventListener("click", () => {
+    startDiscover();
+  });
+}
+
+// Re-align discover nav cards when viewport is resized
+window.addEventListener("resize", () => {
+  if (discoverMode && modalOpen) {
+    alignDiscoverNavCards();
+  }
+});
 
 
 function init() {
