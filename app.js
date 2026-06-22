@@ -3584,10 +3584,11 @@ document.addEventListener("keydown", e => {
 // ─────────────────────────────────────────────
 
 const BG_IMAGES = [
-  "/Imagem_de_fundo.jpg",
-  "/Imagem_de_fundo_2.png",
-  "/Imagem_de_fundo_3.jpg",
-  "/Imagem_de_fundo_4.jpg",
+  "./Imagem_de_fundo.jpg",
+  "./Imagem_de_fundo_2.png",
+  "./Imagem_de_fundo_3.jpg",
+  "./Imagem_de_fundo_4.jpg",
+  "./Imagem_de_fundo_5.jpg",
 ];
 
 const BG_KEY   = "jce_bg_index";
@@ -3981,7 +3982,7 @@ function buildDiscoverNavCard(game, direction) {
   const releaseStatusDisplay = game.releaseStatus ? t(game.releaseStatus) : "";
 
   return `
-    <div class="game-card" tabindex="0" role="button"
+    <div class="game-card discover-card--${direction}" tabindex="0" role="button"
          aria-label="${escHtml(t("Ver detalhes de"))} ${escHtml(game.name)}">
       <div class="card-top">
         <img class="card-bg" src="${escHtml(coverSrc)}" alt="${escHtml(game.name)}" loading="lazy"/>
@@ -3990,14 +3991,16 @@ function buildDiscoverNavCard(game, direction) {
           ${game.cover
             ? `<img class="card-banner-cover" src="${escHtml(game.cover)}" alt="" loading="lazy"/>`
             : `<div class="card-banner-cover card-banner-cover--empty"></div>`}
-          <span class="card-banner-title">${escHtml(game.name)}</span>
+          <span class="discover-nav-text">
+            <span class="discover-nav-arrows discover-nav-arrows--${direction}">
+              <span class="discover-arrow">‹</span>
+              <span class="discover-arrow">‹</span>
+              <span class="discover-arrow">‹</span>
+            </span>
+            <span class="card-banner-title">${escHtml(game.name)}</span>
+          </span>
         </div>
         ${releaseStatusDisplay ? `<span class="card-release-status card-release-status--${releaseStatusClass(game.releaseStatus)}">${escHtml(releaseStatusDisplay)}</span>` : ""}
-        <div class="discover-nav-arrows discover-nav-arrows--${direction}">
-          <span class="discover-arrow">‹</span>
-          <span class="discover-arrow">‹</span>
-          <span class="discover-arrow">‹</span>
-        </div>
       </div>
     </div>
   `;
