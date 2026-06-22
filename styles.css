@@ -91,7 +91,7 @@ html {
   align-items: center;
   justify-content: center;
   background-color: #0d0d14;
-  background-image: url("/Imagem_de_fundo.jpg");
+  background-image: url("./Imagem_de_fundo.jpg");
   background-size: cover;
   background-position: center top;
   transition: opacity 0.65s ease, visibility 0.65s ease;
@@ -195,7 +195,7 @@ html {
 /* ── Background image ────────────────────────── */
 body {
   background-color: #0d0d14;
-  background-image: url("/Imagem_de_fundo.jpg");
+  background-image: url("./Imagem_de_fundo.jpg");
   background-size: cover;
   background-position: center top;
   background-attachment: fixed;
@@ -2949,23 +2949,55 @@ body.editor-mode .editor-only { display: flex !important; }
   padding: 2px 5px;
 }
 
+/* ── Discover nav: text column (arrows + title) ──
+   Wraps arrows above the title, next to the banner.
+   ────────────────────────────────────────────── */
+.discover-nav .discover-nav-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* ── Discover nav: prev card mirrored layout ────
+   The prev (left) card mirrors its layout so the
+   banner sits at bottom-right and release-status
+   at top-left — pointing "back" visually.
+   ────────────────────────────────────────────── */
+.discover-card--prev .card-banner-badge {
+  left: auto;
+  right: 10px;
+  flex-direction: row-reverse;
+}
+
+.discover-card--prev .discover-nav-text {
+  align-items: flex-end;
+}
+
+.discover-card--prev .card-release-status {
+  right: auto;
+  left: 8px;
+}
+
+.discover-card--prev .game-card:hover .card-release-status {
+  top: 0.5rem;
+}
+
 /* ── Discover nav arrow animation ─────────────
+   Positioned above the title inside discover-nav-text.
    On hover: 3 arrows appear one by one (fast),
    then fade in again slowly (cyclic).
    Prev card: ‹ ‹ ‹  |  Next card: › › ›
    ────────────────────────────────────────────── */
 .discover-nav-arrows {
-  position: absolute;
-  bottom: 8px;
-  right: 8px;
-  display: flex;
-  justify-content: center;
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 1px;
   z-index: 6;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.35s ease;
+  flex-shrink: 0;
 }
 
 .discover-nav .game-card:hover .discover-nav-arrows {
@@ -2973,7 +3005,7 @@ body.editor-mode .editor-only { display: flex !important; }
 }
 
 .discover-arrow {
-  font-size: 1.8rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: rgba(255, 255, 255, 0.85);
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
