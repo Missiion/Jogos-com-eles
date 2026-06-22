@@ -199,6 +199,38 @@ function saveHiddenGames() {
   try { localStorage.setItem(HIDDEN_GAMES_KEY, JSON.stringify([...hiddenGames])); } catch (_) {}
 }
 
+// ─────────────────────────────────────────────
+//  VISITED GAMES — jogos já vistos pelo utilizador
+//  Persistido em localStorage. Usado para:
+//  - Label "Novidade" no modo Descoberta
+//  - Ordenar jogos não-visitados primeiro na queue
+// ─────────────────────────────────────────────
+const VISITED_KEY = "jce_visited_games";
+let visitedGames = new Set();
+
+function loadVisitedGames() {
+  try {
+    const raw = localStorage.getItem(VISITED_KEY);
+    if (raw) visitedGames = new Set(JSON.parse(raw));
+  } catch (_) { visitedGames = new Set(); }
+}
+
+function saveVisitedGames() {
+  try { localStorage.setItem(VISITED_KEY, JSON.stringify([...visitedGames])); } catch (_) {}
+}
+
+// Marca um jogo como visitado (se ainda não estava)
+function markGameVisited(firebaseId) {
+  if (!firebaseId || visitedGames.has(firebaseId)) return;
+  visitedGames.add(firebaseId);
+  saveVisitedGames();
+}
+
+// Verifica se um jogo já foi visitado
+function isGameVisited(firebaseId) {
+  return visitedGames.has(firebaseId);
+}
+
 // Carrega preferências do localStorage
 function loadPreferences() {
   try {
@@ -1417,6 +1449,7 @@ function renderModalBanner(game) {
     ${game.cover
       ? `<img src="${escHtml(game.cover)}" alt="${escHtml(game.name)}" loading="lazy"/>`
       : `<div class="modal-banner-empty"></div>`}
+    ${discoverMode && !isGameVisited(game.firebaseId) ? `<span class="modal-new-badge">${escHtml(t("Novidade"))}</span>` : ""}
     <button class="modal-vote-btn modal-upvote-btn${upVoted ? " voted" : ""}" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="${escHtml(t("Votar a favor"))}" title="${escHtml(t("Votar a favor"))}">
       <svg class="vote-arrow" width="16" height="16" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" stroke="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 19a3.966 3.966 0 01-3.96-3.962V10.98H2.838c-.706 0-1.335-.42-1.605-1.073-.27-.652-.122-1.396.377-1.895l7.754-7.759a.925.925 0 011.272 0l7.754 7.76a1.734 1.734 0 01.376 1.894c-.27.652-.9 1.073-1.605 1.073h-3.202v4.058A3.965 3.965 0 0110 19zm-7.01-9.82h4.85v4.73c0 1.13.81 2.163 1.934 2.278a2.163 2.163 0 002.386-2.15V9.18h4.85L10 2.164 2.99 9.18z"/></svg>
       <span class="vote-count">${upCount}</span>
@@ -1565,6 +1598,9 @@ function openModal(gameIdx) {
   modalOpen = true;
   _modalCurrentGame = game;
 
+  // Nota: markGameVisited é chamado no fim, após renderModalBanner,
+  // para que o label "Novidade" possa aparecer correctamente.
+
   buildModalMedia(game);
   const ratingVal = ratingStr(game.rating);
 
@@ -1674,6 +1710,10 @@ function openModal(gameIdx) {
       }
     }
   }
+
+  // Marca o jogo como visitado (depois de renderModalBanner,
+  // para que o label "Novidade" possa aparecer correctamente)
+  markGameVisited(game.firebaseId);
 }
 
 // ─────────────────────────────────────────────
@@ -3748,8 +3788,16 @@ function startDiscover() {
     return;
   }
 
-  // Criar queue aleatória independente
-  discoverQueue = shuffleArray([...availableGames]);
+  // Separar jogos não-visitados (Novidade) dos já visitados
+  const unvisited = availableGames.filter(g => !isGameVisited(g.firebaseId));
+  const visited = availableGames.filter(g => isGameVisited(g.firebaseId));
+
+  // Shuffle ambos os grupos independentemente
+  const shuffledNew = shuffleArray([...unvisited]);
+  const shuffledOld = shuffleArray([...visited]);
+
+  // Não-visitados primeiro, depois os restantes
+  discoverQueue = [...shuffledNew, ...shuffledOld];
   discoverIndex = 0;
   discoverMode = true;
 
@@ -3765,6 +3813,9 @@ function openDiscoverGame(queueIdx) {
   const game = discoverQueue[queueIdx];
   const gameIdx = gamesData.indexOf(game);
   if (gameIdx < 0) return;
+
+  // Nota: markGameVisited é chamado no fim, após renderModalBanner,
+  // para que o label "Novidade" possa aparecer correctamente.
 
   // Se o modal já está aberto no modo descoberta, só atualiza o conteúdo
   // (não fecha/reabre — evita flicker e mantém o estado)
@@ -3880,6 +3931,10 @@ function openDiscoverGame(queueIdx) {
       alignDiscoverNavCards();
     });
   }
+
+  // Marca o jogo como visitado (depois de renderModalBanner,
+  // para que o label "Novidade" possa aparecer correctamente)
+  markGameVisited(game.firebaseId);
 }
 
 // Navega na queue de descoberta com animação whoosh estilo carrossel.
@@ -4115,6 +4170,7 @@ function init() {
   // Carrega preferências e jogos escondidos do localStorage
   loadPreferences();
   loadHiddenGames();
+  loadVisitedGames();
 
   // Init settings panel (bg carousel + blur + options)
   initSettings();
