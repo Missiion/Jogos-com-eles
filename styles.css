@@ -91,7 +91,7 @@ html {
   align-items: center;
   justify-content: center;
   background-color: #0d0d14;
-  background-image: url("https://github.com/Missiion/Jogos-com-eles/blob/main/Imagem_de_fundo.jpg?raw=true");
+  background-image: url("/Imagem_de_fundo.jpg");
   background-size: cover;
   background-position: center top;
   transition: opacity 0.65s ease, visibility 0.65s ease;
@@ -195,7 +195,7 @@ html {
 /* ── Background image ────────────────────────── */
 body {
   background-color: #0d0d14;
-  background-image: url("https://github.com/Missiion/Jogos-com-eles/blob/main/Imagem_de_fundo.jpg?raw=true");
+  background-image: url("/Imagem_de_fundo.jpg");
   background-size: cover;
   background-position: center top;
   background-attachment: fixed;
@@ -2815,6 +2815,296 @@ body.editor-mode .editor-only { display: flex !important; }
 .tag-filter-item.active:hover {
   background: rgba(255,148,102,0.26);
   border-color: rgba(255,148,102,0.5);
+}
+
+/* ═══════════════════════════════════════════════
+   DISCOVER BUTTON — "Descobre"
+   Visual copy of the tag-filter-trigger, but
+   with a cyan/blue colour scheme instead of orange.
+   ═══════════════════════════════════════════════ */
+.discover-wrap {
+  position: relative;
+  /* Smooth repositioning when Filtrar expands/shrinks */
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.18s ease;
+}
+
+.discover-trigger {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 0.3125rem 0.6875rem 0.3125rem 0.8125rem;  /* 5px 11px 5px 13px @ 16px base */
+  min-height: 1.875rem;  /* 30px @ 16px base */
+  border-radius: 100px;
+  background: var(--blue-dim);
+  border: 1px solid rgba(80,150,255,0.3);
+  color: var(--blue);
+  white-space: nowrap;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;  /* 6px @ 16px base */
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.discover-trigger:hover {
+  background: rgba(80,150,255,0.18);
+  border-color: rgba(80,150,255,0.5);
+  box-shadow: 0 0 12px rgba(80,150,255,0.15);
+}
+
+.discover-trigger:active {
+  transform: scale(0.96);
+}
+
+.discover-trigger svg {
+  flex-shrink: 0;
+}
+
+.discover-label {
+  line-height: 1;
+}
+
+/* ═══════════════════════════════════════════════
+   DISCOVER NAVIGATION CARDS — prev/next
+   Floating game-cards inside the modal, visible
+   only in discover mode. Positioned below the
+   modal-info area, at the bottom-left/right.
+   ═══════════════════════════════════════════════ */
+.discover-nav {
+  position: fixed;
+  z-index: 1050;
+  width: 260px;  /* base default — overridden by JS (alignDiscoverNavCards) */
+  /* Alinhados verticalmente com o modal-info:
+     top = modal-info.top, calculado via JS */
+  transition: none; /* zoom handles transition on the .game-card inside */
+}
+
+.discover-nav-prev {
+  /* Centered in the space between viewport wall and modal-info, calculated via JS */
+  left: auto;
+}
+
+.discover-nav-next {
+  /* Centered in the space between modal-info and viewport wall, calculated via JS */
+  right: auto;
+}
+
+/* The nav card itself — same structure as a game-card
+   Zoom on hover, same as normal grid cards */
+.discover-nav .game-card {
+  width: 100%;
+  cursor: pointer;
+  transform-origin: center top;
+  opacity: 0.55;
+  transition: transform 0.35s cubic-bezier(0.4,0,0.2,1), box-shadow 0.35s ease, opacity 0.35s ease;
+  box-shadow:
+    0 1px 0   rgba(255,255,255,0.06),
+    0 2px 6px rgba(0,0,0,0.45),
+    0 8px 24px rgba(0,0,0,0.35);
+}
+
+.discover-nav .game-card:hover {
+  transform: scale(1.045);
+  opacity: 1;
+  z-index: 10;
+  box-shadow:
+    0 1px 0    rgba(255,255,255,0.09),
+    0 4px 10px rgba(0,0,0,0.5),
+    0 14px 36px rgba(0,0,0,0.45);
+}
+
+/* Keep card-top fully rounded on hover (no card-expand to connect to) */
+.discover-nav .game-card:hover .card-top {
+  border-radius: var(--radius);
+}
+
+/* No scrub, no admin buttons, no card-expand on nav cards */
+.discover-nav .card-scrub-bar,
+.discover-nav .card-delete-btn,
+.discover-nav .card-addtab-btn,
+.discover-nav .card-edit-btn,
+.discover-nav .card-expand {
+  display: none !important;
+}
+
+/* No release-status move-down animation on hover for nav cards */
+.discover-nav .card-release-status {
+  transition: none !important;
+}
+.discover-nav .game-card:hover .card-release-status {
+  top: 0.5rem;
+}
+
+/* Title for nav cards */
+.discover-nav .card-banner-title {
+  font-size: 0.68rem;
+}
+
+/* Tags in nav cards */
+.discover-nav .tag {
+  font-size: 0.54rem;
+  padding: 2px 5px;
+}
+
+/* ── Discover nav arrow animation ─────────────
+   On hover: 3 arrows appear one by one (fast),
+   then fade in again slowly (cyclic).
+   Prev card: ‹ ‹ ‹  |  Next card: › › ›
+   ────────────────────────────────────────────── */
+.discover-nav-arrows {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 2px;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.discover-nav .game-card:hover .discover-nav-arrows {
+  opacity: 1;
+}
+
+.discover-arrow {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  line-height: 1;
+  opacity: 0;
+  animation: none;
+}
+
+/* Each arrow appears sequentially with fast entrance + slow fade-in cycle */
+.discover-nav .game-card:hover .discover-arrow {
+  animation: discoverArrowPulse 1.4s ease-in-out infinite;
+}
+
+.discover-nav .game-card:hover .discover-arrow:nth-child(1) {
+  animation-delay: 0s;
+}
+.discover-nav .game-card:hover .discover-arrow:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.discover-nav .game-card:hover .discover-arrow:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+@keyframes discoverArrowPulse {
+  0%   { opacity: 0; transform: translateX(0); }
+  15%  { opacity: 1; transform: translateX(-2px); }
+  40%  { opacity: 1; }
+  80%  { opacity: 0.15; }
+  100% { opacity: 0; }
+}
+
+/* Next card arrows: flip direction → use › and move right */
+.discover-nav-arrows--next .discover-arrow {
+  transform: scaleX(-1);
+}
+.discover-nav .game-card:hover .discover-nav-arrows--next .discover-arrow {
+  animation: discoverArrowPulseNext 1.4s ease-in-out infinite;
+}
+.discover-nav .game-card:hover .discover-nav-arrows--next .discover-arrow:nth-child(1) {
+  animation-delay: 0s;
+}
+.discover-nav .game-card:hover .discover-nav-arrows--next .discover-arrow:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.discover-nav .game-card:hover .discover-nav-arrows--next .discover-arrow:nth-child(3) {
+  animation-delay: 0.24s;
+}
+
+@keyframes discoverArrowPulseNext {
+  0%   { opacity: 0; transform: scaleX(-1) translateX(0); }
+  15%  { opacity: 1; transform: scaleX(-1) translateX(2px); }
+  40%  { opacity: 1; }
+  80%  { opacity: 0.15; }
+  100% { opacity: 0; }
+}
+
+/* ═══════════════════════════════════════════════════
+   DISCOVER — Carousel whoosh transition
+   Animação estilo carrossel ao navegar entre jogos.
+   Direita = próximo jogo, Esquerda = jogo anterior.
+   ═══════════════════════════════════════════════════ */
+
+@keyframes discoverWhooshOutLeft {
+  0%   { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(-60px); opacity: 0; }
+}
+@keyframes discoverWhooshOutRight {
+  0%   { transform: translateX(0); opacity: 1; }
+  100% { transform: translateX(60px); opacity: 0; }
+}
+@keyframes discoverWhooshInRight {
+  0%   { transform: translateX(60px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+@keyframes discoverWhooshInLeft {
+  0%   { transform: translateX(-60px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
+}
+
+/* Nav card whoosh — travels further since they're on the sides */
+@keyframes discoverNavOutLeft {
+  0%   { transform: translateX(0); opacity: 0.55; }
+  100% { transform: translateX(-120px); opacity: 0; }
+}
+@keyframes discoverNavOutRight {
+  0%   { transform: translateX(0); opacity: 0.55; }
+  100% { transform: translateX(120px); opacity: 0; }
+}
+@keyframes discoverNavInRight {
+  0%   { transform: translateX(120px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 0.55; }
+}
+@keyframes discoverNavInLeft {
+  0%   { transform: translateX(-120px); opacity: 0; }
+  100% { transform: translateX(0); opacity: 0.55; }
+}
+
+/* Slide-out: modal content leaves */
+.discover-whoosh-out-left {
+  animation: discoverWhooshOutLeft 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+.discover-whoosh-out-right {
+  animation: discoverWhooshOutRight 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+
+/* Slide-in: new modal content enters */
+.discover-whoosh-in-right {
+  animation: discoverWhooshInRight 0.28s cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+.discover-whoosh-in-left {
+  animation: discoverWhooshInLeft 0.28s cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+
+/* Nav card slide-out */
+.discover-nav-out-left {
+  animation: discoverNavOutLeft 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+.discover-nav-out-right {
+  animation: discoverNavOutRight 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+
+/* Nav card slide-in */
+.discover-nav-in-right {
+  animation: discoverNavInRight 0.28s cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+.discover-nav-in-left {
+  animation: discoverNavInLeft 0.28s cubic-bezier(0, 0, 0.2, 1) forwards;
 }
 
 /* ── Scrollbar ─────────────────────────────────── */
