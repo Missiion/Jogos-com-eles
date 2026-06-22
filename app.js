@@ -889,11 +889,22 @@ function getFilteredSortedGames() {
   if (currentSort === "name") {
     list.sort((a, b) => (a.name || "").localeCompare(b.name || "", isPt() ? "pt" : "en"));
   } else if (currentSort === "upvotes") {
-    // Mais votados primeiro > menos votados segundo
-    list.sort((a, b) => getUpvoteCount(b.firebaseId) - getUpvoteCount(a.firebaseId));
+    // Mais upvotes primeiro > menos upvotes segundo
+    // Sort secundário por nome para ordem consistente
+    list.sort((a, b) => {
+      const diff = getUpvoteCount(b.firebaseId) - getUpvoteCount(a.firebaseId);
+      if (diff !== 0) return diff;
+      return (a.name || "").localeCompare(b.name || "", isPt() ? "pt" : "en");
+    });
   } else if (currentSort === "upvotes-rev") {
-    // Menos votados primeiro > mais votados segundo
-    list.sort((a, b) => getUpvoteCount(a.firebaseId) - getUpvoteCount(b.firebaseId));
+    // ⚠️  Estado reverse = ordenar por DOWNVOTES (mais downvotes primeiro)
+    // O ícone mostra uma seta para baixo (downvote), por isso o utilizador
+    // espera que ordene por downvotes, não por "menos upvotes".
+    list.sort((a, b) => {
+      const diff = getDownvoteCount(b.firebaseId) - getDownvoteCount(a.firebaseId);
+      if (diff !== 0) return diff;
+      return (a.name || "").localeCompare(b.name || "", isPt() ? "pt" : "en");
+    });
   } else if (currentSort === "rating") {
     list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
   } else {
@@ -1883,20 +1894,20 @@ $adminCreateTrashBtn.addEventListener("click", () => {
   createTrashTab();
 });
 
-// Botão "Limpar Lixo" — só admin. Remove todos os jogos que estão no lixo
-// (com >= 2 down-votes). Pede confirmação antes de executar.
+// Botão "Limpar Reprovados" — só admin. Remove todos os jogos que estão nos Reprovados.
+// Pede confirmação antes de executar.
 $adminClearTrashBtn.addEventListener("click", async () => {
   if (!currentUser || !currentUser.isAdmin) {
-    showToast(isPt() ? "Apenas o admin pode limpar o lixo." : "Only admin can clear trash.");
+    showToast(isPt() ? "Apenas o admin pode limpar Reprovados." : "Only admin can clear Reprovados.");
     return;
   }
   if (!trashTabId) {
-    showToast(isPt() ? "Não há lixo para limpar." : "No trash to clear.");
+    showToast(isPt() ? "Não há Reprovados para limpar." : "No Reprovados to clear.");
     return;
   }
   const trashSet = tabGamesMap[trashTabId] || new Set();
   if (trashSet.size === 0) {
-    showToast(isPt() ? "O lixo está vazio." : "Trash is empty.");
+    showToast(isPt() ? "Reprovados está vazio." : "Reprovados is empty.");
     return;
   }
   // Confirmação
@@ -1906,12 +1917,11 @@ $adminClearTrashBtn.addEventListener("click", async () => {
   if (!confirm(confirmMsg)) return;
 
   try {
-    // Esvazia a tab lixo (remove todos os gameIds)
     await saveTabGames(trashTabId, new Set());
-    showToast(isPt() ? "Lixo limpo!" : "Trash cleared!");
+    showToast(isPt() ? "Reprovados limpo!" : "Reprovados cleared!");
   } catch (err) {
     console.error("[clearTrash] erro:", err);
-    showToast(isPt() ? "Erro ao limpar lixo." : "Failed to clear trash.");
+    showToast(isPt() ? "Erro ao limpar Reprovados." : "Failed to clear Reprovados.");
   }
 });
 
@@ -2623,13 +2633,16 @@ function listenToTabGames() {
       tabGamesMap[d.id] = new Set(d.data().gameIds || []);
     });
     // Encontra a tab "Lixo" (se existir)
-    const trashTab = tabsData.find(t => t.label === "Lixo" || t.label === "Trash");
+    const trashTab = tabsData.find(t => t.label === "Reprovados" || t.label === "Lixo" || t.label === "Trash" || t.label === "Rejected");
     trashTabId = trashTab ? trashTab.id : null;
     // Encontra a tab "Aprovados" (se existir)
     const approvedTab = tabsData.find(t => t.label === "Aprovados" || t.label === "Approved");
     approvedTabId = approvedTab ? approvedTab.id : null;
     renderTabs();
     renderGameList(gamesData);
+    // ⚠️  Processa thresholds após actualizar trashTabId — resolve race condition
+    // onde listenToDownvotes corre antes de trashTabId estar definido.
+    processDownvoteThresholds();
   });
 }
 
@@ -2951,67 +2964,87 @@ async function processDownvoteThresholds() {
   if (!db) return;
   if (!trashTabId) return; // sem lixo → não processa
 
-  const trashSet = tabGamesMap[trashTabId] || new Set();
+  // Cópia mutável do set actual do lixo
+  let trashSet = new Set(tabGamesMap[trashTabId] || []);
 
   // 1. Move jogos que atingiram o threshold para o lixo
+  let added = false;
   for (const [fbid, voters] of Object.entries(downvotesMap)) {
     if (voters.size >= DOWNVOTE_THRESHOLD) {
-      if (trashSet.has(fbid)) continue; // já está no lixo
-
-      // Adiciona o jogo ao lixo existente
-      const newSet = new Set(trashSet);
-      newSet.add(fbid);
-      await saveTabGames(trashTabId, newSet);
+      if (trashSet.has(fbid)) continue;
+      trashSet.add(fbid);
+      added = true;
     }
+  }
+  if (added) {
+    await saveTabGames(trashTabId, trashSet);
   }
 
   // 2. Remove do lixo jogos que já não têm threshold suficiente
   //    (alguém removeu o down-vote e o jogo voltou a ter < 2)
   if (trashSet.size > 0) {
     let removed = false;
-    const newSet = new Set(trashSet);
-    for (const fbid of trashSet) {
+    for (const fbid of [...trashSet]) {
       const count = getDownvoteCount(fbid);
       if (count < DOWNVOTE_THRESHOLD) {
-        newSet.delete(fbid);
+        trashSet.delete(fbid);
         removed = true;
       }
     }
-    if (removed) {
-      await saveTabGames(trashTabId, newSet);
+    if (removed || added) {
+      await saveTabGames(trashTabId, trashSet);
     }
   }
 }
 
-// Cria a pasta lixo (chamada pelo botão no painel de testes do admin).
-// Só funciona se o user for admin e se ainda não existir uma pasta lixo.
+// Cria a pasta "Reprovados" (chamada pelo botão no painel de testes do admin).
+// Só funciona se o user for admin e se ainda não existir.
+// ⚠️  Anti-duplicado: verifica tabsData E Firebase antes de criar.
 async function createTrashTab() {
   if (!currentUser || !currentUser.isAdmin) {
-    showToast(isPt() ? "Apenas o admin pode criar o lixo." : "Only admin can create trash.");
+    showToast(isPt() ? "Apenas o admin pode criar Reprovados." : "Only admin can create Reprovados.");
     return;
   }
-  // Verifica se já existe uma tab "Lixo"/"Trash" em tabsData (não só em trashTabId,
-  // que pode estar desactualizado se o listener ainda não correu)
-  const existingTrash = tabsData.find(t => t.label === "Lixo" || t.label === "Trash");
-  if (trashTabId || existingTrash) {
-    showToast(isPt() ? "O lixo já existe." : "Trash already exists.");
-    // Sincroniza trashTabId caso não estivesse actualizado
-    if (!trashTabId && existingTrash) trashTabId = existingTrash.id;
+
+  // 1. Verifica em tabsData (estado local)
+  const existingLocal = tabsData.find(t =>
+    t.label === "Reprovados" || t.label === "Reprovados" || t.label === "Lixo" || t.label === "Trash" || t.label === "Rejected" || t.label === "Rejected"
+  );
+  if (existingLocal) {
+    trashTabId = existingLocal.id;
+    showToast(isPt() ? "Reprovados já existe." : "Reprovados already exists.");
     return;
   }
+
+  // 2. Verifica no Firebase (para evitar duplicados se tabsData ainda não carregou)
+  try {
+    const snap = await getDocs(collection(db, "tabs"));
+    const existingFb = snap.docs.find(d => {
+      const label = d.data().label;
+      return label === "Reprovados" || label === "Lixo" || label === "Trash" || label === "Rejected";
+    });
+    if (existingFb) {
+      trashTabId = existingFb.id;
+      showToast(isPt() ? "Reprovados já existe." : "Reprovados already exists.");
+      return;
+    }
+  } catch (e) {
+    console.error("[createTrashTab] erro ao verificar Firebase:", e);
+  }
+
+  // 3. Cria a tab
   try {
     const trashRef = await addDoc(collection(db, "tabs"), {
-      label: "Lixo",
+      label: "Reprovados",
       createdAt: serverTimestamp(),
     });
     await setDoc(doc(db, "tabGames", trashRef.id), { gameIds: [] });
     trashTabId = trashRef.id;
-    showToast(isPt() ? "Lixo criado!" : "Trash created!");
-    // Processa jogos que já têm down-votes suficientes
+    showToast(isPt() ? "Reprovados criado!" : "Reprovados created!");
     processDownvoteThresholds();
   } catch (err) {
     console.error("[createTrashTab] erro:", err);
-    showToast(isPt() ? "Erro ao criar lixo." : "Failed to create trash.");
+    showToast(isPt() ? "Erro ao criar Reprovados." : "Failed to create Reprovados.");
   }
 }
 
@@ -3060,8 +3093,8 @@ function renderTabs() {
   const sortedTabs = [...tabsData].sort((a, b) => {
     const aIsApproved = (a.label === "Aprovados" || a.label === "Approved") ? 1 : 0;
     const bIsApproved = (b.label === "Aprovados" || b.label === "Approved") ? 1 : 0;
-    const aIsTrash = (a.label === "Lixo" || a.label === "Trash") ? 1 : 0;
-    const bIsTrash = (b.label === "Lixo" || b.label === "Trash") ? 1 : 0;
+    const aIsTrash = (a.label === "Reprovados" || a.label === "Lixo" || a.label === "Trash" || a.label === "Rejected") ? 1 : 0;
+    const bIsTrash = (b.label === "Reprovados" || b.label === "Lixo" || b.label === "Trash" || b.label === "Rejected") ? 1 : 0;
 
     // Aprovados tem prioridade 0 (vem primeiro entre as tabs)
     // Outras tabs têm prioridade 1
@@ -3076,11 +3109,11 @@ function renderTabs() {
     { id: "all", label: t("Todos"), count: gamesData.filter(g => !isInTrash(g.firebaseId)).length, deletable: false },
     ...sortedTabs.map(tab => {
       const set = tabGamesMap[tab.id] || new Set();
-      const isTrash = (tab.label === "Lixo" || tab.label === "Trash");
+      const isTrash = (tab.label === "Reprovados" || tab.label === "Lixo" || tab.label === "Trash" || tab.label === "Rejected");
       const isApproved = (tab.label === "Aprovados" || tab.label === "Approved");
       return {
         id: tab.id,
-        label: isTrash ? t("Lixo") : (isApproved ? t("Aprovados") : tab.label),
+        label: isTrash ? t("Reprovados") : (isApproved ? t("Aprovados") : tab.label),
         count: gamesData.filter(g => set.has(g.firebaseId)).length,
         deletable: !isTrash && !isApproved, // lixo e aprovados não são apagáveis
       };
@@ -3205,11 +3238,11 @@ function updateSortButtonsUI() {
     if (downIcon) downIcon.style.display = isReverse ? "" : "none";
     // Actualiza o title consoante o estado
     if (isReverse) {
-      votesBtn.title = t("Menos votados");
+      votesBtn.title = t("Mais down-votes");
     } else if (currentSort === "upvotes") {
-      votesBtn.title = t("Mais votados");
+      votesBtn.title = t("Mais up-votes");
     } else {
-      votesBtn.title = t("Mais votados");
+      votesBtn.title = t("Mais up-votes");
     }
   }
 }
@@ -3691,8 +3724,8 @@ function init() {
   window.addEventListener("resize", () => markLastRowCards(), { passive: true });
 
   // Listeners Firestore em tempo real
-  listenToTabGames();   // tab→jogos primeiro (para estar pronto quando as tabs chegarem)
-  listenToTabs();       // tabs — re-renderiza quando houver dados
+  listenToTabs();       // tabs PRIMEIRO (popula tabsData para listenToTabGames poder encontrar Reprovados/Aprovados)
+  listenToTabGames();   // tab→jogos (usa tabsData para encontrar trashTabId e approvedTabId)
   listenToGames();      // jogos
   listenToUsers();      // users — registo + sessão
   listenToDownvotes();  // down-votes — sistema de votação
