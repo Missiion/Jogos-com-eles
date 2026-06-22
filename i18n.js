@@ -84,6 +84,7 @@
 
     // ── Discover button ─────────────────────────
     "Descobre": "Discover",
+    "Novidade": "New",
 
     // ── Settings (gear menu) ────────────────────
     "Aspeto": "Appearance",
