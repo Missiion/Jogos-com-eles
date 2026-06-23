@@ -446,7 +446,48 @@
   //      Os dados do IGDB já vêm em inglês, e as strings estáticas
   //      usam o DICT (lookup instantâneo). O Google Translate só é
   //      usado para traduzir sumários/tags do EN → PT.
+  //
+  //  ⚠️  Otimizações anti-spam de consola:
+  //      - /api/translate é testado apenas 1 vez; se falhar (404 em
+  //        GitHub Pages), não se volta a tentar (flag _apiTranslateAvailable).
+  //      - Concorrência limitada: apenas 3 traduções em paralelo (queue).
+  //      - Backoff em 429: espera 2s antes de tentar outro proxy.
+  //      - Warnings de falha são agrupados (1 por sessão, não por texto).
   // ─────────────────────────────────────────────
+
+  // Flag: se /api/translate já retornou 404, não voltar a tentar
+  let _apiTranslateAvailable = true;
+  // Flag: se um proxy CORS retornou 429, fazer backoff
+  let _proxyBackoffUntil = 0;
+  // Conta falhas de tradução para agrupar warnings (evita spam de consola)
+  let _translateFailCount = 0;
+  let _translateWarned = false;
+
+  // Queue simples para limitar concorrência de traduções a 3 em paralelo.
+  // Evita disparar 40+ requests simultâneos aos proxies CORS (causa 429).
+  const _MAX_CONCURRENT_TRANSLATIONS = 3;
+  let _activeTranslations = 0;
+  const _translationQueue = [];
+
+  function _runNextTranslation() {
+    if (_activeTranslations >= _MAX_CONCURRENT_TRANSLATIONS) return;
+    const next = _translationQueue.shift();
+    if (!next) return;
+    _activeTranslations++;
+    Promise.resolve(next.fn())
+      .finally(() => {
+        _activeTranslations--;
+        _runNextTranslation();
+      });
+  }
+
+  function _enqueueTranslation(fn) {
+    return new Promise((resolve, reject) => {
+      _translationQueue.push({ fn: () => Promise.resolve(fn()).then(resolve, reject) });
+      _runNextTranslation();
+    });
+  }
+
   async function translateText(text, targetLang) {
     if (text == null) return "";
     const trimmed = String(text);
@@ -470,46 +511,66 @@
       return translateCache.get(cacheKey);
     }
 
-    // 3. Backend proxy (Next.js API route)
-    //    Só funciona quando o site corre através do Next.js dev server.
-    //    Em servidores estáticos (Python http.server, etc.) devolve 404.
-    let translated = null;
-    try {
-      const url = `/api/translate?target=${encodeURIComponent(lang)}&text=${encodeURIComponent(trimmed)}`;
-      const res = await fetch(url, { method: "GET" });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.translatedText) {
-          translated = data.translatedText;
-        }
+    // Enfileira a tradução para limitar concorrência
+    return _enqueueTranslation(async () => {
+      // Re-verifica cache (outra tradução do mesmo texto pode ter terminado)
+      if (translateCache.has(cacheKey)) {
+        return translateCache.get(cacheKey);
       }
-      // Se 404 ou outro erro, cai para o método directo
-    } catch (_) { /* rede — tenta método directo */ }
 
-    // 4. Google Translate via proxy CORS
-    //    O endpoint free do Google não envia headers CORS, por isso
-    //    usamos um proxy CORS público. Tentamos vários por ordem.
-    if (!translated) {
-      translated = await translateViaCorsProxy(trimmed, lang);
-    }
+      // 3. Backend proxy (Next.js API route)
+      //    Só funciona quando o site corre através do Next.js dev server.
+      //    Em GitHub Pages / servidores estáticos devolve 404 — depois da
+      //    primeira falha, skipamos esta etapa para evitar spam de 404.
+      let translated = null;
+      if (_apiTranslateAvailable) {
+        try {
+          const url = `/api/translate?target=${encodeURIComponent(lang)}&text=${encodeURIComponent(trimmed)}`;
+          const res = await fetch(url, { method: "GET" });
+          if (res.status === 404) {
+            // Endpoint não existe (GitHub Pages) — desativa para futuras chamadas
+            _apiTranslateAvailable = false;
+          } else if (res.ok) {
+            const data = await res.json();
+            if (data && data.translatedText) {
+              translated = data.translatedText;
+            }
+          }
+        } catch (_) { /* rede — tenta método directo */ }
+      }
 
-    // 5. MyMemory API directa (CORS-friendly, último recurso)
-    //    Requer idioma de origem; assumimos EN (maioria dos summaries IGDB).
-    if (!translated) {
-      translated = await translateViaMyMemory(trimmed, lang);
-    }
+      // 4. Google Translate via proxy CORS
+      //    Verifica backoff: se um proxy retornou 429 recentemente, espera.
+      if (!translated && Date.now() < _proxyBackoffUntil) {
+        // Em backoff — não tenta proxies CORS, vai direto ao MyMemory
+      } else if (!translated) {
+        translated = await translateViaCorsProxy(trimmed, lang);
+      }
 
-    if (translated) {
-      translateCache.set(cacheKey, translated);
-      return translated;
-    }
+      // 5. MyMemory API directa (CORS-friendly, último recurso)
+      //    Requer idioma de origem; assumimos EN (maioria dos summaries IGDB).
+      if (!translated) {
+        translated = await translateViaMyMemory(trimmed, lang);
+      }
 
-    console.warn("[i18n] translateText falhou (todos os métodos):", trimmed.slice(0, 60));
-    return trimmed;
+      if (translated) {
+        translateCache.set(cacheKey, translated);
+        return translated;
+      }
+
+      // Falhou — agrupa warnings para não spamar a consola
+      _translateFailCount++;
+      if (!_translateWarned && _translateFailCount >= 3) {
+        console.warn(`[i18n] ${_translateFailCount} traduções falharam (proxys CORS indisponíveis ou rate-limited). As traduções serão tentadas novamente mais tarde.`);
+        _translateWarned = true;
+      }
+      return trimmed;
+    });
   }
 
   // Google Translate free endpoint via proxy CORS.
   // Tenta vários proxies por ordem até um funcionar.
+  // Se um proxy retornar 429 (rate limit), ativa backoff global.
   async function translateViaCorsProxy(text, lang) {
     const gtUrl =
       "https://translate.googleapis.com/translate_a/single" +
@@ -525,6 +586,11 @@
     for (const makeProxyUrl of proxies) {
       try {
         const res = await fetch(makeProxyUrl(gtUrl), { method: "GET" });
+        if (res.status === 429) {
+          // Rate limited — ativa backoff de 5 segundos para todos os proxies
+          _proxyBackoffUntil = Date.now() + 5000;
+          continue;
+        }
         if (!res.ok) continue;
         const data = await res.json();
         // Resposta: [ [ ["tradução","original",...], ... ], null, "en", ... ]
