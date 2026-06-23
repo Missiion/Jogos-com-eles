@@ -122,6 +122,15 @@
     "Escolher Key Art": "Choose Key Art",
     "Adicionar a Tab": "Add to Tab",
 
+    // ── Playlist / Gravações ────────────────────
+    "Gravações": "Recordings",
+    "Link da playlist do YouTube": "YouTube playlist link",
+    "Gravações guardadas.": "Recordings saved.",
+    "Gravações removidas.": "Recordings removed.",
+    "Erro ao guardar gravações.": "Failed to save recordings.",
+    "Insere um link de playlist.": "Enter a playlist link.",
+    "Link de playlist inválido.": "Invalid playlist link.",
+
     // ── Extra info labels (modal) ───────────────
     "Estúdio": "Studio",
     "Desenvolvedor": "Developer",
