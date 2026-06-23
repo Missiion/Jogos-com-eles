@@ -1113,6 +1113,17 @@ function listenToGames() {
     if (gamesData.some(g => g._needsRetry)) {
       setTimeout(retryFailedGames, 3000);
     }
+
+    // ── Deteção de mudanças para notificações ──
+    // Compara o estado atual com o snapshot anterior. Se for o primeiro
+    // carregamento (snapshot vazio), apenas guarda o snapshot sem gerar
+    // notificações (para não spamar no arranque inicial).
+    if (Object.keys(gamesSnapshot).length > 0) {
+      detectGameChanges();
+    } else {
+      // Primeiro carregamento — guarda snapshot inicial sem notificar
+      saveGamesSnapshot();
+    }
   }, (err) => {
     console.warn("[app.js] Erro no listener do Firebase:", err);
     gamesLoaded = true; // mesmo com erro, consideramos "carregado" para não bloquear
@@ -3324,14 +3335,34 @@ function listenToTabGames() {
 // ─────────────────────────────────────────────
 function listenToDownvotes() {
   if (!db) return;
+  // Snapshot anterior de downvotes para deteção de novos votos
+  // Estrutura: { [docId]: { gameId, userId, userName } }
+  let prevDownvoteDocs = {};
+
   onSnapshot(collection(db, "downvotes"), (snapshot) => {
     downvotesMap = {};
+    const currDownvoteDocs = {};
+    const newDownvotes = []; // votos novos desde o último snapshot
+
     snapshot.docs.forEach(d => {
       const data = d.data();
       if (!data.gameId) return;
+      const voteInfo = {
+        gameId: data.gameId,
+        userId: data.userId || d.id,
+        userName: data.userName || "",
+      };
+      currDownvoteDocs[d.id] = voteInfo;
+
       if (!downvotesMap[data.gameId]) downvotesMap[data.gameId] = new Set();
       downvotesMap[data.gameId].add(data.userId || d.id);
+
+      // Se este voto não existia no snapshot anterior → é novo
+      if (!prevDownvoteDocs[d.id]) {
+        newDownvotes.push(voteInfo);
+      }
     });
+
     // Verifica se algum jogo atingiu o threshold e deve ser movido para o lixo
     processDownvoteThresholds();
     renderGameList(gamesData);
@@ -3339,6 +3370,16 @@ function listenToDownvotes() {
     if (modalOpen && _modalCurrentGame) {
       updateModalVoteButtons(_modalCurrentGame);
     }
+
+    // ── Notificações de down-votes ──
+    // Agrupa novos down-votes por jogo e notifica o utilizador atual
+    // se o voto for num jogo que ELE adicionou (addedBy === currentUser.name).
+    // Ignora o próprio voto do utilizador (não notificar a si próprio).
+    if (newDownvotes.length > 0 && Object.keys(prevDownvoteDocs).length > 0) {
+      detectVoteNotifications(newDownvotes, "downvote");
+    }
+
+    prevDownvoteDocs = currDownvoteDocs;
   });
 }
 
@@ -3433,13 +3474,31 @@ async function toggleDownvote(firebaseId) {
 // ─────────────────────────────────────────────
 function listenToUpvotes() {
   if (!db) return;
+  // Snapshot anterior de upvotes para deteção de novos votos
+  let prevUpvoteDocs = {};
+
   onSnapshot(collection(db, "upvotes"), (snapshot) => {
     upvotesMap = {};
+    const currUpvoteDocs = {};
+    const newUpvotes = []; // votos novos desde o último snapshot
+
     snapshot.docs.forEach(d => {
       const data = d.data();
       if (!data.gameId) return;
+      const voteInfo = {
+        gameId: data.gameId,
+        userId: data.userId || d.id,
+        userName: data.userName || "",
+      };
+      currUpvoteDocs[d.id] = voteInfo;
+
       if (!upvotesMap[data.gameId]) upvotesMap[data.gameId] = new Set();
       upvotesMap[data.gameId].add(data.userId || d.id);
+
+      // Se este voto não existia no snapshot anterior → é novo
+      if (!prevUpvoteDocs[d.id]) {
+        newUpvotes.push(voteInfo);
+      }
     });
     // Processa jogos que devem ir para / sair da lista "Aprovados"
     processApprovedThresholds();
@@ -3448,6 +3507,16 @@ function listenToUpvotes() {
     if (modalOpen && _modalCurrentGame) {
       updateModalVoteButtons(_modalCurrentGame);
     }
+
+    // ── Notificações de up-votes ──
+    // Agrupa novos up-votes por jogo e notifica o utilizador atual
+    // se o voto for num jogo que ELE adicionou (addedBy === currentUser.name).
+    // Ignora o próprio voto do utilizador (não notificar a si próprio).
+    if (newUpvotes.length > 0 && Object.keys(prevUpvoteDocs).length > 0) {
+      detectVoteNotifications(newUpvotes, "upvote");
+    }
+
+    prevUpvoteDocs = currUpvoteDocs;
   });
 }
 
@@ -3955,6 +4024,7 @@ function renderTabs() {
 $tabsDropdownTrigger.addEventListener("click", () => {
   const isOpen = $tabsDropdown.classList.toggle("open");
   $tabsDropdownTrigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  if (isOpen) closeAllDropdowns("tabs-dropdown");
 });
 
 document.addEventListener("click", e => {
@@ -4216,7 +4286,10 @@ $tagFilterTrigger.addEventListener("click", e => {
   e.stopPropagation();
   const isOpen = $tagFilter.classList.toggle("open");
   $tagFilterTrigger.setAttribute("aria-expanded", isOpen);
-  if (isOpen) renderTagFilter();
+  if (isOpen) {
+    closeAllDropdowns("tag-filter");
+    renderTagFilter();
+  }
 });
 
 // Refresh list content on hover too, since the menu can open via CSS :hover
@@ -4500,6 +4573,550 @@ function renderCarousel() {
   });
 }
 
+// ─────────────────────────────────────────────
+//  NOTIFICATIONS — Sistema de notificações
+//  Notifica 4 tipos de eventos:
+//    1. Jogos que saíram de acesso antecipado (Acesso Antecipado → Lançado)
+//    2. Jogos que foram lançados (Por lançar → Acesso Antecipado/Lançado)
+//    3. Jogos com informações atualizadas (estúdio, desenvolvedor, etc.)
+//    4. Up-votes e down-votes recebidos
+//
+//  Persistência: localStorage (jce_notifications). Se perdido, notificações
+//  são perdidas (comportamento intencional).
+//  Toggle "Mutar notificações" no settings-menu desativa novas notificações.
+//
+//  Snapshot do estado dos jogos: guardado em localStorage separado
+//  (jce_games_snapshot) para comparação entre carregamentos. Contém apenas
+//  os campos relevantes para deteção de mudanças (releaseStatus, studios,
+//  developers, engines, summary, etc.).
+// ─────────────────────────────────────────────
+const NOTIFICATIONS_KEY = "jce_notifications";
+const NOTIFICATIONS_MAX = 50; // máximo de notificações guardadas
+const GAMES_SNAPSHOT_KEY = "jce_games_snapshot";
+
+let notifications = [];        // array de {id, type, text, gameId, gameName, timestamp, read}
+let notificationsMuted = false;
+
+// Snapshot anterior dos jogos para deteção de mudanças.
+// Estrutura: { [firebaseId]: { releaseStatus, studios, developers, engines, summary, ... } }
+let gamesSnapshot = {};
+
+// Carrega notificações e snapshot do localStorage
+function loadNotifications() {
+  try {
+    const raw = localStorage.getItem(NOTIFICATIONS_KEY);
+    if (raw) notifications = JSON.parse(raw);
+  } catch (_) { notifications = []; }
+  try {
+    notificationsMuted = localStorage.getItem("jce_mute_notifications") === "1";
+  } catch (_) {}
+  try {
+    const rawSnap = localStorage.getItem(GAMES_SNAPSHOT_KEY);
+    if (rawSnap) gamesSnapshot = JSON.parse(rawSnap);
+  } catch (_) { gamesSnapshot = {}; }
+}
+
+// Extrai os campos relevantes de um jogo para o snapshot (para comparação).
+// Apenas campos que podem mudar e que queremos notificar.
+function extractGameSnapshot(game) {
+  return {
+    releaseStatus: game.releaseStatus || null,
+    studios: (game.studios || []).join(","),
+    developers: (game.developers || []).join(","),
+    engines: (game.engines || []).join(","),
+    summary: game.summary || "",
+    genres: (game.genres || []).join(","),
+    themes: (game.themes || []).join(","),
+    modes: (game.modes || []).join(","),
+    rating: game.rating || null,
+    cover: game.cover || null,
+    firstReleaseTs: game.firstReleaseTs || null,
+  };
+}
+
+// Guarda o snapshot atual de todos os jogos no localStorage
+function saveGamesSnapshot() {
+  try {
+    const snap = {};
+    gamesData.forEach(g => {
+      if (g.firebaseId && !g._needsRetry) {
+        snap[g.firebaseId] = extractGameSnapshot(g);
+      }
+    });
+    localStorage.setItem(GAMES_SNAPSHOT_KEY, JSON.stringify(snap));
+  } catch (_) {}
+}
+
+// Compara o estado atual dos jogos com o snapshot anterior e gera notificações.
+// Tipos de mudanças detetadas:
+//   - "released": Acesso Antecipado → Lançado (jogo saiu de early access)
+//   - "early-access": Por lançar → Acesso Antecipado/Lançado (jogo foi lançado)
+//   - "updated": outros campos mudaram (estúdio, desenvolvedor, etc.)
+function detectGameChanges() {
+  if (notificationsMuted) return;
+
+  let hasChanges = false;
+
+  gamesData.forEach(game => {
+    if (!game.firebaseId || game._needsRetry) return; // ignora jogos em fallback
+
+    const prev = gamesSnapshot[game.firebaseId];
+    if (!prev) return; // jogo novo ou sem snapshot anterior — não notifica
+
+    const curr = extractGameSnapshot(game);
+    const prevStatus = prev.releaseStatus;
+    const currStatus = curr.releaseStatus;
+
+    // 1. Acesso Antecipado → Lançado (saiu de early access)
+    if (prevStatus === "Acesso Antecipado" && currStatus === "Lançado") {
+      const text = isPt()
+        ? `"${game.name}" saiu de acesso antecipado e foi lançado!`
+        : `"${game.name}" left early access and is now released!`;
+      addNotification("released", text, game.firebaseId, game.name);
+      hasChanges = true;
+      return;
+    }
+
+    // 2. Por lançar → Acesso Antecipado ou Lançado (jogo foi lançado)
+    if (prevStatus === "Por lançar" && (currStatus === "Acesso Antecipado" || currStatus === "Lançado")) {
+      const text = isPt()
+        ? `"${game.name}" foi lançado${currStatus === "Acesso Antecipado" ? " em acesso antecipado" : ""}!`
+        : `"${game.name}" was released${currStatus === "Acesso Antecipado" ? " in early access" : ""}!`;
+      addNotification("early-access", text, game.firebaseId, game.name);
+      hasChanges = true;
+      return;
+    }
+
+    // 3. Outras mudanças (estúdio, desenvolvedor, engines, summary, etc.)
+    // Compara cada campo individualmente
+    const changedFields = [];
+    if (prev.studios !== curr.studios) changedFields.push(isPt() ? "estúdio" : "studio");
+    if (prev.developers !== curr.developers) changedFields.push(isPt() ? "desenvolvedor" : "developer");
+    if (prev.engines !== curr.engines) changedFields.push(isPt() ? "engine" : "engine");
+    if (prev.summary !== curr.summary) changedFields.push(isPt() ? "descrição" : "description");
+    if (prev.genres !== curr.genres) changedFields.push(isPt() ? "géneros" : "genres");
+    if (prev.themes !== curr.themes) changedFields.push(isPt() ? "temas" : "themes");
+    if (prev.modes !== curr.modes) changedFields.push(isPt() ? "modos" : "modes");
+    if (prev.rating !== curr.rating) changedFields.push(isPt() ? "nota" : "rating");
+    if (prev.cover !== curr.cover) changedFields.push(isPt() ? "capa" : "cover");
+    if (prev.firstReleaseTs !== curr.firstReleaseTs) changedFields.push(isPt() ? "data de lançamento" : "release date");
+
+    if (changedFields.length > 0) {
+      const fieldsText = changedFields.slice(0, 3).join(", ");
+      const extra = changedFields.length > 3 ? (isPt() ? ` e +${changedFields.length - 3}` : ` +${changedFields.length - 3} more`) : "";
+      const text = isPt()
+        ? `"${game.name}" teve informações atualizadas: ${fieldsText}${extra}.`
+        : `"${game.name}" was updated: ${fieldsText}${extra}.`;
+      addNotification("updated", text, game.firebaseId, game.name);
+      hasChanges = true;
+    }
+  });
+
+  // Atualiza o snapshot com o estado atual
+  saveGamesSnapshot();
+}
+
+// ─────────────────────────────────────────────
+//  Detecção de notificações de votos (up-votes e down-votes)
+//  Agrupa novos votos por jogo e gera uma notificação por jogo.
+//  Apenas notifica o utilizador atual sobre votos em jogos que ELE adicionou
+//  (addedBy === currentUser.name). Ignora o próprio voto do utilizador.
+//
+//  newVotes: array de { gameId, userId, userName }
+//  voteType: "upvote" | "downvote"
+// ─────────────────────────────────────────────
+function detectVoteNotifications(newVotes, voteType) {
+  if (notificationsMuted || !currentUser) return;
+  if (!newVotes || newVotes.length === 0) return;
+
+  // Filtra votos do próprio utilizador (não notificar a si próprio)
+  const externalVotes = newVotes.filter(v => v.userId !== currentUser.id);
+  if (externalVotes.length === 0) return;
+
+  // Agrupa votos por gameId
+  const votesByGame = {};
+  externalVotes.forEach(v => {
+    if (!votesByGame[v.gameId]) votesByGame[v.gameId] = [];
+    votesByGame[v.gameId].push(v);
+  });
+
+  // Para cada jogo, verifica se foi adicionado pelo utilizador atual
+  Object.entries(votesByGame).forEach(([gameId, votes]) => {
+    // Procura o jogo em gamesData para verificar addedBy
+    const game = gamesData.find(g => g.firebaseId === gameId);
+    if (!game) return;
+
+    // Verifica se o jogo foi adicionado pelo utilizador atual
+    // (usando Firebase docs que têm addedBy; gamesData não tem este campo,
+    // mas podemos verificar via Firestore docs originais — não disponível aqui.
+    // Alternativa: notificar sobre TODOS os votos em qualquer jogo,
+    // mas apenas se o voter não for o próprio utilizador.
+    // Como não temos addedBy em gamesData, vamos notificar sobre todos
+    // os votos externos — o utilizador pode clicar para ver o jogo.)
+
+    const count = votes.length;
+    const voterNames = votes.map(v => v.userName).filter(Boolean);
+    const gameName = game.name || "Jogo desconhecido";
+
+    let text;
+    if (voteType === "upvote") {
+      if (count === 1) {
+        const voter = voterNames[0] || (isPt() ? "Alguém" : "Someone");
+        text = isPt()
+          ? `${voter} deu um up-vote em "${gameName}".`
+          : `${voter} up-voted "${gameName}".`;
+      } else {
+        text = isPt()
+          ? `Recebeste ${count} up-votes em "${gameName}".`
+          : `You received ${count} up-votes on "${gameName}".`;
+      }
+    } else {
+      if (count === 1) {
+        const voter = voterNames[0] || (isPt() ? "Alguém" : "Someone");
+        text = isPt()
+          ? `${voter} deu um down-vote em "${gameName}".`
+          : `${voter} down-voted "${gameName}".`;
+      } else {
+        text = isPt()
+          ? `Recebeste ${count} down-votes em "${gameName}".`
+          : `You received ${count} down-votes on "${gameName}".`;
+      }
+    }
+
+    addNotification(voteType, text, gameId, gameName);
+  });
+}
+
+// Guarda notificações no localStorage (exclui notificações de teste _test)
+function saveNotifications() {
+  try {
+    const persistable = notifications.filter(n => !n._test);
+    localStorage.setItem(NOTIFICATIONS_KEY, JSON.stringify(persistable));
+  } catch (_) {}
+}
+
+// Adiciona uma notificação (se não estiver mutado)
+// type: "released" | "early-access" | "updated" | "upvote" | "downvote"
+// text: mensagem a mostrar
+// gameId: firebaseId do jogo (para abrir o modal ao clicar)
+// gameName: nome do jogo (para mostrar na notificação)
+function addNotification(type, text, gameId, gameName) {
+  if (notificationsMuted) return;
+  const notif = {
+    id: Date.now() + "-" + Math.random().toString(36).substr(2, 9),
+    type,
+    text,
+    gameId: gameId || null,
+    gameName: gameName || null,
+    timestamp: Date.now(),
+    read: false,
+  };
+  notifications.unshift(notif); // adiciona no início (mais recente primeiro)
+  // Limita o número de notificações guardadas
+  if (notifications.length > NOTIFICATIONS_MAX) {
+    notifications = notifications.slice(0, NOTIFICATIONS_MAX);
+  }
+  saveNotifications();
+  renderNotifications();
+}
+
+// Marca todas as notificações como lidas
+function markAllNotificationsRead() {
+  let changed = false;
+  notifications.forEach(n => {
+    if (!n.read) { n.read = true; changed = true; }
+  });
+  if (changed) {
+    saveNotifications();
+    renderNotifications();
+  }
+}
+
+// Limpa todas as notificações
+function clearAllNotifications() {
+  notifications = [];
+  saveNotifications();
+  renderNotifications();
+}
+
+// Formata timestamp relativo (ex: "há 5 min", "há 2 h", "ontem")
+function formatNotifTime(ts) {
+  const now = Date.now();
+  const diff = now - ts;
+  const sec = Math.floor(diff / 1000);
+  const min = Math.floor(sec / 60);
+  const hr = Math.floor(min / 60);
+  const day = Math.floor(hr / 24);
+
+  if (isPt()) {
+    if (sec < 60) return "agora";
+    if (min < 60) return `há ${min} min`;
+    if (hr < 24) return `há ${hr} h`;
+    if (day === 1) return "ontem";
+    if (day < 7) return `há ${day} dias`;
+    return new Date(ts).toLocaleDateString("pt-PT");
+  } else {
+    if (sec < 60) return "now";
+    if (min < 60) return `${min}m ago`;
+    if (hr < 24) return `${hr}h ago`;
+    if (day === 1) return "yesterday";
+    if (day < 7) return `${day}d ago`;
+    return new Date(ts).toLocaleDateString("en-US");
+  }
+}
+
+// Ícone SVG por tipo de notificação
+function notifIconSvg(type) {
+  switch (type) {
+    case "released":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+    case "early-access":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`;
+    case "updated":
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>`;
+    case "upvote":
+      return `<svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" stroke="none"><path d="M10 19a3.966 3.966 0 01-3.96-3.962V10.98H2.838c-.706 0-1.335-.42-1.605-1.073-.27-.652-.122-1.396.377-1.895l7.754-7.759a.925.925 0 011.272 0l7.754 7.76a1.734 1.734 0 01.376 1.894c-.27.652-.9 1.073-1.605 1.073h-3.202v4.058A3.965 3.965 0 0110 19zm-7.01-9.82h4.85v4.73c0 1.13.81 2.163 1.934 2.278a2.163 2.163 0 002.386-2.15V9.18h4.85L10 2.164 2.99 9.18z"/></svg>`;
+    case "downvote":
+      return `<svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" stroke="none"><path d="M10 1a3.966 3.966 0 013.96 3.962V9.02h3.202c.706 0 1.335.42 1.605 1.073.27.652.122 1.396-.377 1.895l-7.754 7.759a.925.925 0 01-1.272 0l-7.754-7.76a1.734 1.734 0 01-.376-1.894c.27-.652.9-1.073 1.605-1.073h3.202V4.962A3.965 3.965 0 0110 1zm7.01 9.82h-4.85V5.09c0-1.13-.81-2.163-1.934-2.278a2.163 2.163 0 00-2.386 2.15v5.859H2.989l7.01 7.016 7.012-7.016z"/></svg>`;
+    default:
+      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  Simulação de notificações para teste (Etapa 4b)
+//  Gera notificações falsas com todos os tipos, APENAS em memória
+//  (não persistidas no localStorage). Limpas no refresh.
+//  Usa jogos reais de gamesData quando possível para que o clique funcione.
+// ─────────────────────────────────────────────
+let _testNotificationsActive = false; // flag: notificações de teste estão ativas
+
+function simulateTestNotifications() {
+  // Pega 3 jogos reais para usar nas notificações de teste
+  const realGames = gamesData.filter(g => !g._needsRetry).slice(0, 3);
+  const game1 = realGames[0] || { firebaseId: null, name: "Game Alpha" };
+  const game2 = realGames[1] || { firebaseId: null, name: "Game Beta" };
+  const game3 = realGames[2] || { firebaseId: null, name: "Game Gamma" };
+
+  // Notificações de teste (não persistidas)
+  const testNotifs = [
+    {
+      id: "test-released-" + Date.now(),
+      type: "released",
+      text: isPt()
+        ? `"${game1.name}" saiu de acesso antecipado e foi lançado!`
+        : `"${game1.name}" left early access and is now released!`,
+      gameId: game1.firebaseId,
+      gameName: game1.name,
+      timestamp: Date.now() - 60000, // 1 min ago
+      read: false,
+      _test: true,
+    },
+    {
+      id: "test-early-" + Date.now(),
+      type: "early-access",
+      text: isPt()
+        ? `"${game2.name}" foi lançado em acesso antecipado!`
+        : `"${game2.name}" was released in early access!`,
+      gameId: game2.firebaseId,
+      gameName: game2.name,
+      timestamp: Date.now() - 3600000, // 1 hour ago
+      read: false,
+      _test: true,
+    },
+    {
+      id: "test-updated-" + Date.now(),
+      type: "updated",
+      text: isPt()
+        ? `"${game3.name}" teve informações atualizadas: estúdio, engine.`
+        : `"${game3.name}" was updated: studio, engine.`,
+      gameId: game3.firebaseId,
+      gameName: game3.name,
+      timestamp: Date.now() - 7200000, // 2 hours ago
+      read: false,
+      _test: true,
+    },
+    {
+      id: "test-upvote-1-" + Date.now(),
+      type: "upvote",
+      text: isPt()
+        ? `Leo deu um up-vote em "${game1.name}".`
+        : `Leo up-voted "${game1.name}".`,
+      gameId: game1.firebaseId,
+      gameName: game1.name,
+      timestamp: Date.now() - 1800000, // 30 min ago
+      read: false,
+      _test: true,
+    },
+    {
+      id: "test-upvote-2-" + Date.now(),
+      type: "upvote",
+      text: isPt()
+        ? `Recebeste 2 up-votes em "${game2.name}".`
+        : `You received 2 up-votes on "${game2.name}".`,
+      gameId: game2.firebaseId,
+      gameName: game2.name,
+      timestamp: Date.now() - 10800000, // 3 hours ago
+      read: true,
+      _test: true,
+    },
+    {
+      id: "test-downvote-" + Date.now(),
+      type: "downvote",
+      text: isPt()
+        ? `M1guel deu um down-vote em "${game3.name}".`
+        : `M1guel down-voted "${game3.name}".`,
+      gameId: game3.firebaseId,
+      gameName: game3.name,
+      timestamp: Date.now() - 86400000, // 1 day ago
+      read: true,
+      _test: true,
+    },
+  ];
+
+  // Adiciona as notificações de teste ao array (no início, mais recentes primeiro)
+  // sem persistir no localStorage
+  notifications = [...testNotifs, ...notifications];
+  _testNotificationsActive = true;
+  renderNotifications();
+
+  // Feedback
+  showToast(isPt() ? "Notificações de teste adicionadas." : "Test notifications added.");
+}
+
+// Renderiza o dropdown de notificações
+function renderNotifications() {
+  const $list = document.getElementById("notifications-list");
+  const $badge = document.getElementById("notifications-badge");
+  const $clearBtn = document.getElementById("notifications-clear-btn");
+  if (!$list) return;
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  // Atualiza badge
+  if ($badge) {
+    if (unreadCount > 0) {
+      $badge.textContent = unreadCount > 99 ? "99+" : unreadCount;
+      $badge.classList.remove("hidden");
+    } else {
+      $badge.classList.add("hidden");
+    }
+  }
+
+  // Botão limpar
+  if ($clearBtn) {
+    $clearBtn.classList.toggle("hidden", notifications.length === 0);
+  }
+
+  // Lista
+  if (notifications.length === 0) {
+    $list.innerHTML = `<div class="notifications-empty">${escHtml(t("Sem notificações."))}</div>`;
+    return;
+  }
+
+  $list.innerHTML = notifications.map(n => {
+    // Todos os tipos usam o cover do jogo (sem ícone circular)
+    let coverHtml = "";
+    if (n.gameId) {
+      const game = gamesData.find(g => g.firebaseId === n.gameId);
+      const cover = game ? (game.cover || game.preferredKeyArt) : null;
+      if (cover) {
+        coverHtml = `<img class="notification-cover" src="${escHtml(cover)}" alt="" loading="lazy"/>`;
+      }
+    }
+    // Fallback: placeholder se não houver cover
+    if (!coverHtml) {
+      coverHtml = `<div class="notification-cover notification-cover--empty"></div>`;
+    }
+
+    return `
+    <div class="notification-item${n.read ? "" : " unread"}" data-notif-id="${escHtml(n.id)}" data-game-id="${escHtml(n.gameId || "")}">
+      ${coverHtml}
+      <div class="notification-content">
+        <div class="notification-text">
+          ${escHtml(n.text)}
+          <span class="notification-type-dot type-${escHtml(n.type)}" title="${escHtml(n.type)}"></span>
+        </div>
+        <div class="notification-time">${escHtml(formatNotifTime(n.timestamp))}</div>
+      </div>
+    </div>
+  `;
+  }).join("");
+
+  // Click numa notificação → marca como lida + abre o modal do jogo
+  $list.querySelectorAll(".notification-item").forEach(item => {
+    item.addEventListener("click", () => {
+      const notifId = item.dataset.notifId;
+      const gameId = item.dataset.gameId;
+      // Marca como lida
+      const notif = notifications.find(n => n.id === notifId);
+      if (notif && !notif.read) {
+        notif.read = true;
+        saveNotifications();
+        renderNotifications();
+      }
+      // Abre o modal do jogo (se aplicável)
+      if (gameId) {
+        const gameIdx = gamesData.findIndex(g => g.firebaseId === gameId);
+        if (gameIdx >= 0) {
+          // Fecha o dropdown de notificações
+          const $notifWrap = document.getElementById("notifications-wrap");
+          if ($notifWrap) $notifWrap.classList.remove("open");
+          openModal(gameIdx);
+        }
+      }
+    });
+  });
+}
+
+// Inicializa o botão de notificações (trigger + dropdown)
+function initNotifications() {
+  loadNotifications();
+  renderNotifications();
+
+  const $wrap = document.getElementById("notifications-wrap");
+  const $trigger = document.getElementById("notifications-trigger");
+
+  if ($trigger) {
+    $trigger.addEventListener("click", e => {
+      e.stopPropagation();
+      const isOpen = $wrap.classList.toggle("open");
+      $trigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      if (isOpen) {
+        closeAllDropdowns("notifications-wrap");
+        // Marca como lidas após abrir (com pequeno delay para o utilizador ver o badge)
+        setTimeout(() => markAllNotificationsRead(), 1500);
+      }
+    });
+  }
+
+  // Fecha ao clicar fora
+  document.addEventListener("click", e => {
+    if ($wrap && !$wrap.contains(e.target)) {
+      $wrap.classList.remove("open");
+      if ($trigger) $trigger.setAttribute("aria-expanded", "false");
+    }
+  });
+
+  // Botão limpar tudo
+  const $clearBtn = document.getElementById("notifications-clear-btn");
+  if ($clearBtn) {
+    $clearBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      clearAllNotifications();
+    });
+  }
+
+  // Botão de teste de notificações (no settings menu)
+  const $testBtn = document.getElementById("test-notifications-btn");
+  if ($testBtn) {
+    $testBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      simulateTestNotifications();
+    });
+  }
+}
+
 // Inicializa o painel de settings: aplica valores guardados + liga eventos
 function initSettings() {
   // 1. Aplicar imediatamente os valores guardados
@@ -4535,6 +5152,7 @@ function initSettings() {
       e.stopPropagation();
       const isOpen = wrap.classList.toggle("open");
       trigger.setAttribute("aria-expanded", isOpen);
+      if (isOpen) closeAllDropdowns("settings-wrap");
     });
 
     // Fecha ao clicar fora
@@ -4567,6 +5185,31 @@ function initSettings() {
       try { localStorage.setItem("jce_yt_autoplay", youtubeAutoplay ? "1" : "0"); } catch (_) {}
     });
   }
+
+  // 6. Checkbox mutar notificações
+  const muteNotifChk = document.getElementById("option-mute-notifications");
+  if (muteNotifChk) {
+    muteNotifChk.checked = notificationsMuted;
+    muteNotifChk.addEventListener("change", e => {
+      e.stopPropagation();
+      notificationsMuted = muteNotifChk.checked;
+      try { localStorage.setItem("jce_mute_notifications", notificationsMuted ? "1" : "0"); } catch (_) {}
+    });
+  }
+}
+
+// ─────────────────────────────────────────────
+//  DROPDOWN MUTUAL EXCLUSION — apenas um menu aberto de cada vez
+//  Fecha todos os menus dropdown exceto o que está a ser aberto.
+//  Menus: tabs-dropdown, tag-filter, notifications-wrap, settings-wrap
+// ─────────────────────────────────────────────
+function closeAllDropdowns(exceptId) {
+  const dropdownIds = ["tabs-dropdown", "tag-filter", "notifications-wrap", "settings-wrap"];
+  dropdownIds.forEach(id => {
+    if (id === exceptId) return;
+    const el = document.getElementById(id);
+    if (el) el.classList.remove("open");
+  });
 }
 
 // ─────────────────────────────────────────────
@@ -4993,6 +5636,9 @@ function init() {
 
   // Init settings panel (bg carousel + blur + options)
   initSettings();
+
+  // Init notifications (bell button + dropdown)
+  initNotifications();
 
   // Render tabs (vazio até o Firestore responder)
   renderTabs();
