@@ -2562,7 +2562,9 @@ body.editor-mode .tabs-dropdown-item .tab-delete { display: flex; }
   height: calc(32px * 1.34);
 }
 
-/* ── Add-to-Tab button on cards ─────────────────── */
+/* ── Playlist button on cards (antigo add-to-tab) ──
+   Só visível em modo editor E quando o jogo está marcado como jogado (.playable).
+   Quando tem playlist configurada (.has-playlist), fica vermelho (YouTube). */
 .card-addtab-btn {
   display: none;
   position: absolute;
@@ -2584,9 +2586,21 @@ body.editor-mode .tabs-dropdown-item .tab-delete { display: flex; }
   font-size: 1rem;
   line-height: 1;
 }
-body.editor-mode .card-addtab-btn { display: flex; }
+/* Só aparece em modo editor E quando o jogo é jogado (.playable) */
+body.editor-mode .card-addtab-btn.playable { display: flex; }
 .card-addtab-btn:hover {
   background: rgba(255,255,255,0.2);
+  color: #fff;
+}
+/* Estado: tem playlist configurada — fica vermelho (YouTube) */
+.card-addtab-btn.has-playlist {
+  background: var(--red-dim);
+  border-color: rgba(255,80,80,0.3);
+  color: var(--red);
+}
+.card-addtab-btn.has-playlist:hover {
+  background: rgba(255,60,60,0.35);
+  border-color: rgba(255,80,80,0.55);
   color: #fff;
 }
 
@@ -2664,49 +2678,102 @@ body.editor-mode .card-addtab-btn { display: flex; }
 }
 
 .addtab-list {
-  padding: 10px 12px 14px;
+  padding: 14px 16px 16px;
+}
+
+/* ── Formulário de playlist ── */
+.playlist-form {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 280px;
-  overflow-y: auto;
+  gap: 10px;
 }
 
-.addtab-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 9px 12px;
-  border-radius: 7px;
-  background: transparent;
-  border: 1px solid transparent;
+.playlist-label {
   font-family: 'Space Grotesk', sans-serif;
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  color: var(--text);
-  transition: background 0.15s, border-color 0.15s;
-  width: 100%;
-  text-align: left;
-}
-.addtab-item:hover {
-  background: rgba(255,255,255,0.05);
-  border-color: rgba(255,255,255,0.09);
-}
-.addtab-item.in-tab {
-  color: var(--amber);
-  background: var(--amber-dim);
-  border-color: rgba(255,179,71,0.22);
-}
-.addtab-item .addtab-check {
-  color: var(--amber);
-  flex-shrink: 0;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  text-transform: uppercase;
 }
 
-.addtab-empty {
-  padding: 20px 0;
-  text-align: center;
+.playlist-url-input {
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.82rem;
+  outline: none;
+  transition: border-color 0.15s, background 0.15s;
+}
+.playlist-url-input:focus {
+  border-color: var(--amber);
+  background: var(--surface3);
+}
+.playlist-url-input::placeholder {
   color: var(--muted2);
-  font-size: 0.8rem;
+}
+
+.playlist-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.playlist-save-btn {
+  flex: 1;
+  padding: 8px 14px;
+  border-radius: 7px;
+  background: var(--amber);
+  border: 1px solid var(--amber);
+  color: #1a1a1a;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.playlist-save-btn:hover {
+  background: #ffc86a;
+  border-color: #ffc86a;
+}
+
+.playlist-remove-btn {
+  padding: 8px 14px;
+  border-radius: 7px;
+  background: var(--red-dim);
+  border: 1px solid rgba(255,80,80,0.3);
+  color: var(--red);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.playlist-remove-btn:hover {
+  background: rgba(255,60,60,0.3);
+  border-color: rgba(255,80,80,0.5);
+  color: #fff;
+}
+
+/* ── Botão "Gravações" no card-expand (estilo card-steam-btn) ── */
+.card-recordings-btn {
+  /* herda estilos de .card-steam-btn, com cor de destaque (vermelho YouTube) */
+  color: rgba(255,120,120,0.85);
+  border-color: rgba(255,80,80,0.2);
+  background: rgba(255,80,80,0.06);
+}
+.card-recordings-btn:hover {
+  color: #ffaaaa;
+  border-color: rgba(255,80,80,0.4);
+  background: rgba(255,80,80,0.12);
 }
 
 /* ── editor-only toggle ─── */
