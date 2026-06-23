@@ -122,7 +122,7 @@ const CACHE_TTL_MS  = 5 * 60 * 1000; // 5 min TTL (Firebase real-time sobrepõe 
 // ─────────────────────────────────────────────
 //  STATE
 // ─────────────────────────────────────────────
-let gamesData   = [];   // [{id, igdbId, name, cover, screenshots, videos, genres, modes, rating, summary, steamUrl, addedAt, preferredKeyArt}]
+let gamesData   = [];   // [{id, igdbId, name, cover, screenshots, videos, genres, modes, rating, summary, steamUrl, addedAt, preferredKeyArt, playlistUrl}]
 let adminOpen     = false; // true enquanto o "modo editor" está ativo (cards mostram botões de admin)
 let adminExpanded = false; // true quando o painel de admin (canto inferior direito) está descolapsado
 let testsExpanded = false; // true quando o painel de testes (ao lado da pesquisa) está descolapsado
@@ -873,12 +873,22 @@ function listenToGames() {
     const resolved = await Promise.all(
       firestoreDocs.map(async (fsDoc) => {
         if (cachedMap[fsDoc.igdbId]) {
-          return { ...cachedMap[fsDoc.igdbId], firebaseId: fsDoc.firebaseId, preferredKeyArt: fsDoc.preferredKeyArt || null };
+          return {
+            ...cachedMap[fsDoc.igdbId],
+            firebaseId: fsDoc.firebaseId,
+            preferredKeyArt: fsDoc.preferredKeyArt || null,
+            playlistUrl: fsDoc.playlistUrl || null,
+          };
         }
         try {
           const igdbGame = await fetchGameById(fsDoc.igdbId);
           if (!igdbGame) return null;
-          return { ...normalizeGame(igdbGame), firebaseId: fsDoc.firebaseId, preferredKeyArt: fsDoc.preferredKeyArt || null };
+          return {
+            ...normalizeGame(igdbGame),
+            firebaseId: fsDoc.firebaseId,
+            preferredKeyArt: fsDoc.preferredKeyArt || null,
+            playlistUrl: fsDoc.playlistUrl || null,
+          };
         } catch(e) {
           console.warn("Falha ao buscar jogo", fsDoc.igdbId, e);
           return null;
@@ -1090,7 +1100,7 @@ function attachAdminCardEvents(card) {
   if (addTabBtn) {
     addTabBtn.addEventListener("click", e => {
       e.stopPropagation();
-      openAddTabModal(game);
+      openPlaylistModal(game);
     });
   }
 }
@@ -1140,6 +1150,14 @@ function buildCard(game, globalIdx) {
     </a>
   `;
 
+  // Botão "Gravações" — só aparece em jogos jogados que tenham playlistUrl configurada
+  const recordingsBtnHtml = (isPlayed(game.firebaseId) && game.playlistUrl)
+    ? `<a class="card-steam-btn card-recordings-btn" href="${escHtml(game.playlistUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+        <img src="https://www.youtube.com/s/desktop/61baa440/img/favicon_32x32.png" width="11" height="11" alt="YouTube" style="object-fit:contain;display:block;"/>
+        ${escHtml(t("Gravações"))}
+      </a>`
+    : "";
+
   const ratingHtml = ratingVal
     ? `<div class="card-rating">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffb347" stroke="none"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
@@ -1183,8 +1201,8 @@ function buildCard(game, globalIdx) {
             : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
           }
         </button>
-        <button class="card-addtab-btn" data-idx="${globalIdx}" aria-label="${escHtml(t("Adicionar a tab"))}" title="${escHtml(t("Adicionar a tab"))}">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <button class="card-addtab-btn${isPlayed(game.firebaseId) ? " playable" : ""}${game.playlistUrl ? " has-playlist" : ""}" data-fbid="${escHtml(game.firebaseId || "")}" data-idx="${globalIdx}" aria-label="${escHtml(t("Gravações"))}" title="${escHtml(t("Gravações"))}">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
         </button>
         <button class="card-edit-btn" data-idx="${globalIdx}" aria-label="${escHtml(t("Editar key art"))}" title="${escHtml(t("Editar key art"))}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -1213,6 +1231,7 @@ function buildCard(game, globalIdx) {
           ${ratingHtml}
           <div class="expand-footer-links">
             ${cardQuickLinksHtml}
+            ${recordingsBtnHtml}
             ${steamBtnHtml}
           </div>
         </div>
@@ -1382,19 +1401,32 @@ function buildModalMedia(game) {
   // ── Ordenação dos vídeos ──
   // Vídeos NÃO age-restricted primeiro (pela ordem original),
   // seguidos dos vídeos age-restricted (mantidos no fim da lista).
-  // Isto garante que o media principal é sempre um vídeo embebível quando
-  // existir, mas preserva os vídeos age-restricted para o utilizador poder
-  // aceder-lhes manualmente (abrindo no YouTube).
   const playableVideos = videoItems.filter(v => !v.ageRestricted);
   const restrictedVideos = videoItems.filter(v => v.ageRestricted);
 
-  // 1) Vídeos embebíveis (trailer principal primeiro), pela ordem original
-  playableVideos.forEach(item => modalMediaList.push(item));
+  // ── Ordem final do modalMediaList ──
+  // 1) PRIMEIRO vídeo embebível (trailer principal) — é o que abre o modal.
+  //    Se o 1º vídeo da lista for age-restricted, o "trailer principal" passa
+  //    a ser o 1º vídeo embebível disponível.
+  // 2) Screenshots (pela ordem original do IGDB)
+  // 3) Restantes vídeos embebíveis (a partir do 2º)
+  // 4) Vídeos age-restricted no fim (mantidos para acesso manual)
+  //
+  // Isto preserva a ordem original do site para jogos normais:
+  // [trailer principal] → [screenshots] → [restantes trailers] → [age-restricted]
+  const mainVideo = playableVideos.length > 0 ? [playableVideos[0]] : [];
+  const remainingPlayableVideos = playableVideos.slice(1);
+
+  // 1) Trailer principal (primeiro vídeo embebível)
+  mainVideo.forEach(item => modalMediaList.push(item));
 
   // 2) Screenshots
   imageItems.forEach(item => modalMediaList.push(item));
 
-  // 3) Vídeos age-restricted no fim (mantidos para acesso manual)
+  // 3) Restantes vídeos embebíveis
+  remainingPlayableVideos.forEach(item => modalMediaList.push(item));
+
+  // 4) Vídeos age-restricted no fim (mantidos para acesso manual)
   restrictedVideos.forEach(item => modalMediaList.push(item));
 }
 
@@ -1530,10 +1562,12 @@ function onYoutubeStateMessage(e) {
 
 // Processa um vídeo detetado como age-restricted / não-embebível:
 // 1. Marca o videoId na cache persistente (não volta a tentar embeber)
-// 2. Reordena o modalMediaList: move o vídeo para o fim
-// 3. Re-renderiza para mostrar o próximo media disponível
-//    (vídeo embebível ou screenshot). Se só houver este vídeo, mostra
-//    o placeholder de age-restriction no lugar do iframe.
+// 2. Reconstrói o modalMediaList mantendo a ordem original do site:
+//    [próximo vídeo embebível (novo trailer principal)] → [screenshots]
+//    → [restantes vídeos embebíveis] → [vídeos age-restricted no fim]
+// 3. Re-renderiza para mostrar o novo trailer principal (se houver vídeo
+//    embebível) ou a primeira screenshot. Se só houver vídeos age-restricted,
+//    mostra o placeholder no lugar do iframe.
 function handleAgeRestrictedVideo() {
   const currentItem = modalMediaList[modalIndex];
   if (!currentItem || currentItem.type !== "video") return;
@@ -1544,24 +1578,36 @@ function handleAgeRestrictedVideo() {
   }
   currentItem.ageRestricted = true;
 
-  // 2. Reordena: move o vídeo atual (e quaisquer outros já marcados) para o fim
-  const restricted = [];
-  const playable = [];
+  // 2. Reconstrói a lista na ordem original do site:
+  //    - Vídeos embebíveis (não-restricted) e screenshots, separados
+  //    - Primeiro vídeo embebível → screenshots → restantes vídeos embebíveis
+  //    - Vídeos age-restricted no fim
+  const playableVideos = [];
+  const restrictedVideos = [];
+  const images = [];
   modalMediaList.forEach(m => {
-    if (m.type === "video" && m.ageRestricted) restricted.push(m);
-    else playable.push(m);
+    if (m.type === "video") {
+      if (m.ageRestricted) restrictedVideos.push(m);
+      else playableVideos.push(m);
+    } else {
+      images.push(m);
+    }
   });
-  modalMediaList = [...playable, ...restricted];
+
+  // Reconstrói: [1º vídeo embebível] → [screenshots] → [restantes vídeos] → [restritos]
+  const mainVideo = playableVideos.length > 0 ? [playableVideos[0]] : [];
+  const remainingPlayable = playableVideos.slice(1);
+  modalMediaList = [...mainVideo, ...images, ...remainingPlayable, ...restrictedVideos];
 
   // 3. Determina o que mostrar a seguir:
-  //    - Se há media jogável (não-restricted) antes da posição atual, mostra o primeiro
-  //    - Se não há media jogável, fica no vídeo atual mas renderiza o placeholder
-  if (playable.length > 0) {
-    // Avança para o primeiro media jogável
+  //    - Se há media jogável (vídeo embebível ou screenshot), mostra o primeiro
+  //    - Se só há vídeos age-restricted, mostra o placeholder do primeiro
+  const hasPlayable = playableVideos.length > 0 || images.length > 0;
+  if (hasPlayable) {
+    // Mostra o novo primeiro media (vídeo embebível ou screenshot)
     renderModalMedia(0);
   } else {
-    // Não há outros media — re-renderiza o item atual (agora mostra placeholder)
-    // Encontra a nova posição do item atual
+    // Não há media jogável — mostra o placeholder do primeiro age-restricted
     const newIdx = modalMediaList.indexOf(currentItem);
     renderModalMedia(newIdx >= 0 ? newIdx : 0);
   }
@@ -1797,9 +1843,18 @@ function openModal(gameIdx) {
     </a>
   `;
 
+  // Botão "Gravações" no modal-info — só aparece em jogos jogados com playlistUrl
+  const modalRecordingsHtml = (isPlayed(game.firebaseId) && game.playlistUrl)
+    ? `<a class="modal-info-quicklink modal-info-recordings" href="${escHtml(game.playlistUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="${escHtml(t("Gravações"))}">
+        <img class="quicklink-icon" src="https://www.youtube.com/s/desktop/61baa440/img/favicon_32x32.png" alt="" loading="lazy"/>
+        ${escHtml(t("Gravações"))}
+      </a>`
+    : "";
+
   $modalInfo.innerHTML = `
     <div class="modal-info-actions">
       ${modalQuickLinksHtml}
+      ${modalRecordingsHtml}
       ${infoSteamHtml}
       <button class="modal-info-expand-btn" id="modal-info-expand-btn" aria-label="${escHtml(t("Expandir descrição"))}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -3851,64 +3906,157 @@ document.addEventListener("click", e => {
 });
 
 // ─────────────────────────────────────────────
-//  ADD-TO-TAB MODAL
+//  PLAYLIST MODAL — adicionar/remover link de playlist do YouTube
+//  (gravações de gameplays do grupo)
+//  Reaproveita o markup do antigo addtab-modal (agora #addtab-modal
+//  serve apenas de contentor; o conteúdo é o formulário de playlist).
 // ─────────────────────────────────────────────
-function openAddTabModal(game) {
+
+// Valida se uma string é um URL válido de playlist do YouTube.
+// Aceita formatos:
+//   https://www.youtube.com/playlist?list=PLxxxx
+//   https://youtube.com/playlist?list=PLxxxx
+//   https://www.youtube.com/watch?v=xxx&list=PLxxxx
+function isValidYoutubePlaylistUrl(url) {
+  if (!url || typeof url !== "string") return false;
+  const trimmed = url.trim();
+  try {
+    const u = new URL(trimmed);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host !== "youtube.com" && host !== "youtu.be") return false;
+    // Tem de ter parâmetro list=
+    const list = u.searchParams.get("list");
+    if (!list) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function openPlaylistModal(game) {
   addTabTargetGame = game;
-  // Título: "Adicionar "{name}" a Tab" / "Add "{name}" to Tab"
-  const titlePrefix = isPt() ? "Adicionar" : "Add";
-  const titleSuffix = isPt() ? "a Tab" : "to Tab";
-  $addtabTitle.textContent = `${titlePrefix} "${game.name}" ${titleSuffix}`;
+  // Título: "Gravações — {name}"
+  $addtabTitle.textContent = `${t("Gravações")} — ${game.name}`;
 
-  if (tabsData.length === 0) {
-    const emptyMsg = isPt()
-      ? "Nenhuma tab criada ainda.<br>Cria uma tab primeiro."
-      : "No tabs created yet.<br>Create a tab first.";
-    $addtabList.innerHTML = `<div class="addtab-empty">${emptyMsg}</div>`;
-  } else {
-    $addtabList.innerHTML = tabsData.map(tab => {
-      const set = tabGamesMap[tab.id] || new Set();
-      const inTab = set.has(game.firebaseId);
-      return `
-        <button class="addtab-item${inTab ? " in-tab" : ""}" data-tabid="${escHtml(tab.id)}">
-          ${escHtml(tab.label)}
-          ${inTab ? `<span class="addtab-check">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-          </span>` : ""}
-        </button>
-      `;
-    }).join("");
-
-    $addtabList.querySelectorAll(".addtab-item").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const tabId = btn.dataset.tabid;
-        if (!tabGamesMap[tabId]) tabGamesMap[tabId] = new Set();
-        const set = tabGamesMap[tabId];
-        if (set.has(game.firebaseId)) {
-          set.delete(game.firebaseId);
-        } else {
-          set.add(game.firebaseId);
-        }
-        // Persiste no Firestore (global); o listener onSnapshot re-renderiza
-        await saveTabGames(tabId, set);
-        // Re-render imediato do modal para feedback visual
-        openAddTabModal(game);
-      });
-    });
+  // Pré-preenche o input se já existir playlistUrl
+  const input = document.getElementById("playlist-url-input");
+  const removeBtn = document.getElementById("playlist-remove-btn");
+  if (input) {
+    input.value = game.playlistUrl || "";
+  }
+  // Mostra o botão "Remover" apenas se já existe uma playlist
+  if (removeBtn) {
+    removeBtn.classList.toggle("hidden", !game.playlistUrl);
   }
 
   $addtabModal.classList.remove("hidden");
+  // Foca o input para inserção rápida
+  if (input) setTimeout(() => input.focus(), 50);
 }
 
-function closeAddTabModal() {
+function closePlaylistModal() {
   $addtabModal.classList.add("hidden");
   addTabTargetGame = null;
 }
 
-$addtabClose.addEventListener("click", closeAddTabModal);
-$addtabBackdrop.addEventListener("click", closeAddTabModal);
+// Guarda a URL da playlist no Firebase (campo playlistUrl do documento do jogo)
+async function setPlaylistUrl(game, url) {
+  if (!game || !game.firebaseId) return;
+  try {
+    await updateDoc(doc(db, "games", game.firebaseId), { playlistUrl: url || "" });
+    game.playlistUrl = url || null;
+    clearCache();
+    saveCache(gamesData);
+    closePlaylistModal();
+    renderGameList(gamesData);
+    // Se o modal estiver aberto, atualiza os botões de quicklink
+    if (modalOpen && _modalCurrentGame && _modalCurrentGame.firebaseId === game.firebaseId) {
+      updateModalRecordingsButton(game);
+    }
+    showToast(url
+      ? (isPt() ? "Gravações guardadas." : "Recordings saved.")
+      : (isPt() ? "Gravações removidas." : "Recordings removed.")
+    );
+  } catch (err) {
+    console.error("[setPlaylistUrl] erro:", err);
+    showToast(isPt() ? "Erro ao guardar gravações." : "Failed to save recordings.");
+  }
+}
+
+// Atualiza apenas o botão "Gravações" no modal-info (sem re-render completo)
+function updateModalRecordingsButton(game) {
+  if (!modalOpen || !_modalCurrentGame) return;
+  const actions = document.querySelector(".modal-info-actions");
+  if (!actions) return;
+  // Remove botão existente
+  const existing = actions.querySelector(".modal-info-recordings");
+  if (existing) existing.remove();
+  // Adiciona se aplicável
+  if (isPlayed(game.firebaseId) && game.playlistUrl) {
+    const btn = document.createElement("a");
+    btn.className = "modal-info-quicklink modal-info-recordings";
+    btn.href = game.playlistUrl;
+    btn.target = "_blank";
+    btn.rel = "noopener";
+    btn.onclick = (e) => e.stopPropagation();
+    btn.innerHTML = `<img class="quicklink-icon" src="https://www.youtube.com/s/desktop/61baa440/img/favicon_32x32.png" alt="" loading="lazy"/>${escHtml(t("Gravações"))}`;
+    // Insere antes do botão Steam (se existir) ou do expand-btn
+    const steamBtn = actions.querySelector(".modal-info-steam");
+    const expandBtn = actions.querySelector(".modal-info-expand-btn");
+    if (steamBtn) {
+      actions.insertBefore(btn, steamBtn);
+    } else if (expandBtn) {
+      actions.insertBefore(btn, expandBtn);
+    } else {
+      actions.appendChild(btn);
+    }
+  }
+}
+
+$addtabClose.addEventListener("click", closePlaylistModal);
+$addtabBackdrop.addEventListener("click", closePlaylistModal);
 document.addEventListener("keydown", e => {
-  if (e.key === "Escape" && !$addtabModal.classList.contains("hidden")) closeAddTabModal();
+  if (e.key === "Escape" && !$addtabModal.classList.contains("hidden")) closePlaylistModal();
+});
+
+// Handler do botão "Guardar" no modal de playlist
+document.addEventListener("DOMContentLoaded", () => {
+  const saveBtn = document.getElementById("playlist-save-btn");
+  const removeBtn = document.getElementById("playlist-remove-btn");
+  const input = document.getElementById("playlist-url-input");
+
+  if (saveBtn) {
+    saveBtn.addEventListener("click", () => {
+      if (!addTabTargetGame) return;
+      const url = input ? input.value.trim() : "";
+      if (!url) {
+        showToast(isPt() ? "Insere um link de playlist." : "Enter a playlist link.");
+        return;
+      }
+      if (!isValidYoutubePlaylistUrl(url)) {
+        showToast(isPt() ? "Link de playlist inválido." : "Invalid playlist link.");
+        return;
+      }
+      setPlaylistUrl(addTabTargetGame, url);
+    });
+  }
+
+  if (removeBtn) {
+    removeBtn.addEventListener("click", () => {
+      if (!addTabTargetGame) return;
+      setPlaylistUrl(addTabTargetGame, "");
+    });
+  }
+
+  // Enter no input = Guardar
+  if (input) {
+    input.addEventListener("keydown", e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (saveBtn) saveBtn.click();
+      }
+    });
+  }
 });
 
 // ─────────────────────────────────────────────
@@ -4146,9 +4294,17 @@ function openDiscoverGame(queueIdx) {
         <img class="quicklink-icon" src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://cs.rin.ru/forum/index.phpt&size=128" alt="" loading="lazy"/>
         cs.rin.ru
       </a>`;
+    // Botão "Gravações" no modal-info (modo descoberta) — só em jogos jogados com playlistUrl
+    const modalRecordingsHtml = (isPlayed(game.firebaseId) && game.playlistUrl)
+      ? `<a class="modal-info-quicklink modal-info-recordings" href="${escHtml(game.playlistUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="${escHtml(t("Gravações"))}">
+          <img class="quicklink-icon" src="https://www.youtube.com/s/desktop/61baa440/img/favicon_32x32.png" alt="" loading="lazy"/>
+          ${escHtml(t("Gravações"))}
+        </a>`
+      : "";
     $modalInfo.innerHTML = `
       <div class="modal-info-actions">
         ${modalQuickLinksHtml}
+        ${modalRecordingsHtml}
         ${infoSteamHtml}
         <button class="modal-info-expand-btn" id="modal-info-expand-btn" aria-label="${escHtml(t("Expandir descrição"))}">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
