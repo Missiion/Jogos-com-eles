@@ -226,6 +226,14 @@
     "Jogo revertido.": "Game reverted.",
     "Erro ao criar Jogados.": "Failed to create Played.",
 
+    // ── Notificações ───────────────────────────
+    "Notificações": "Notifications",
+    "Sem notificações.": "No notifications.",
+    "Limpar tudo": "Clear all",
+    "Mutar notificações": "Mute notifications",
+    "Testes": "Testing",
+    "Simular notificações": "Simulate notifications",
+
     "Remover voto": "Remove vote",
     "votos contra": "down-votes",
     "votos a favor": "up-votes",
