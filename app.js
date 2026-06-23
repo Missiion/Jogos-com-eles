@@ -57,6 +57,18 @@ function showToast(message, duration = 3000) {
 // ─────────────────────────────────────────────
 //  FUZZY MATCH — para encontrar jogos já na lista
 //  com nomes parecidos ou com erros de escrita
+//
+//  Sistema de matching tolerante a erros com 3 estratégias:
+//    1. Matching por tokens: cada palavra da pesquisa é comparada com
+//       cada palavra do título (permite pesquisar "mario" e encontrar
+//       "Super Mario Bros").
+//    2. Matching parcial fuzzy: se a pesquisa é substring de um token,
+//       ou se um token começa com a pesquisa → match.
+//    3. Levenshtein por token: tolera erros de escrita em palavras
+//       individuais (1-3 erros consoante o tamanho).
+//
+//  normalizeStr (sem espaços) é mantido para outros usos (ex: normalizar
+//  nomes de utilizador para comparação).
 // ─────────────────────────────────────────────
 function normalizeStr(str) {
   if (!str) return "";
@@ -65,6 +77,18 @@ function normalizeStr(str) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "") // remove acentos
     .replace(/[^a-z0-9]/g, "");      // remove caracteres especiais
+}
+
+// Normaliza preservando espaços — para dividir em tokens (palavras).
+function normalizeTokens(str) {
+  if (!str) return "";
+  return String(str)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9\s]/g, " ")   // caracteres especiais → espaço
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function levenshtein(a, b) {
@@ -90,19 +114,59 @@ function levenshtein(a, b) {
   return matrix[b.length][a.length];
 }
 
-// Verifica se um jogo da lista corresponde à pesquisa (fuzzy)
-function fuzzyMatchGame(query, game) {
-  const nq = normalizeStr(query);
-  if (!nq) return false;
-  const nn = normalizeStr(game.name);
-  if (nn.includes(nq)) return true;
-  if (nq.length >= 3 && nn.length >= 3) {
-    const dist = levenshtein(nq, nn);
-    // Tolerância: 1 erro para nomes curtos, 2 para médios, 3 para longos
-    const tolerance = nn.length <= 6 ? 1 : nn.length <= 12 ? 2 : 3;
-    if (dist <= tolerance) return true;
+// Tolerância de erros por palavra (Levenshtein), escalada por tamanho.
+// 1-2 letras: 0 erros (exato), 3-4: 1 erro, 5-7: 2 erros, 8+: 3 erros.
+function tokenTolerance(len) {
+  if (len <= 2) return 0;
+  if (len <= 4) return 1;
+  if (len <= 7) return 2;
+  return 3;
+}
+
+// Verifica se um token da pesquisa corresponde a um token do título.
+// Estratégias (por ordem de custo computacional):
+//   1. Igualdade exata
+//   2. Token do título começa com o token da pesquisa (prefix match)
+//   3. Token da pesquisa é substring do token do título
+//   4. Levenshtein com tolerância escalada (com guarda de rácio de tamanho
+//      para evitar falsos positivos entre tokens de tamanhos muito diferentes)
+function tokenMatches(queryToken, titleToken) {
+  if (!queryToken || !titleToken) return false;
+  if (queryToken === titleToken) return true;
+  if (titleToken.startsWith(queryToken)) return true;
+  if (titleToken.includes(queryToken)) return true;
+  // Levenshtein só para tokens com >= 3 chars (evita falsos positivos curtos)
+  if (queryToken.length >= 3 && titleToken.length >= 3) {
+    // Guarda de rácio: o token menor tem de ter pelo menos 65% do tamanho
+    // do maior. Isto evita falsos positivos entre tokens de tamanhos muito
+    // diferentes (ex: "theve" vs "the" → rácio 0.6 → rejeitado).
+    const minLen = Math.min(queryToken.length, titleToken.length);
+    const maxLen = Math.max(queryToken.length, titleToken.length);
+    if (minLen / maxLen < 0.65) return false;
+    const tol = tokenTolerance(queryToken.length);
+    const dist = levenshtein(queryToken, titleToken);
+    if (dist <= tol) return true;
   }
   return false;
+}
+
+// Verifica se um jogo da lista corresponde à pesquisa (fuzzy).
+// Todas as palavras da pesquisa devem encontrar match em algum token do título.
+// Isto permite pesquisar "mario bros" e encontrar "Super Mario Bros",
+// ou "the last" e encontrar "The Last of Us".
+function fuzzyMatchGame(query, game) {
+  if (!query || !game || !game.name) return false;
+
+  const queryTokens = normalizeTokens(query).split(" ").filter(Boolean);
+  if (queryTokens.length === 0) return false;
+
+  const titleTokens = normalizeTokens(game.name).split(" ").filter(Boolean);
+  if (titleTokens.length === 0) return false;
+
+  // Cada token da pesquisa tem de fazer match com pelo menos um token do título
+  return queryTokens.every(qToken =>
+    titleTokens.some(tToken => tokenMatches(qToken, tToken))
+  );
 }
 
 // ─────────────────────────────────────────────
@@ -2662,21 +2726,33 @@ function initHeaderSearch() {
     }
   });
 
-  // Fecha resultados ao fazer scroll fora do header-search-results
-  // Isto evita que os resultados fiquem abertos enquanto a pessoa
-  // navega na página. Reabre ao clicar na pesquisa novamente.
+  // Fecha resultados ao fazer scroll — mas APENAS quando o rato NÃO está
+  // sobre a área de pesquisa (input + botão + dropdown de resultados).
+  // Isto permite ao utilizador fazer scroll dentro do dropdown de resultados
+  // sem que este se feche, mantendo o comportamento de fechar ao navegar
+  // na página quando a pesquisa não está a ser usada.
   let _searchScrollClosed = false;
+  let _mouseOverSearch = false;
+
+  if ($wrap) {
+    $wrap.addEventListener("mouseenter", () => { _mouseOverSearch = true; });
+    $wrap.addEventListener("mouseleave", () => { _mouseOverSearch = false; });
+  }
+
   window.addEventListener("scroll", () => {
-    if (!$results.classList.contains("hidden")) {
+    if (!_mouseOverSearch && !$results.classList.contains("hidden")) {
       $results.classList.add("hidden");
       _searchScrollClosed = true;
     }
   }, { passive: true, capture: true });
 
-  // Reabre os resultados ao clicar no input (se foram fechados por scroll)
+  // Reabre os resultados ao focar o input — se ainda houver texto escrito,
+  // re-executa a pesquisa automaticamente. Isto funciona para qualquer caso
+  // onde os resultados foram fechados (scroll, click fora, etc.), mantendo
+  // o texto no input para que o utilizador não tenha de reescrever.
   $input.addEventListener("focus", () => {
-    if (_searchScrollClosed && $input.value.trim()) {
-      _searchScrollClosed = false;
+    _searchScrollClosed = false; // reset do flag em qualquer caso
+    if ($input.value.trim() && $results.classList.contains("hidden")) {
       doHeaderSearch();
     }
   });
@@ -2747,8 +2823,13 @@ async function doHeaderSearch() {
             </div>
             <button class="header-search-result-add${added ? " added" : ""}"
                     data-igdb="${game.id}"
-                    ${added ? "disabled" : ""}>
-              ${added ? "✓" : t("+ Adicionar")}
+                    ${added ? "disabled" : ""}
+                    aria-label="${escHtml(t("+ Adicionar"))}"
+                    title="${escHtml(t("+ Adicionar"))}">
+              ${added
+                ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+                : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
+              }
             </button>
           </div>
         `;
@@ -2782,14 +2863,17 @@ async function doHeaderSearch() {
       e.stopPropagation();
       const igdbId = parseInt(btn.dataset.igdb);
       btn.disabled = true;
-      btn.textContent = "...";
+      // Mostra spinner enquanto adiciona
+      btn.innerHTML = `<svg class="header-search-add-spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
       const success = await addGameForUser(igdbId);
       if (success) {
         btn.classList.add("added");
-        btn.textContent = "✓";
+        // Ícone de checkmark
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
       } else {
         btn.disabled = false;
-        btn.textContent = t("+ Adicionar");
+        // Restaura ícone "+"
+        btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`;
       }
     });
   });
