@@ -129,10 +129,30 @@ let testsExpanded = false; // true quando o painel de testes (ao lado da pesquis
 let forcedLoadingActive = false; // true enquanto o loading é forçado a aparecer indefinidamente (debug)
 let modalOpen   = false;
 let modalIndex  = 0;    // índice de media no modal
-let modalMediaList = []; // [{type:'img'|'video', src, thumb}]
+let modalMediaList = []; // [{type:'img'|'video', src, thumb, videoId?, ageRestricted?}]
 let _modalCurrentGame = null; // referência ao jogo actualmente no modal
 let infoExpanded = false; // estado do painel modal-info expandido
 let modalAutoTimer = null; // setTimeout do auto-advance (screenshots: 5s; vídeos: 'ended')
+
+// Cache de vídeos age-restricted do YouTube (persistida entre sessões).
+// Chave: videoId → true (age-restricted). Evita voltar a testar vídeos já
+// identificados como não-embebíveis (onError 101/150).
+const YT_AGE_RESTRICTED_KEY = "jce_yt_age_restricted";
+let ytAgeRestrictedCache = new Set();
+try {
+  const raw = localStorage.getItem(YT_AGE_RESTRICTED_KEY);
+  if (raw) ytAgeRestrictedCache = new Set(JSON.parse(raw));
+} catch (_) {}
+
+function markVideoAgeRestricted(videoId) {
+  if (!videoId || ytAgeRestrictedCache.has(videoId)) return;
+  ytAgeRestrictedCache.add(videoId);
+  try { localStorage.setItem(YT_AGE_RESTRICTED_KEY, JSON.stringify([...ytAgeRestrictedCache])); } catch (_) {}
+}
+
+function isVideoAgeRestricted(videoId) {
+  return videoId ? ytAgeRestrictedCache.has(videoId) : false;
+}
 
 // ── Tabs, sort, view ─────────────────────────
 // Tabs: [{id, label}] — persisted in localStorage
@@ -148,6 +168,7 @@ let downvotesMap = {};   // {firebaseId: Set<userId>}
 let upvotesMap = {};     // {firebaseId: Set<userId>}
 let trashTabId = null;   // ID da tab "Lixo" (criada automaticamente)
 let approvedTabId = null; // ID da tab "Aprovados" (criada automaticamente)
+let playedTabId = null;   // ID da tab "Jogados" (criada automaticamente)
 const DOWNVOTE_THRESHOLD = 2;
 const APPROVED_UPVOTE_COUNT = 3; // exatamente 3 upvotes = aprovado
 
@@ -896,6 +917,8 @@ function getFilteredSortedGames() {
     // Na tab "all", exclui jogos que estão no lixo (>= threshold down-votes)
     list = list.filter(g => !isInTrash(g.firebaseId));
     // 1b. Esconde jogos que o user actual deu down-vote (localmente)
+    // ou que foram marcados como "jogados" (também ficam escondidos da
+    // lista principal — só visíveis na tab "Jogados").
     // Apenas na lista "Todos". Outras tabs (users, lixo) mostram tudo.
     if (!showHiddenGames) {
       list = list.filter(g => !hiddenGames.has(g.firebaseId));
@@ -1051,6 +1074,18 @@ function attachAdminCardEvents(card) {
     });
   }
 
+  const playedBtn = card.querySelector(".card-played-btn");
+  if (playedBtn) {
+    playedBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      if (isPlayed(game.firebaseId)) {
+        unmarkAsPlayed(game.firebaseId);
+      } else {
+        markAsPlayed(game.firebaseId);
+      }
+    });
+  }
+
   const addTabBtn = card.querySelector(".card-addtab-btn");
   if (addTabBtn) {
     addTabBtn.addEventListener("click", e => {
@@ -1141,6 +1176,12 @@ function buildCard(game, globalIdx) {
         <!-- Botões de admin — só visíveis em modo editor (body.editor-mode) -->
         <button class="card-delete-btn" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="${escHtml(t("Remover jogo"))}" title="${escHtml(t("Remover jogo"))}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <button class="card-played-btn${isPlayed(game.firebaseId) ? " played" : ""}" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="${escHtml(isPlayed(game.firebaseId) ? t("Reverter") : t("Marcar como jogado"))}" title="${escHtml(isPlayed(game.firebaseId) ? t("Reverter") : t("Marcar como jogado"))}">
+          ${isPlayed(game.firebaseId)
+            ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`
+            : `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+          }
         </button>
         <button class="card-addtab-btn" data-idx="${globalIdx}" aria-label="${escHtml(t("Adicionar a tab"))}" title="${escHtml(t("Adicionar a tab"))}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1326,20 +1367,35 @@ function buildModalMedia(game) {
   const screenshots = game.screenshots || [];
   const videos = game.videos || [];
 
-  // 1) Trailer principal primeiro
-  if (videos.length > 0) {
-    modalMediaList.push({ type: "video", src: youtubeEmbed(videos[0]), thumb: youtubeThumbnail(videos[0]) });
-  }
+  // Constrói a lista de vídeos com metadados (videoId, ageRestricted da cache)
+  const videoItems = videos.map(vid => ({
+    type: "video",
+    src: youtubeEmbed(vid),
+    thumb: youtubeThumbnail(vid),
+    videoId: vid,
+    ageRestricted: isVideoAgeRestricted(vid),
+  }));
+
+  // Constrói a lista de screenshots
+  const imageItems = screenshots.map(url => ({ type: "img", src: url }));
+
+  // ── Ordenação dos vídeos ──
+  // Vídeos NÃO age-restricted primeiro (pela ordem original),
+  // seguidos dos vídeos age-restricted (mantidos no fim da lista).
+  // Isto garante que o media principal é sempre um vídeo embebível quando
+  // existir, mas preserva os vídeos age-restricted para o utilizador poder
+  // aceder-lhes manualmente (abrindo no YouTube).
+  const playableVideos = videoItems.filter(v => !v.ageRestricted);
+  const restrictedVideos = videoItems.filter(v => v.ageRestricted);
+
+  // 1) Vídeos embebíveis (trailer principal primeiro), pela ordem original
+  playableVideos.forEach(item => modalMediaList.push(item));
 
   // 2) Screenshots
-  screenshots.forEach(url => {
-    modalMediaList.push({ type: "img", src: url });
-  });
+  imageItems.forEach(item => modalMediaList.push(item));
 
-  // 3) Restantes trailers, pela mesma ordem
-  videos.slice(1).forEach(vid => {
-    modalMediaList.push({ type: "video", src: youtubeEmbed(vid), thumb: youtubeThumbnail(vid) });
-  });
+  // 3) Vídeos age-restricted no fim (mantidos para acesso manual)
+  restrictedVideos.forEach(item => modalMediaList.push(item));
 }
 
 function renderModalMedia(idx) {
@@ -1362,9 +1418,19 @@ function renderModalMedia(idx) {
          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
        </button>` : "";
 
-  const mediaContent = item.type === "img"
-    ? `<img src="${escHtml(item.src)}" alt="${escHtml(t("Screenshot"))}" onload="this.classList.add('loaded')"/>`
-    : `<iframe src="${escHtml(item.src)}" allowfullscreen allow="autoplay; encrypted-media" onload="this.classList.add('loaded')"></iframe>`;
+  // ── Renderização do conteúdo de media ──
+  // - Imagem: <img> normal
+  // - Vídeo embebível: <iframe> do YouTube
+  // - Vídeo age-restricted (já confirmado pela cache): placeholder com
+  //   thumbnail + botão "Ver no YouTube", em vez de tentar embeber.
+  let mediaContent;
+  if (item.type === "img") {
+    mediaContent = `<img src="${escHtml(item.src)}" alt="${escHtml(t("Screenshot"))}" onload="this.classList.add('loaded')"/>`;
+  } else if (item.ageRestricted) {
+    mediaContent = renderAgeRestrictedPlaceholder(item);
+  } else {
+    mediaContent = `<iframe src="${escHtml(item.src)}" allowfullscreen allow="autoplay; encrypted-media" onload="this.classList.add('loaded')"></iframe>`;
+  }
 
   $modalMedia.innerHTML = `
     <div class="modal-media-skeleton"></div>
@@ -1388,9 +1454,48 @@ function renderModalMedia(idx) {
 }
 
 // ─────────────────────────────────────────────
+//  Placeholder para vídeos age-restricted
+//  Mostra a thumbnail do vídeo + botão "Ver no YouTube".
+//  Não tenta embeber o iframe (que mostraria "Sign in to confirm your age").
+// ─────────────────────────────────────────────
+function renderAgeRestrictedPlaceholder(item) {
+  const thumb = item.thumb || youtubeThumbnail(item.videoId);
+  const watchUrl = `https://www.youtube.com/watch?v=${escHtml(item.videoId)}`;
+  const label = isPt()
+    ? "Conteúdo com restrição de idade"
+    : "Age-restricted content";
+  const btnLabel = isPt() ? "Ver no YouTube" : "Watch on YouTube";
+  return `
+    <div class="modal-media-agegate">
+      <img src="${escHtml(thumb)}" alt="" class="modal-media-agegate-thumb" onload="this.classList.add('loaded')"/>
+      <div class="modal-media-agegate-overlay">
+        <svg class="modal-media-agegate-icon" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M12 8v4"/>
+          <path d="M12 16h.01"/>
+        </svg>
+        <span class="modal-media-agegate-label">${escHtml(label)}</span>
+        <a class="modal-media-agegate-btn" href="${escHtml(watchUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+          ${escHtml(btnLabel)}
+        </a>
+      </div>
+    </div>
+  `;
+}
+
+// ─────────────────────────────────────────────
 //  Auto-advance do modal-media:
 //  - screenshot: avança após 5s idle
 //  - vídeo: avança quando o YouTube reporta 'ended' (postMessage API)
+//
+//  Deteção de vídeos age-restricted / não-embebíveis:
+//  - O YouTube IFrame API dispara onError com código 101 ou 150 quando um
+//    vídeo não pode ser embebido (inclui age-restriction, embed-disabled,
+//    privado, etc.).
+//  - Quando detetado: marca o vídeo na cache persistente, move-o para o fim
+//    da lista, e avança para o próximo media disponível.
+//  - Se não houver outros media, mostra o placeholder de age-restriction.
 // ─────────────────────────────────────────────
 function clearModalAutoAdvance() {
   if (modalAutoTimer) { clearTimeout(modalAutoTimer); modalAutoTimer = null; }
@@ -1406,18 +1511,74 @@ function goToNextModalMedia() {
 function onYoutubeStateMessage(e) {
   let data;
   try { data = JSON.parse(e.data); } catch(_) { return; }
+  if (!data) return;
+
   // YT IFrame API: event "infoDelivery", info.playerState === 0 → ended
-  if (data && data.event === "infoDelivery" && data.info && data.info.playerState === 0) {
+  if (data.event === "infoDelivery" && data.info && data.info.playerState === 0) {
     goToNextModalMedia();
+    return;
+  }
+
+  // Deteção de vídeo age-restricted / não-embebível:
+  // onError com código 101 ou 150 = o vídeo não pode ser reproduzido no embed.
+  // 101 = vídeo não embebível (embed disabled pelo dono)
+  // 150 = o mesmo, mas devolvido pelo player de embed (inclui age-restriction)
+  if (data.event === "onError" && (data.info === 101 || data.info === 150)) {
+    handleAgeRestrictedVideo();
+  }
+}
+
+// Processa um vídeo detetado como age-restricted / não-embebível:
+// 1. Marca o videoId na cache persistente (não volta a tentar embeber)
+// 2. Reordena o modalMediaList: move o vídeo para o fim
+// 3. Re-renderiza para mostrar o próximo media disponível
+//    (vídeo embebível ou screenshot). Se só houver este vídeo, mostra
+//    o placeholder de age-restriction no lugar do iframe.
+function handleAgeRestrictedVideo() {
+  const currentItem = modalMediaList[modalIndex];
+  if (!currentItem || currentItem.type !== "video") return;
+
+  // 1. Marca na cache
+  if (currentItem.videoId) {
+    markVideoAgeRestricted(currentItem.videoId);
+  }
+  currentItem.ageRestricted = true;
+
+  // 2. Reordena: move o vídeo atual (e quaisquer outros já marcados) para o fim
+  const restricted = [];
+  const playable = [];
+  modalMediaList.forEach(m => {
+    if (m.type === "video" && m.ageRestricted) restricted.push(m);
+    else playable.push(m);
+  });
+  modalMediaList = [...playable, ...restricted];
+
+  // 3. Determina o que mostrar a seguir:
+  //    - Se há media jogável (não-restricted) antes da posição atual, mostra o primeiro
+  //    - Se não há media jogável, fica no vídeo atual mas renderiza o placeholder
+  if (playable.length > 0) {
+    // Avança para o primeiro media jogável
+    renderModalMedia(0);
+  } else {
+    // Não há outros media — re-renderiza o item atual (agora mostra placeholder)
+    // Encontra a nova posição do item atual
+    const newIdx = modalMediaList.indexOf(currentItem);
+    renderModalMedia(newIdx >= 0 ? newIdx : 0);
   }
 }
 
 function scheduleModalAutoAdvance(item) {
   clearModalAutoAdvance();
   if (!item) return;
-  if (item.type === "img") {
+
+  // Placeholder de age-restriction: comporta-se como imagem (avança após 10s)
+  if (item.type === "img" || (item.type === "video" && item.ageRestricted)) {
     modalAutoTimer = setTimeout(goToNextModalMedia, 10000);
-  } else {
+    return;
+  }
+
+  // Vídeo embebível: escuta mensagens do YouTube para detetar 'ended' e onError
+  if (item.type === "video") {
     window.addEventListener("message", onYoutubeStateMessage);
     // Subscreve ao evento 'onStateChange' do player assim que o iframe carregar
     const iframe = $modalMedia.querySelector("iframe");
@@ -2699,6 +2860,28 @@ function listenToTabGames() {
     // Encontra a tab "Aprovados" (se existir)
     const approvedTab = tabsData.find(t => t.label === "Aprovados" || t.label === "Approved");
     approvedTabId = approvedTab ? approvedTab.id : null;
+    // Encontra a tab "Jogados" (se existir)
+    const playedTab = tabsData.find(t => t.label === "Jogados" || t.label === "Played");
+    playedTabId = playedTab ? playedTab.id : null;
+
+    // ⚠️  Sincroniza hiddenGames com a tab "Jogados" do Firebase.
+    //    Jogos marcados como jogados (por qualquer utilizador, noutro dispositivo
+    //    ou sessão) devem estar escondidos da lista principal localmente.
+    //    Só adiciona (nunca remove via sync — a remoção é feita explicitamente
+    //    pelo unmarkAsPlayed ou pelo toggleDownvote quando revertido).
+    //    Isto evita race conditions com o carregamento dos downvotes.
+    if (playedTabId) {
+      const playedSet = tabGamesMap[playedTabId] || new Set();
+      let hiddenChanged = false;
+      playedSet.forEach(fbid => {
+        if (!hiddenGames.has(fbid)) {
+          hiddenGames.add(fbid);
+          hiddenChanged = true;
+        }
+      });
+      if (hiddenChanged) saveHiddenGames();
+    }
+
     renderTabs();
     renderGameList(gamesData);
     // ⚠️  Processa thresholds após actualizar trashTabId — resolve race condition
@@ -2769,9 +2952,12 @@ async function toggleDownvote(firebaseId) {
       for (const d of snap.docs) {
         await deleteDoc(doc(db, "downvotes", d.id));
       }
-      // Remove o jogo da lista de escondidos (já não tem down-vote)
-      hiddenGames.delete(firebaseId);
-      saveHiddenGames();
+      // Remove o jogo da lista de escondidos (já não tem down-vote),
+      // a menos que esteja marcado como "jogado" (que também o esconde)
+      if (!isPlayed(firebaseId)) {
+        hiddenGames.delete(firebaseId);
+        saveHiddenGames();
+      }
     } else {
       // ⚠️ Mutual exclusivity: ao dar down-vote, remove o up-vote se existir
       if (hasUserUpvoted(firebaseId)) {
@@ -2967,9 +3153,12 @@ async function toggleUpvote(firebaseId) {
         for (const d of dsnap.docs) {
           await deleteDoc(doc(db, "downvotes", d.id));
         }
-        // Remove o jogo da lista de escondidos (tinha down-vote → agora tem up-vote)
-        hiddenGames.delete(firebaseId);
-        saveHiddenGames();
+        // Remove o jogo da lista de escondidos (tinha down-vote → agora tem up-vote),
+        // a menos que esteja marcado como "jogado" (que também o esconde)
+        if (!isPlayed(firebaseId)) {
+          hiddenGames.delete(firebaseId);
+          saveHiddenGames();
+        }
       }
       // Adiciona o up-vote
       await addDoc(collection(db, "upvotes"), {
@@ -3109,6 +3298,104 @@ async function createTrashTab() {
   }
 }
 
+// ─────────────────────────────────────────────
+//  TAB "JOGADOS" — jogos marcados como já jogados pelo grupo
+//  Tab especial (como Reprovados/Aprovados): criada automaticamente,
+//  não é apagável, e fica sempre acima de Reprovados na lista de tabs.
+//  Marcar um jogo como jogado também o esconde da lista principal
+//  (mesmo comportamento dos hidden games — só visível se o toggle
+//  "Mostrar jogos escondidos" estiver activo, ou na própria tab Jogados).
+// ─────────────────────────────────────────────
+
+// Verifica se um jogo está marcado como jogado
+function isPlayed(firebaseId) {
+  if (!playedTabId) return false;
+  const set = tabGamesMap[playedTabId];
+  return set ? set.has(firebaseId) : false;
+}
+
+// Cria a tab "Jogados" no Firebase (se ainda não existir).
+// Retorna o ID da tab (existente ou recém-criada).
+async function ensurePlayedTab() {
+  // 1. Já temos em memória?
+  if (playedTabId) return playedTabId;
+
+  // 2. Procura em tabsData (estado local)
+  const existingLocal = tabsData.find(t =>
+    t.label === "Jogados" || t.label === "Played"
+  );
+  if (existingLocal) {
+    playedTabId = existingLocal.id;
+    return playedTabId;
+  }
+
+  // 3. Procura no Firebase (evita duplicados se tabsData ainda não carregou)
+  try {
+    const snap = await getDocs(collection(db, "tabs"));
+    const existingFb = snap.docs.find(d => {
+      const label = d.data().label;
+      return label === "Jogados" || label === "Played";
+    });
+    if (existingFb) {
+      playedTabId = existingFb.id;
+      return playedTabId;
+    }
+  } catch (e) {
+    console.error("[ensurePlayedTab] erro ao verificar Firebase:", e);
+  }
+
+  // 4. Cria a tab
+  try {
+    const playedRef = await addDoc(collection(db, "tabs"), {
+      label: "Jogados",
+      createdAt: serverTimestamp(),
+    });
+    await setDoc(doc(db, "tabGames", playedRef.id), { gameIds: [] });
+    playedTabId = playedRef.id;
+    return playedTabId;
+  } catch (err) {
+    console.error("[ensurePlayedTab] erro:", err);
+    showToast(isPt() ? "Erro ao criar Jogados." : "Failed to create Played.");
+    return null;
+  }
+}
+
+// Marca um jogo como jogado: adiciona à tab "Jogados" + esconde localmente
+async function markAsPlayed(firebaseId) {
+  if (!firebaseId) return;
+  const tabId = await ensurePlayedTab();
+  if (!tabId) return;
+
+  const set = new Set(tabGamesMap[tabId] || []);
+  if (set.has(firebaseId)) return; // já está marcado
+  set.add(firebaseId);
+  await saveTabGames(tabId, set);
+
+  // Esconde o jogo da lista principal (igual ao comportamento de down-vote)
+  hiddenGames.add(firebaseId);
+  saveHiddenGames();
+
+  showToast(isPt() ? "Marcado como jogado." : "Marked as played.");
+  renderGameList(gamesData);
+}
+
+// Remove um jogo do estado "jogado": remove da tab "Jogados" + mostra novamente
+async function unmarkAsPlayed(firebaseId) {
+  if (!firebaseId || !playedTabId) return;
+
+  const set = new Set(tabGamesMap[playedTabId] || []);
+  if (!set.has(firebaseId)) return; // não estava marcado
+  set.delete(firebaseId);
+  await saveTabGames(playedTabId, set);
+
+  // Mostra o jogo novamente na lista principal
+  hiddenGames.delete(firebaseId);
+  saveHiddenGames();
+
+  showToast(isPt() ? "Jogo revertido." : "Game reverted.");
+  renderGameList(gamesData);
+}
+
 async function createTab(label) {
   try {
     await addDoc(collection(db, "tabs"), {
@@ -3150,18 +3437,22 @@ async function saveTabGames(tabId, gameIdsSet) {
 // ─────────────────────────────────────────────
 function renderTabs() {
   // Opções do menu: "Todos" + tabs criadas
-  // Ordenação: "Aprovados" em 2º (sempre abaixo de Todos), "Lixo" em último.
+  // Ordenação: "Aprovados" em 2º (sempre abaixo de Todos), "Jogados" acima de
+  // "Reprovados", "Reprovados" em último.
   const sortedTabs = [...tabsData].sort((a, b) => {
     const aIsApproved = (a.label === "Aprovados" || a.label === "Approved") ? 1 : 0;
     const bIsApproved = (b.label === "Aprovados" || b.label === "Approved") ? 1 : 0;
+    const aIsPlayed = (a.label === "Jogados" || a.label === "Played") ? 1 : 0;
+    const bIsPlayed = (b.label === "Jogados" || b.label === "Played") ? 1 : 0;
     const aIsTrash = (a.label === "Reprovados" || a.label === "Lixo" || a.label === "Trash" || a.label === "Rejected") ? 1 : 0;
     const bIsTrash = (b.label === "Reprovados" || b.label === "Lixo" || b.label === "Trash" || b.label === "Rejected") ? 1 : 0;
 
     // Aprovados tem prioridade 0 (vem primeiro entre as tabs)
     // Outras tabs têm prioridade 1
-    // Lixo tem prioridade 2 (vem sempre em último)
-    const aPriority = aIsTrash ? 2 : (aIsApproved ? 0 : 1);
-    const bPriority = bIsTrash ? 2 : (bIsApproved ? 0 : 1);
+    // Jogados tem prioridade 2 (acima do lixo)
+    // Lixo tem prioridade 3 (vem sempre em último)
+    const aPriority = aIsTrash ? 3 : (aIsPlayed ? 2 : (aIsApproved ? 0 : 1));
+    const bPriority = bIsTrash ? 3 : (bIsPlayed ? 2 : (bIsApproved ? 0 : 1));
     if (aPriority !== bPriority) return aPriority - bPriority;
     return 0; // mantém ordem original (createdAt)
   });
@@ -3172,11 +3463,12 @@ function renderTabs() {
       const set = tabGamesMap[tab.id] || new Set();
       const isTrash = (tab.label === "Reprovados" || tab.label === "Lixo" || tab.label === "Trash" || tab.label === "Rejected");
       const isApproved = (tab.label === "Aprovados" || tab.label === "Approved");
+      const isPlayedTab = (tab.label === "Jogados" || tab.label === "Played");
       return {
         id: tab.id,
-        label: isTrash ? t("Reprovados") : (isApproved ? t("Aprovados") : tab.label),
+        label: isTrash ? t("Reprovados") : (isApproved ? t("Aprovados") : (isPlayedTab ? t("Jogados") : tab.label)),
         count: gamesData.filter(g => set.has(g.firebaseId)).length,
-        deletable: !isTrash && !isApproved, // lixo e aprovados não são apagáveis
+        deletable: !isTrash && !isApproved && !isPlayedTab, // lixo, aprovados e jogados não são apagáveis
       };
     }),
   ];
