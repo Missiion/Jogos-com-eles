@@ -127,17 +127,26 @@
     </div>
   </div>
 
-  <!-- Add-to-Tab Modal — aparece ao clicar no "+" de um card -->
+  <!-- Playlist Modal — aparece ao clicar no botão de playlist de um card jogado -->
   <div id="addtab-modal" class="addtab-modal hidden">
     <div class="addtab-backdrop" id="addtab-backdrop"></div>
     <div class="addtab-panel">
       <div class="addtab-header">
-        <span class="addtab-title" id="addtab-title" data-i18n="Adicionar a Tab">Adicionar a Tab</span>
+        <span class="addtab-title" id="addtab-title" data-i18n="Gravações">Gravações</span>
         <button class="addtab-close" id="addtab-close" data-i18n-aria-label="Fechar" aria-label="Fechar">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      <div class="addtab-list" id="addtab-list"></div>
+      <div class="addtab-list" id="addtab-list">
+        <div class="playlist-form">
+          <label class="playlist-label" for="playlist-url-input" data-i18n="Link da playlist do YouTube">Link da playlist do YouTube</label>
+          <input type="url" class="playlist-url-input" id="playlist-url-input" data-i18n-placeholder="https://www.youtube.com/playlist?list=..." placeholder="https://www.youtube.com/playlist?list=..." autocomplete="off"/>
+          <div class="playlist-buttons">
+            <button class="playlist-remove-btn hidden" id="playlist-remove-btn" type="button" data-i18n="Remover">Remover</button>
+            <button class="playlist-save-btn" id="playlist-save-btn" type="button" data-i18n="Guardar">Guardar</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
