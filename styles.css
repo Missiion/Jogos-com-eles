@@ -3823,11 +3823,13 @@ body.editor-mode .card-release-status {
   padding: 8px 10px;
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.22s ease, padding 0.22s ease, gap 0.22s ease;
 }
 
 .header-search-result-item:hover {
   background: rgba(255,255,255,0.06);
+  padding: 10px 10px;
+  gap: 12px;
 }
 
 .header-search-result-cover {
@@ -3837,6 +3839,14 @@ body.editor-mode .card-release-status {
   object-fit: cover;
   flex-shrink: 0;
   background: var(--surface2);
+  transition: width 0.22s ease, height 0.22s ease, border-radius 0.22s ease;
+}
+
+/* No hover, a cover cresce para mostrar mais detalhe */
+.header-search-result-item:hover .header-search-result-cover {
+  width: 44px;
+  height: 58px;
+  border-radius: 5px;
 }
 
 .header-search-result-info {
@@ -3852,30 +3862,54 @@ body.editor-mode .card-release-status {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: white-space 0.22s ease, font-size 0.22s ease;
+}
+
+/* No hover, o título expande para mostrar o nome completo (sem ellipsis) */
+.header-search-result-item:hover .header-search-result-name {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  font-size: 0.82rem;
 }
 
 .header-search-result-year {
   font-size: 0.65rem;
   color: var(--muted);
+  transition: font-size 0.22s ease;
 }
 
+.header-search-result-item:hover .header-search-result-year {
+  font-size: 0.68rem;
+}
+
+/* ── Botão "Adicionar" — ícone "+" circular ──
+   Botão maior e circular, apenas com o ícone (sem texto).
+   Estados: default (+), a adicionar (spinner), adicionado (✓). */
 .header-search-result-add {
-  padding: 5px 10px;
-  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
   background: var(--amber-dim);
   border: 1px solid rgba(255,179,71,0.3);
   color: var(--amber);
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 0.65rem;
-  font-weight: 700;
   cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s;
+  flex-shrink: 0;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease,
+              transform 0.18s ease;
 }
 
 .header-search-result-add:hover {
   background: rgba(255,179,71,0.25);
   border-color: var(--amber);
+  transform: scale(1.08);
+}
+
+.header-search-result-add:active {
+  transform: scale(0.95);
 }
 
 .header-search-result-add.added {
@@ -3883,6 +3917,20 @@ body.editor-mode .card-release-status {
   border-color: rgba(77,217,138,0.3);
   color: var(--green);
   cursor: default;
+}
+
+.header-search-result-add.added:hover {
+  transform: none;
+}
+
+/* Spinner para o estado "a adicionar" */
+.header-search-add-spinner {
+  animation: headerSearchAddSpin 0.7s linear infinite;
+}
+
+@keyframes headerSearchAddSpin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }
 
 .header-search-result-badge {
