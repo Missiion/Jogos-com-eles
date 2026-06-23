@@ -208,6 +208,15 @@
     "Lixo": "Rejected",
     "Votar a favor": "Up-vote",
     "Votar contra": "Down-vote",
+
+    // ── Jogados (played) system ─────────────────
+    "Jogados": "Played",
+    "Marcar como jogado": "Mark as played",
+    "Reverter": "Revert",
+    "Marcado como jogado.": "Marked as played.",
+    "Jogo revertido.": "Game reverted.",
+    "Erro ao criar Jogados.": "Failed to create Played.",
+
     "Remover voto": "Remove vote",
     "votos contra": "down-votes",
     "votos a favor": "up-votes",
