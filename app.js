@@ -2746,6 +2746,37 @@ function initHeaderSearch() {
     }
   }, { passive: true, capture: true });
 
+  // ── Scroll containment no dropdown de resultados ──
+  // Impede o "scroll chaining": quando o utilizador faz scroll dentro do
+  // dropdown e chega ao limite (topo ou fundo), o scroll NÃO propaga para
+  // a página. Isto evita que a página role quando se está a navegar nos
+  // resultados da pesquisa.
+  if ($results) {
+    $results.addEventListener("wheel", (e) => {
+      // Só contém o scroll se o dropdown tiver conteúdo scrollable
+      const hasScrollableContent = $results.scrollHeight > $results.clientHeight;
+      if (!hasScrollableContent) return;
+
+      const scrollTop = $results.scrollTop;
+      const maxScroll = $results.scrollHeight - $results.clientHeight;
+      const scrollingUp = e.deltaY < 0;
+      const scrollingDown = e.deltaY > 0;
+
+      // No limite superior + scroll para cima → bloqueia
+      if (scrollingUp && scrollTop <= 0) {
+        e.preventDefault();
+        return;
+      }
+      // No limite inferior + scroll para baixo → bloqueia
+      if (scrollingDown && scrollTop >= maxScroll) {
+        e.preventDefault();
+        return;
+      }
+      // Caso contrário: deixa o scroll ocorrer dentro do dropdown
+      // (não precisa de preventDefault — o browser trata)
+    }, { passive: false });
+  }
+
   // Reabre os resultados ao focar o input — se ainda houver texto escrito,
   // re-executa a pesquisa automaticamente. Isto funciona para qualquer caso
   // onde os resultados foram fechados (scroll, click fora, etc.), mantendo
