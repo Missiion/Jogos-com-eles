@@ -123,6 +123,7 @@ const CACHE_TTL_MS  = 5 * 60 * 1000; // 5 min TTL (Firebase real-time sobrepõe 
 //  STATE
 // ─────────────────────────────────────────────
 let gamesData   = [];   // [{id, igdbId, name, cover, screenshots, videos, genres, modes, rating, summary, steamUrl, addedAt, preferredKeyArt, playlistUrl}]
+let gamesLoaded  = false; // true após o primeiro carregamento completo do onSnapshot (listenToGames)
 let adminOpen     = false; // true enquanto o "modo editor" está ativo (cards mostram botões de admin)
 let adminExpanded = false; // true quando o painel de admin (canto inferior direito) está descolapsado
 let testsExpanded = false; // true quando o painel de testes (ao lado da pesquisa) está descolapsado
@@ -386,6 +387,26 @@ async function fetchGameById(igdbId) {
   return results[0] || null;
 }
 
+// fetchGameById com retry automático (3 tentativas, backoff exponencial).
+// Evita que jogos desapareçam da lista devido a falhas temporárias do
+// proxy IGDB (rate limit, rede, etc.).
+async function fetchGameByIdWithRetry(igdbId, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const game = await fetchGameById(igdbId);
+      if (game) return game;
+      // IGDB devolveu array vazio — jogo pode ter sido removido; não retentar
+      return null;
+    } catch (e) {
+      if (attempt === maxRetries) throw e;
+      // Backoff exponencial: 500ms, 1000ms, 2000ms
+      const delay = 500 * Math.pow(2, attempt);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  return null;
+}
+
 // ─────────────────────────────────────────────
 //  IGDB DATA HELPERS
 // ─────────────────────────────────────────────
@@ -411,6 +432,30 @@ function youtubeEmbed(videoId) {
 
 function youtubeThumbnail(videoId) {
   return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
+}
+
+// Extrai o playlist ID de uma URL de playlist do YouTube.
+// Aceita formatos:
+//   https://www.youtube.com/playlist?list=PLxxxx
+//   https://youtube.com/watch?v=xxx&list=PLxxxx
+//   https://youtu.be/xxx?list=PLxxxx
+// Retorna o playlist ID ou null se não for válido.
+function extractPlaylistId(url) {
+  if (!url || typeof url !== "string") return null;
+  try {
+    const u = new URL(url.trim());
+    return u.searchParams.get("list") || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// Cria o embed URL para uma playlist do YouTube (videoseries).
+// Este URL carrega o player da playlist completa, permitindo navegação
+// entre vídeos via postMessage (nextVideo/previousVideo).
+function youtubePlaylistEmbed(playlistId) {
+  const autoplay = youtubeAutoplay ? "1" : "0";
+  return `https://www.youtube.com/embed/videoseries?list=${encodeURIComponent(playlistId)}&autoplay=${autoplay}&mute=0&controls=1&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&enablejsapi=1`;
 }
 
 function steamUrl(websites) {
@@ -851,6 +896,81 @@ async function editUserName(newRawName) {
 // ─────────────────────────────────────────────
 //  FIREBASE — Real-time listener
 // ─────────────────────────────────────────────
+
+// Cria um objeto de jogo "fallback" quando o IGDB falha, para que o jogo
+// não desapareça da lista. Tem dados mínimos (igdbId, name placeholder,
+// sem cover/screenshots). Marcado com _needsRetry para retry posterior.
+function createFallbackGame(fsDoc) {
+  return {
+    igdbId:         fsDoc.igdbId,
+    name:           isPt() ? `Jogo #${fsDoc.igdbId}` : `Game #${fsDoc.igdbId}`,
+    cover:          null,
+    screenshots:    [],
+    artworks:       [],
+    videos:         [],
+    genres:         [],
+    themes:         [],
+    modes:          [],
+    rating:         null,
+    summary:        "",
+    steamUrl:       null,
+    year:           null,
+    studios:        [],
+    developers:     [],
+    engines:        [],
+    releaseStatus:  "Por lançar",
+    firstReleaseTs: null,
+    releaseDateFull: null,
+    language:       "",
+    firebaseId:     fsDoc.firebaseId,
+    preferredKeyArt: fsDoc.preferredKeyArt || null,
+    playlistUrl:    fsDoc.playlistUrl || null,
+    _needsRetry:    true, // sinaliza que precisa de retry do IGDB
+  };
+}
+
+// Retry em background para jogos que ficaram em fallback (IGDB falhou).
+// Procura jogos com _needsRetry e tenta buscar os dados reais do IGDB.
+// Se conseguir, substitui o fallback pelos dados reais e re-renderiza.
+let _bgRetryInProgress = false;
+async function retryFailedGames() {
+  if (_bgRetryInProgress) return;
+  const failedGames = gamesData.filter(g => g._needsRetry);
+  if (failedGames.length === 0) return;
+
+  _bgRetryInProgress = true;
+  let updated = false;
+
+  for (const game of failedGames) {
+    try {
+      const igdbGame = await fetchGameByIdWithRetry(game.igdbId, 2);
+      if (igdbGame) {
+        // Substitui o fallback pelos dados reais
+        const idx = gamesData.findIndex(g => g.firebaseId === game.firebaseId);
+        if (idx >= 0) {
+          gamesData[idx] = {
+            ...normalizeGame(igdbGame),
+            firebaseId: game.firebaseId,
+            preferredKeyArt: game.preferredKeyArt || null,
+            playlistUrl: game.playlistUrl || null,
+          };
+          updated = true;
+        }
+      }
+    } catch (_) {
+      // Ainda falhou — mantém o fallback, tentará novamente depois
+    }
+  }
+
+  _bgRetryInProgress = false;
+  if (updated) {
+    saveCache(gamesData);
+    renderGameList(gamesData);
+    renderAdminList(gamesData);
+    renderTagFilter();
+  }
+}
+
 function listenToGames() {
   const q = query(collection(db, "games"), orderBy("addedAt", "asc"));
 
@@ -860,6 +980,7 @@ function listenToGames() {
     // Se lista vazia
     if (firestoreDocs.length === 0) {
       gamesData = [];
+      gamesLoaded = true; // carregamento completo (mesmo que vazio)
       saveCache([]);
       renderGameList([]);
       renderAdminList([]);
@@ -870,41 +991,67 @@ function listenToGames() {
     const cached = loadCache() || [];
     const cachedMap = Object.fromEntries(cached.map(g => [g.igdbId, g]));
 
-    const resolved = await Promise.all(
-      firestoreDocs.map(async (fsDoc) => {
-        if (cachedMap[fsDoc.igdbId]) {
-          return {
-            ...cachedMap[fsDoc.igdbId],
-            firebaseId: fsDoc.firebaseId,
-            preferredKeyArt: fsDoc.preferredKeyArt || null,
-            playlistUrl: fsDoc.playlistUrl || null,
-          };
-        }
-        try {
-          const igdbGame = await fetchGameById(fsDoc.igdbId);
-          if (!igdbGame) return null;
-          return {
-            ...normalizeGame(igdbGame),
-            firebaseId: fsDoc.firebaseId,
-            preferredKeyArt: fsDoc.preferredKeyArt || null,
-            playlistUrl: fsDoc.playlistUrl || null,
-          };
-        } catch(e) {
-          console.warn("Falha ao buscar jogo", fsDoc.igdbId, e);
-          return null;
-        }
-      })
-    );
+    // Controla concorrência: processa IGDB fetches em batches para não
+    // sobrecarregar o proxy (evita rate limit e falhas temporárias).
+    const CONCURRENCY = 5;
+    const failedIgdbIds = []; // jogos onde o IGDB falhou (para retry depois)
+
+    const resolved = [];
+    for (let i = 0; i < firestoreDocs.length; i += CONCURRENCY) {
+      const batch = firestoreDocs.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.all(
+        batch.map(async (fsDoc) => {
+          if (cachedMap[fsDoc.igdbId]) {
+            return {
+              ...cachedMap[fsDoc.igdbId],
+              firebaseId: fsDoc.firebaseId,
+              preferredKeyArt: fsDoc.preferredKeyArt || null,
+              playlistUrl: fsDoc.playlistUrl || null,
+            };
+          }
+          try {
+            const igdbGame = await fetchGameByIdWithRetry(fsDoc.igdbId);
+            if (!igdbGame) {
+              // IGDB devolveu vazio — cria fallback para não perder o jogo
+              failedIgdbIds.push(fsDoc.igdbId);
+              return createFallbackGame(fsDoc);
+            }
+            return {
+              ...normalizeGame(igdbGame),
+              firebaseId: fsDoc.firebaseId,
+              preferredKeyArt: fsDoc.preferredKeyArt || null,
+              playlistUrl: fsDoc.playlistUrl || null,
+            };
+          } catch(e) {
+            console.warn("Falha ao buscar jogo", fsDoc.igdbId, e);
+            failedIgdbIds.push(fsDoc.igdbId);
+            return createFallbackGame(fsDoc);
+          }
+        })
+      );
+      resolved.push(...batchResults);
+    }
 
     gamesData = resolved.filter(Boolean);
-    saveCache(gamesData);
+    gamesLoaded = true; // carregamento completo do Firebase + IGDB
+    // Guarda em cache apenas jogos que NÃO estão em fallback (sem _needsRetry).
+    // Jogos em fallback não são guardados em cache para que sejam re-tentados
+    // no próximo carregamento.
+    const cacheableGames = gamesData.filter(g => !g._needsRetry);
+    saveCache(cacheableGames);
     renderGameList(gamesData);
     renderAdminList(gamesData);
     renderTagFilter(); // refresh available tags after new game data
     // Processa up-votes pendentes (jogos adicionados por users → up-vote automático)
     processPendingUpvotes();
+    // Retry em background para jogos que ficaram em fallback (IGDB falhou)
+    // — tenta buscar os dados reais após 3 segundos
+    if (gamesData.some(g => g._needsRetry)) {
+      setTimeout(retryFailedGames, 3000);
+    }
   }, (err) => {
     console.warn("[app.js] Erro no listener do Firebase:", err);
+    gamesLoaded = true; // mesmo com erro, consideramos "carregado" para não bloquear
     // Em caso de erro (permissões, config inválida, etc.), mostra estado
     // vazio e dispensa o loader para não bloquear a UI.
     gamesData = [];
@@ -923,13 +1070,19 @@ function getFilteredSortedGames() {
   if (activeTab !== "all") {
     const allowed = tabGamesMap[activeTab] || new Set();
     list = list.filter(g => allowed.has(g.firebaseId));
+    // ⚠️  Tabs específicas (Jogados, Reprovados, Aprovados, tabs de users)
+    //    ignoram SEMPRE o filtro de hidden games — mostram todos os jogos
+    //    que pertencem a essa tab, independentemente do toggle
+    //    "Mostrar jogos escondidos". Isto é especialmente importante para
+    //    a tab "Jogados", onde os jogos estão escondidos da lista principal
+    //    mas devem ser sempre visíveis na sua própria tab.
   } else {
     // Na tab "all", exclui jogos que estão no lixo (>= threshold down-votes)
     list = list.filter(g => !isInTrash(g.firebaseId));
     // 1b. Esconde jogos que o user actual deu down-vote (localmente)
     // ou que foram marcados como "jogados" (também ficam escondidos da
     // lista principal — só visíveis na tab "Jogados").
-    // Apenas na lista "Todos". Outras tabs (users, lixo) mostram tudo.
+    // Apenas na lista "Todos". Outras tabs (users, lixo, jogados) mostram tudo.
     if (!showHiddenGames) {
       list = list.filter(g => !hiddenGames.has(g.firebaseId));
     }
@@ -1013,7 +1166,18 @@ function markLastRowCards() {
 }
 
 function renderGameList(games) {
-  $loadingState.classList.add("hidden");
+  // Se os jogos ainda não foram carregados do Firebase/IGDB (primeiro load),
+  // mantém o loading spinner visível em vez de mostrar "Sem jogos".
+  // Isto evita que o utilizador veja o empty state durante o retry do IGDB.
+  if (!gamesLoaded) {
+    // Não limpa o innerHTML para preservar o #loading-state que lá está
+    // desde o carregamento inicial do HTML.
+    if ($loadingState) $loadingState.classList.remove("hidden");
+    if ($emptyState) $emptyState.classList.add("hidden");
+    return;
+  }
+
+  if ($loadingState) $loadingState.classList.add("hidden");
 
   const filtered = getFilteredSortedGames();
 
@@ -1202,7 +1366,7 @@ function buildCard(game, globalIdx) {
           }
         </button>
         <button class="card-addtab-btn${isPlayed(game.firebaseId) ? " playable" : ""}${game.playlistUrl ? " has-playlist" : ""}" data-fbid="${escHtml(game.firebaseId || "")}" data-idx="${globalIdx}" aria-label="${escHtml(t("Gravações"))}" title="${escHtml(t("Gravações"))}">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8.051 1.999h.089c.822.003 4.987.033 6.11.335a2.01 2.01 0 0 1 1.415 1.42c.101.38.172.883.22 1.402l.01.104.022.26.008.104c.065.914.073 1.77.074 1.957v.075c-.001.194-.01 1.108-.082 2.06l-.008.105-.009.104c-.05.572-.124 1.14-.235 1.558a2.01 2.01 0 0 1-1.415 1.42c-1.16.312-5.569.334-6.18.335h-.142c-.309 0-1.587-.006-2.927-.052l-.17-.006-.087-.004-.171-.007-.171-.007c-1.11-.049-2.167-.128-2.654-.26a2.01 2.01 0 0 1-1.415-1.419c-.111-.417-.185-.986-.235-1.558L.09 9.82l-.008-.104A31 31 0 0 1 0 7.68v-.123c.002-.215.01-.958.064-1.778l.007-.103.003-.052.008-.104.022-.26.01-.104c.048-.519.119-1.023.22-1.402a2.01 2.01 0 0 1 1.415-1.42c.487-.13 1.544-.21 2.654-.26l.17-.007.172-.006.086-.003.171-.007A100 100 0 0 1 7.858 2zM6.4 5.209v4.818l4.157-2.408z"/></svg>
         </button>
         <button class="card-edit-btn" data-idx="${globalIdx}" aria-label="${escHtml(t("Editar key art"))}" title="${escHtml(t("Editar key art"))}">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -1386,6 +1550,25 @@ function buildModalMedia(game) {
   const screenshots = game.screenshots || [];
   const videos = game.videos || [];
 
+  // ── Modo "Gravações" ──
+  // Se o jogo está marcado como jogado E tem playlistUrl configurada,
+  // o modal-media mostra APENAS a playlist do YouTube (gravações).
+  // As setas modal-prev/modal-next navegam entre os vídeos da playlist
+  // via postMessage (nextVideo/previousVideo) em vez de trocar de media.
+  if (isPlayed(game.firebaseId) && game.playlistUrl) {
+    const playlistId = extractPlaylistId(game.playlistUrl);
+    if (playlistId) {
+      modalMediaList = [{
+        type: "playlist",
+        src: youtubePlaylistEmbed(playlistId),
+        playlistId: playlistId,
+        playlistUrl: game.playlistUrl,
+      }];
+      return;
+    }
+    // playlistUrl inválida — cai para o comportamento normal
+  }
+
   // Constrói a lista de vídeos com metadados (videoId, ageRestricted da cache)
   const videoItems = videos.map(vid => ({
     type: "video",
@@ -1433,6 +1616,49 @@ function buildModalMedia(game) {
 function renderModalMedia(idx) {
   modalIndex = Math.max(0, Math.min(idx, modalMediaList.length - 1));
   const item = modalMediaList[modalIndex];
+
+  // ── Modo Playlist (Gravações) ──
+  // Quando o item é do tipo "playlist", as setas prev/next não trocam de media
+  // — em vez disso, enviam comandos nextVideo/previousVideo ao iframe do YouTube
+  // via postMessage. O iframe é o player da playlist completa.
+  if (item.type === "playlist") {
+    $modalMedia.innerHTML = `
+      <div class="modal-media-skeleton"></div>
+      <button class="modal-prev" id="modal-prev" aria-label="${escHtml(t("Anterior"))}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="modal-next" id="modal-next" aria-label="${escHtml(t("Próximo"))}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <iframe src="${escHtml(item.src)}" allowfullscreen allow="autoplay; encrypted-media" onload="this.classList.add('loaded')"></iframe>
+    `;
+
+    // Prev/Next enviam postMessage para o iframe do YouTube
+    const prevBtn = document.getElementById("modal-prev");
+    const nextBtn = document.getElementById("modal-next");
+    const iframe = $modalMedia.querySelector("iframe");
+
+    if (prevBtn) {
+      prevBtn.addEventListener("click", () => {
+        if (!iframe) return;
+        try {
+          iframe.contentWindow.postMessage('{"event":"command","func":"previousVideo","args":""}', "*");
+        } catch(_) {}
+      });
+    }
+    if (nextBtn) {
+      nextBtn.addEventListener("click", () => {
+        if (!iframe) return;
+        try {
+          iframe.contentWindow.postMessage('{"event":"command","func":"nextVideo","args":""}', "*");
+        } catch(_) {}
+      });
+    }
+
+    // Subscreve ao evento 'onStateChange' do player assim que o iframe carregar
+    scheduleModalAutoAdvance(item);
+    return;
+  }
 
   const dotsHtml = modalMediaList.map((m, i) => {
     const isTrailer = m.type === "video";
@@ -1532,6 +1758,7 @@ function renderAgeRestrictedPlaceholder(item) {
 function clearModalAutoAdvance() {
   if (modalAutoTimer) { clearTimeout(modalAutoTimer); modalAutoTimer = null; }
   window.removeEventListener("message", onYoutubeStateMessage);
+  window.removeEventListener("message", onYoutubePlaylistStateMessage);
 }
 
 function goToNextModalMedia() {
@@ -1571,6 +1798,8 @@ function onYoutubeStateMessage(e) {
 function handleAgeRestrictedVideo() {
   const currentItem = modalMediaList[modalIndex];
   if (!currentItem || currentItem.type !== "video") return;
+  // Playlists não são afectadas por age-restriction de vídeos individuais
+  if (currentItem.type === "playlist") return;
 
   // 1. Marca na cache
   if (currentItem.videoId) {
@@ -1623,6 +1852,23 @@ function scheduleModalAutoAdvance(item) {
     return;
   }
 
+  // Playlist (Gravações): escuta mensagens do YouTube para detetar 'ended'
+  // (avança para o próximo vídeo da playlist automaticamente) mas NÃO
+  // processa onError como age-restriction (playlists podem ter vídeos
+  // individuais com erro sem que a playlist inteira seja age-restricted).
+  if (item.type === "playlist") {
+    window.addEventListener("message", onYoutubePlaylistStateMessage);
+    const iframe = $modalMedia.querySelector("iframe");
+    if (iframe) {
+      iframe.addEventListener("load", () => {
+        try {
+          iframe.contentWindow.postMessage('{"event":"listening","id":1}', "*");
+        } catch(_) {}
+      });
+    }
+    return;
+  }
+
   // Vídeo embebível: escuta mensagens do YouTube para detetar 'ended' e onError
   if (item.type === "video") {
     window.addEventListener("message", onYoutubeStateMessage);
@@ -1636,6 +1882,16 @@ function scheduleModalAutoAdvance(item) {
       });
     }
   }
+}
+
+// Handler específico para playlists: avança para o próximo vídeo da playlist
+// quando o atual termina (playerState === 0). Não processa onError.
+function onYoutubePlaylistStateMessage(e) {
+  let data;
+  try { data = JSON.parse(e.data); } catch(_) { return; }
+  if (!data) return;
+  // playerState === 0 → vídeo terminou → YouTube avança automaticamente
+  // para o próximo vídeo da playlist (não precisamos de fazer nada)
 }
 
 // ─────────────────────────────────────────────
@@ -4630,6 +4886,10 @@ function init() {
   const cached = loadCache();
   if (cached && cached.length > 0) {
     gamesData = cached;
+    // Marca como carregado para que o renderGameList mostre os jogos do cache
+    // em vez do loading spinner. O onSnapshot do Firebase atualizará quando
+    // receber dados frescos (e gamesLoaded continuará true).
+    gamesLoaded = true;
     renderGameList(cached);
     renderAdminList(cached);
   }
