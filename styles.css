@@ -387,11 +387,12 @@ body::before {
 .scrub-dot.trailer-dot { background: rgba(255,179,71,0.35); }
 .scrub-dot.trailer-dot.active { background: var(--amber); }
 
-/* ── Admin card buttons — editar key-art / remover ──
+/* ── Admin card buttons — editar key-art / remover / marcar jogado ──
    Escondidos por defeito; só ficam visíveis em modo editor
    (body.editor-mode, activado ao escrever "admin"). */
 .card-edit-btn,
-.card-delete-btn {
+.card-delete-btn,
+.card-played-btn {
   display: none;
   position: absolute;
   top: 8px;
@@ -407,7 +408,8 @@ body::before {
 }
 
 body.editor-mode .card-edit-btn,
-body.editor-mode .card-delete-btn {
+body.editor-mode .card-delete-btn,
+body.editor-mode .card-played-btn {
   display: flex;
 }
 
@@ -433,6 +435,36 @@ body.editor-mode .card-delete-btn {
 .card-delete-btn:hover {
   background: rgba(255,60,60,0.4);
   border-color: rgba(255,80,80,0.6);
+  color: #fff;
+}
+
+/* Botão "Marcar como jogado" — à direita do delete (left: 40px).
+   Visualmente igual ao delete mas com cores de sucesso (verde).
+   Quando o jogo já está marcado (.played), muda para amber e o ícone
+   passa a ser o de "reverter" (seta circular). */
+.card-played-btn {
+  left: 40px;
+  background: var(--green-dim);
+  border: 1px solid rgba(77,217,138,0.22);
+  color: var(--green);
+}
+
+.card-played-btn:hover {
+  background: rgba(77,217,138,0.3);
+  border-color: rgba(77,217,138,0.55);
+  color: #fff;
+}
+
+/* Estado "jogado" — botão torna-se "Reverter" (amber) */
+.card-played-btn.played {
+  background: var(--amber-dim);
+  border: 1px solid rgba(255,179,71,0.25);
+  color: var(--amber);
+}
+
+.card-played-btn.played:hover {
+  background: rgba(255,179,71,0.3);
+  border-color: rgba(255,179,71,0.55);
   color: #fff;
 }
 
@@ -866,6 +898,99 @@ body.editor-mode .card-delete-btn {
 .modal-media-dot.trailer-dot { background: rgba(255,179,71,0.4); }
 .modal-media-dot.trailer-dot.active { background: var(--amber); }
 
+/* ── Age-restricted video placeholder ──
+   Substitui o iframe do YouTube quando o vídeo é age-restricted ou
+   não pode ser embebido (onError 101/150). Mostra a thumbnail do
+   vídeo com um overlay escuro, ícone de aviso e botão "Ver no YouTube".
+   Mantém o mesmo aspect ratio (16:9) e posicionamento do iframe. */
+.modal-media-agegate {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.modal-media-agegate-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(2px) saturate(0.6);
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.modal-media-agegate-thumb.loaded {
+  opacity: 0.35;
+}
+
+.modal-media-agegate-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.875rem;
+  padding: 1.5rem;
+  text-align: center;
+  background: linear-gradient(
+    180deg,
+    rgba(8, 8, 14, 0.82) 0%,
+    rgba(8, 8, 14, 0.92) 100%
+  );
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.modal-media-agegate-icon {
+  color: var(--amber);
+  filter: drop-shadow(0 2px 12px rgba(255, 179, 71, 0.4));
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+}
+
+.modal-media-agegate-label {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--text);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  line-height: 1.3;
+}
+
+.modal-media-agegate-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.5rem 1rem;
+  border-radius: 100px;
+  background: rgba(255, 0, 0, 0.18);
+  border: 1px solid rgba(255, 80, 80, 0.4);
+  color: #ff8a8a;
+  text-decoration: none;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease,
+              transform 0.18s ease;
+}
+.modal-media-agegate-btn:hover {
+  background: rgba(255, 0, 0, 0.28);
+  border-color: rgba(255, 80, 80, 0.6);
+  color: #ffaaaa;
+  transform: translateY(-1px);
+}
+.modal-media-agegate-btn:active {
+  transform: translateY(0);
+}
+
 /* ── Banner do jogo — vive fora do .modal-content, no espaço livre
    à esquerda do modal. Não altera a largura/posição do modal-content
    nem do modal-media; só aparece quando há espaço sobrante no ecrã.
@@ -902,10 +1027,15 @@ body.editor-mode .card-delete-btn {
 
 /* ── "Novidade" badge below modal-banner ──
    Only shown in discover mode for unvisited games.
-   Positioned at the bottom of the banner. */
+   Positioned at the bottom of the banner.
+
+   Todos os valores de dimensionamento/posicionamento usam rem (não px)
+   para que o badge escale em cascata com o font-size fluído do <html>,
+   mantendo o espaçamento proporcional ao banner em todas as escalas
+   (1080p / 1440p / 4K). */
 .modal-new-badge {
   position: absolute;
-  bottom: -30px;
+  bottom: -1.875rem;       /* 30px @ 16px base — escala com o banner */
   left: 50%;
   transform: translateX(-50%);
   z-index: 5;
@@ -914,15 +1044,15 @@ body.editor-mode .card-delete-btn {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 4px 14px;
+  padding: 0.25rem 0.875rem;  /* 4px 14px @ 16px base — escala com o texto */
   border-radius: 100px;
   white-space: nowrap;
   background: linear-gradient(135deg, rgba(80, 150, 255, 0.28), rgba(80, 150, 255, 0.1));
   border: 1px solid rgba(80, 150, 255, 0.35);
   color: var(--blue);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(10px) brightness(0.8);
-  -webkit-backdrop-filter: blur(10px) brightness(0.8);
+  box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(0.625rem) brightness(0.8);
+  -webkit-backdrop-filter: blur(0.625rem) brightness(0.8);
   pointer-events: none;
   animation: newBadgePulse 2.5s ease-in-out infinite;
 }
@@ -2463,6 +2593,7 @@ body.editor-mode .card-addtab-btn { display: flex; }
 /* Hover do card → botões de admin descem abaixo dos scrub-dots */
 .game-card:hover .card-edit-btn,
 .game-card:hover .card-delete-btn,
+.game-card:hover .card-played-btn,
 .game-card:hover .card-addtab-btn {
   top: 20px;
 }
@@ -2957,6 +3088,7 @@ body.editor-mode .editor-only { display: flex !important; }
 /* No scrub, no admin buttons, no card-expand on nav cards */
 .discover-nav .card-scrub-bar,
 .discover-nav .card-delete-btn,
+.discover-nav .card-played-btn,
 .discover-nav .card-addtab-btn,
 .discover-nav .card-edit-btn,
 .discover-nav .card-expand {
@@ -3224,11 +3356,13 @@ body.editor-mode .editor-only { display: flex !important; }
     border-radius: 8px;
   }
 
-  /* "Novidade" badge below overlay banner — smaller, tighter */
+  /* "Novidade" badge below overlay banner — smaller, tighter.
+     Valores em rem para escalar com o font-size fluído (igual ao modo
+     painel lateral), mantendo a proporção em todas as escalas. */
   .modal-new-badge {
-    bottom: -22px;
+    bottom: -1.375rem;          /* 22px @ 16px base */
     font-size: 0.48rem;
-    padding: 2px 7px;
+    padding: 0.125rem 0.4375rem; /* 2px 7px @ 16px base */
   }
 
   /* Extra-info: faixa horizontal inline, inserida no fluxo do modal-content */
