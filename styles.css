@@ -35,6 +35,11 @@ button, a { font-family: inherit; cursor: pointer; text-decoration: none; }
 
   /* ── Banner badge size — change this to resize the cover art on cards ── */
   --card-banner-size: 52px; /* width; height is auto (portrait ratio ~4:3) */
+
+  /* ── Padrão SVG para fundos de menus (linhas brancas subtis) ──
+     Aplicado a todos os menus dropdown/painéis com fundo sólido.
+     Linhas brancas com 4% de opacidade sobre o fundo escuro existente. */
+  --menu-pattern: url("./menu-pattern.svg");
 }
 
 /* Font-size fluida por zona de resolução.
@@ -1465,7 +1470,8 @@ body.editor-mode .card-played-btn {
   margin-bottom: 10px;
   width: 340px;
   max-width: calc(100vw - 40px);
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image: var(--menu-pattern);
   border: 1px solid var(--border2);
   border-radius: 10px;
   box-shadow: 0 32px 64px rgba(0,0,0,0.55);
@@ -1594,7 +1600,8 @@ body.editor-mode .card-played-btn {
   margin-bottom: 10px;
   align-self: flex-start;   /* alinha à esquerda, sob o fab de testes */
   width: 220px;
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image: var(--menu-pattern);
   border: 1px solid var(--border2);
   border-radius: 10px;
   box-shadow: 0 16px 40px rgba(0,0,0,0.5);
@@ -1845,7 +1852,8 @@ body.editor-mode .card-played-btn {
 .keyart-panel {
   position: relative;
   z-index: 1;
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image: var(--menu-pattern);
   border: 1px solid var(--border2);
   border-radius: 10px;
   width: 100%;
@@ -2067,7 +2075,8 @@ body.editor-mode .card-played-btn {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  background: rgba(20,20,29,0.92);
+  background-color: rgba(20,20,29,0.92);
+  background-image: var(--menu-pattern);
   border: 1px solid var(--border2);
   border-radius: var(--radius);
   padding: 6px;
@@ -2333,6 +2342,254 @@ body.editor-mode .tabs-dropdown-item .tab-delete { display: flex; }
    pill trigger com hover → menu glassmorphism
    ═══════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════
+   NOTIFICATIONS — bell button + dropdown
+   ═══════════════════════════════════════════════ */
+.notifications-wrap {
+  position: relative;
+}
+
+/* ── Trigger — botão circular com sino (igual ao settings-trigger) ── */
+.notifications-trigger {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+}
+
+.notifications-trigger svg {
+  flex-shrink: 0;
+  color: var(--text);
+}
+
+/* Ponte invisível entre o trigger e o menu */
+.notifications-wrap::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  width: 100%;
+  height: 10px;
+}
+
+/* ── Badge contador (não lidas) — círculo vermelho no canto do sino ── */
+.notifications-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--red);
+  border: 1.5px solid var(--base);
+  color: #fff;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.55rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+  z-index: 2;
+}
+.notifications-badge.hidden { display: none; }
+
+/* ── Menu dropdown — mesmo glassmorphism do settings-menu ── */
+.notifications-menu {
+  position: absolute;
+  top: calc(100% + 9px);
+  right: 0;
+  width: 340px;
+  max-width: calc(100vw - 40px);
+  background-color: rgba(20,20,29,0.96);
+  background-image: var(--menu-pattern);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 36px rgba(0,0,0,0.5), 0 2px 10px rgba(0,0,0,0.35);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: top right;
+  pointer-events: none;
+  transition: opacity 0.2s cubic-bezier(.4,0,.2,1),
+              transform 0.25s cubic-bezier(.34,1.56,.64,1),
+              visibility 0.2s;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  max-height: 480px;
+  overflow: hidden;
+}
+
+.notifications-wrap.open .notifications-menu {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+}
+
+/* ── Header do menu (título + botão limpar) ── */
+.notifications-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.notifications-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.notifications-clear-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.notifications-clear-btn:hover {
+  color: var(--red);
+  background: var(--red-dim);
+}
+.notifications-clear-btn.hidden { display: none; }
+
+/* ── Lista de notificações (scrollable) ── */
+.notifications-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--surface3) transparent;
+}
+
+.notifications-list::-webkit-scrollbar {
+  width: 6px;
+}
+.notifications-list::-webkit-scrollbar-thumb {
+  background: var(--surface3);
+  border-radius: 3px;
+}
+
+/* ── Item de notificação ── */
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+  position: relative;
+}
+
+.notification-item:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.notification-item.unread {
+  background: rgba(255,179,71,0.05);
+}
+
+.notification-item.unread::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--amber);
+  flex-shrink: 0;
+  z-index: 2;
+}
+
+/* Cover do jogo (todos os tipos usam cover em vez de ícone circular) */
+.notification-cover {
+  width: 28px;
+  height: 37px;
+  border-radius: 4px;
+  object-fit: cover;
+  flex-shrink: 0;
+  margin-top: 1px;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.1);
+}
+
+.notification-cover--empty {
+  background: var(--surface2);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06);
+}
+
+/* Bolinha colorida no final do título (indica o tipo de notificação) */
+.notification-type-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-left: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+  box-shadow: 0 0 4px currentColor;
+}
+
+.notification-type-dot.type-released { background: var(--green); color: var(--green); }
+.notification-type-dot.type-early-access { background: var(--blue); color: var(--blue); }
+.notification-type-dot.type-updated { background: var(--text); color: var(--text); }
+.notification-type-dot.type-upvote { background: var(--green); color: var(--green); }
+.notification-type-dot.type-downvote { background: var(--red); color: var(--red); }
+
+.notification-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-text {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.76rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.notification-time {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.62rem;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
+/* Estado vazio */
+.notifications-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--muted2);
+  font-size: 0.78rem;
+  font-family: 'Inter', sans-serif;
+}
+
 .settings-wrap {
   position: relative;
 }
@@ -2377,7 +2634,8 @@ body.editor-mode .tabs-dropdown-item .tab-delete { display: flex; }
   top: calc(100% + 9px);
   right: 0;
   width: calc(280px * var(--settings-size));
-  background: rgba(20,20,29,0.96);
+  background-color: rgba(20,20,29,0.96);
+  background-image: var(--menu-pattern);
   border: 1px solid var(--border2);
   border-radius: var(--radius);
   padding: 8px;
@@ -2636,7 +2894,8 @@ body.editor-mode .card-addtab-btn.playable { display: flex; }
 .addtab-panel {
   position: relative;
   z-index: 1;
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image: var(--menu-pattern);
   border: 1px solid var(--border2);
   border-radius: 10px;
   width: 100%;
@@ -2919,7 +3178,8 @@ body.editor-mode .editor-only { display: flex !important; }
   top: calc(100% + 9px);
   left: 0;
   width: 300px;
-  background: rgba(20,20,29,0.96);
+  background-color: rgba(20,20,29,0.96);
+  background-image: var(--menu-pattern);
   border: 1px solid var(--border2);
   border-radius: var(--radius);
   padding: 8px;
@@ -3794,7 +4054,8 @@ body.editor-mode .card-release-status {
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  background: rgba(20,20,29,0.97);
+  background-color: rgba(20,20,29,0.97);
+  background-image: var(--menu-pattern);
   border: 1px solid var(--border2);
   border-radius: var(--radius);
   box-shadow: 0 16px 36px rgba(0,0,0,0.5);
@@ -4387,4 +4648,23 @@ body.editor-mode .card-release-status {
 
 .option-toggle span {
   line-height: 1.2;
+}
+
+/* ── Botão de teste de notificações ── */
+.test-notifications-btn {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--amber-dim);
+  border: 1px solid rgba(255,179,71,0.3);
+  color: var(--amber);
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: calc(0.72rem * var(--settings-size, 1.5));
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.test-notifications-btn:hover {
+  background: rgba(255,179,71,0.25);
+  border-color: var(--amber);
 }
