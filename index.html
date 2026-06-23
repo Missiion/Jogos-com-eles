@@ -246,6 +246,26 @@
       </div>
 
       <div class="toolbar-right">
+        <!-- Notifications — bell button + dropdown -->
+        <div class="notifications-wrap" id="notifications-wrap">
+          <button class="notifications-trigger" id="notifications-trigger" aria-haspopup="true" aria-expanded="false" data-i18n-aria-label="Notificações" data-i18n-title="Notificações" aria-label="Notificações" title="Notificações">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <span class="notifications-badge hidden" id="notifications-badge">0</span>
+          </button>
+          <div class="notifications-menu" id="notifications-menu">
+            <div class="notifications-header">
+              <span class="notifications-title" data-i18n="Notificações">Notificações</span>
+              <button class="notifications-clear-btn hidden" id="notifications-clear-btn" type="button" data-i18n="Limpar tudo">Limpar tudo</button>
+            </div>
+            <div class="notifications-list" id="notifications-list">
+              <div class="notifications-empty" data-i18n="Sem notificações.">Sem notificações.</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Settings — pill + dropdown (mesmo padrão do tag-filter) -->
         <div class="settings-wrap" id="settings-wrap">
           <button class="settings-trigger" id="settings-trigger" aria-haspopup="true" aria-expanded="false" data-i18n-aria-label="Aspeto" data-i18n-title="Aspeto" aria-label="Aspeto" title="Aspeto">
@@ -302,7 +322,16 @@
                   <input type="checkbox" id="option-yt-autoplay" checked />
                   <span data-i18n="YouTube autoplay">YouTube autoplay</span>
                 </label>
+                <label class="option-toggle">
+                  <input type="checkbox" id="option-mute-notifications" />
+                  <span data-i18n="Mutar notificações">Mutar notificações</span>
+                </label>
               </div>
+            </div>
+            <!-- Secção: testes (apenas para teste de notificações) -->
+            <div class="settings-section">
+              <span class="settings-section-label" data-i18n="Testes">Testes</span>
+              <button class="test-notifications-btn" id="test-notifications-btn" type="button" data-i18n="Simular notificações">Simular notificações</button>
             </div>
           </div>
         </div>
