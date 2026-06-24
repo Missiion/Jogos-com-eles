@@ -3187,17 +3187,77 @@ async function doHeaderSearch() {
       const results = searchData.items || [];
       if (results.length > 0) {
         const alreadyAdded = new Set(gamesData.map(g => g.steamAppId).filter(Boolean));
+
+        // Para cada resultado, tenta buscar a cover do IGDB em paralelo
+        // (para usar como fallback se o Steam não tiver library_600x900)
+        const coverPromises = results.map(async (game) => {
+          const appid = game.id;
+          const steamCover = `${STEAM_CDN}/${appid}/library_600x900.jpg`;
+          const steamFallback = game.tiny_image || null;
+
+          // Tenta buscar a cover do IGDB pelo nome do jogo
+          let igdbCover = null;
+          try {
+            const igdbResults = await igdbRequest("games", `
+              search "${game.name.replace(/"/g, "")}";
+              fields cover.url;
+              limit 1;
+            `);
+            if (igdbResults && igdbResults.length > 0 && igdbResults[0].cover) {
+              igdbCover = coverUrl(igdbResults[0].cover.url);
+            }
+          } catch (_) { /* IGDB falhou — sem fallback de cover */ }
+
+          return { appid, steamCover, igdbCover, steamFallback };
+        });
+
+        // Aguarda todas as covers serem resolvidas
+        const coverData = await Promise.all(coverPromises);
+        const coverMap = Object.fromEntries(coverData.map(c => [c.appid, c]));
+
         steamHtml = `<div class="search-section-label">Steam</div>`;
         steamHtml += results.map(game => {
           const appid = game.id;
-          // Primary: library_600x900 (retrato, best quality)
-          // Fallback: tiny_image from search API (always available, landscape capsule)
-          const primaryCover = `${STEAM_CDN}/${appid}/library_600x900.jpg`;
-          const fallbackCover = game.tiny_image || null;
           const added = alreadyAdded.has(appid);
-          const coverHtml = fallbackCover
-            ? `<img class="header-search-result-cover" src="${escHtml(primaryCover)}" alt="" loading="lazy" onerror="this.src='${escHtml(fallbackCover)}'"/>`
-            : `<div class="header-search-result-cover" style="background:var(--surface2)"></div>`;
+          const cd = coverMap[appid] || {};
+
+          // Cascata de fallback: Steam library_600x900 → IGDB cover → Steam tiny_image → placeholder
+          const primaryCover = cd.steamCover || null;
+          const igdbCover = cd.igdbCover || null;
+          const steamFallback = cd.steamFallback || null;
+
+          // Constrói a cadeia de onerror: primary → igdb → steamFallback → placeholder
+          let coverHtml;
+          if (primaryCover) {
+            // Constrói a lista de fallbacks para onerror
+            const fallbacks = [igdbCover, steamFallback].filter(Boolean);
+            if (fallbacks.length > 0) {
+              // onerror tenta cada fallback em sequência
+              // O último fallback não tem onerror (para não loopar)
+              let onerrorChain = "";
+              for (let i = 0; i < fallbacks.length; i++) {
+                if (i === fallbacks.length - 1) {
+                  // Último fallback — se falhar, esconde a imagem
+                  onerrorChain = `this.onerror=null;this.src='${escHtml(fallbacks[i])}';`;
+                } else {
+                  onerrorChain = `this.onerror=function(){this.onerror=null;this.src='${escHtml(fallbacks[i])}';};`;
+                }
+              }
+              coverHtml = `<img class="header-search-result-cover" src="${escHtml(primaryCover)}" alt="" loading="lazy" onerror="${onerrorChain}"/>`;
+            } else {
+              // Sem fallbacks — se falhar, mostra placeholder
+              coverHtml = `<img class="header-search-result-cover" src="${escHtml(primaryCover)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"/>
+                           <div class="header-search-result-cover" style="background:var(--surface2);display:none;"></div>`;
+            }
+          } else if (igdbCover) {
+            coverHtml = `<img class="header-search-result-cover" src="${escHtml(igdbCover)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"/>
+                         <div class="header-search-result-cover" style="background:var(--surface2);display:none;"></div>`;
+          } else if (steamFallback) {
+            coverHtml = `<img class="header-search-result-cover" src="${escHtml(steamFallback)}" alt="" loading="lazy"/>`;
+          } else {
+            coverHtml = `<div class="header-search-result-cover" style="background:var(--surface2)"></div>`;
+          }
+
           return `
             <div class="header-search-result-item">
               ${coverHtml}
