@@ -2780,12 +2780,11 @@ function openModal(gameIdx) {
        </div>` : "";
 
   // ── Etapa 4: Badge de reviews Steam com fallback IGDB ──
-  // No modal, mostramos AMBOS se possível: badge Steam (reviews reais) +
-  // rating IGDB (nota crítica). Se só houver um, mostra esse.
+  // Comportamento igual ao card: badge Steam SUBSTITUI rating IGDB quando há
+  // reviews Steam. Se não houver Steam (ou enrich falhou), mostra rating IGDB.
+  // Isto evita o bug de aparecerem ambas as reviews em simultâneo.
   const steamBadgeModal = steamReviewBadgeHtml(game);
-  const modalRatingHtml = steamBadgeModal
-    ? `${steamBadgeModal}${ratingHtml}`
-    : ratingHtml;
+  const modalRatingHtml = steamBadgeModal || ratingHtml;
 
   const infoSteamHtml = game.steamUrl
     ? `<a class="modal-info-steam" href="${escHtml(game.steamUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
@@ -5930,10 +5929,10 @@ function openDiscoverGame(queueIdx) {
            ${ratingVal} / 10
          </div>` : "";
     // ── Etapa 4: Badge Steam + fallback IGDB (igual ao openModal) ──
+    // Badge Steam SUBSTITUI rating IGDB (não mostra ambos) — corrige bug
+    // de aparecerem duas reviews em simultâneo no modal.
     const steamBadgeModal = steamReviewBadgeHtml(game);
-    const modalRatingHtml = steamBadgeModal
-      ? `${steamBadgeModal}${ratingHtml}`
-      : ratingHtml;
+    const modalRatingHtml = steamBadgeModal || ratingHtml;
     const infoSteamHtml = game.steamUrl
       ? `<a class="modal-info-steam" href="${escHtml(game.steamUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
           <img src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://store.steampowered.com/t&size=128" width="11" height="11" alt="Steam" style="object-fit:contain;display:block;"/>
