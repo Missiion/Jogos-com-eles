@@ -3190,15 +3190,17 @@ async function doHeaderSearch() {
         steamHtml = `<div class="search-section-label">Steam</div>`;
         steamHtml += results.map(game => {
           const appid = game.id;
-          const cover = game.tiny_image
-            ? game.tiny_image.replace("capsule_231x87", "library_600x900")
-            : null;
+          // Primary: library_600x900 (retrato, best quality)
+          // Fallback: tiny_image from search API (always available, landscape capsule)
+          const primaryCover = `${STEAM_CDN}/${appid}/library_600x900.jpg`;
+          const fallbackCover = game.tiny_image || null;
           const added = alreadyAdded.has(appid);
+          const coverHtml = fallbackCover
+            ? `<img class="header-search-result-cover" src="${escHtml(primaryCover)}" alt="" loading="lazy" onerror="this.src='${escHtml(fallbackCover)}'"/>`
+            : `<div class="header-search-result-cover" style="background:var(--surface2)"></div>`;
           return `
             <div class="header-search-result-item">
-              ${cover
-                ? `<img class="header-search-result-cover" src="${escHtml(cover)}" alt="" loading="lazy"/>`
-                : `<div class="header-search-result-cover" style="background:var(--surface2)"></div>`}
+              ${coverHtml}
               <div class="header-search-result-info">
                 <div class="header-search-result-name">${escHtml(game.name)}</div>
               </div>
