@@ -4649,22 +4649,3 @@ body.editor-mode .card-release-status {
 .option-toggle span {
   line-height: 1.2;
 }
-
-/* ── Botão de teste de notificações ── */
-.test-notifications-btn {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: 6px;
-  background: var(--amber-dim);
-  border: 1px solid rgba(255,179,71,0.3);
-  color: var(--amber);
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: calc(0.72rem * var(--settings-size, 1.5));
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-.test-notifications-btn:hover {
-  background: rgba(255,179,71,0.25);
-  border-color: var(--amber);
-}
