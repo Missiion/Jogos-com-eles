@@ -264,6 +264,21 @@
     "Removido de venda": "Delisted",
     "Por lançar": "Unreleased",
 
+    // ── Steam review_score_desc (Etapa 4) ───────
+    // Tradução dos descritores de análise da Steam.
+    // Em PT usamos forma feminina (as análises); em EN mantemos o original da Steam.
+    // Keys em PT = o que o t() devolve em modo PT; valor EN = tradução.
+    "Esmagadoramente Positivas": "Overwhelmingly Positive",
+    "Muito Positivas": "Very Positive",
+    "Maioritariamente Positivas": "Mostly Positive",
+    "Positivas": "Positive",
+    "Misturadas": "Mixed",
+    "Negativas": "Negative",
+    "Maioritariamente Negativas": "Mostly Negative",
+    "Muito Negativas": "Very Negative",
+    "Esmagadoramente Negativas": "Overwhelmingly Negative",
+    "Sem análises": "No user reviews",
+
     // ── Confirm dialogs ─────────────────────────
     "Apagar a tab": "Delete tab",
     "?": "?",
