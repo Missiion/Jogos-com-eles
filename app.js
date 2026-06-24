@@ -173,9 +173,16 @@ function fuzzyMatchGame(query, game) {
 //  CONFIG
 // ─────────────────────────────────────────────
 
-// Cloudflare Worker proxy — faz a ponte com a API do IGDB sem erros de CORS
-const IGDB_PROXY = "https://igdb-proxy.dr-mx-droid.workers.dev";
+// API Proxy (Cloudflare Worker) — faz a ponte com IGDB + Steam API sem CORS
+// Endpoints:
+//   POST /games                    → IGDB API (engine + fallback)
+//   GET  /steam/appdetails?appid=  → Steam app details
+//   GET  /steam/search?term=       → Steam store search
+//   GET  /steam/tags?appid=        → Steam popular tags (scraped)
+const API_PROXY = "https://igdb-proxy.dr-mx-droid.workers.dev";
 
+// IGDB (mantido para buscar engine de jogos)
+const IGDB_PROXY = API_PROXY; // compatibilidade retroativa
 const IGDB_CLIENT_ID     = "m079gokvukuokos50mw73b4qluwskc";
 const IGDB_ACCESS_TOKEN  = "6d3x70gthrbk8ag7p06kyxfzu9v1r4";
 
@@ -675,6 +682,293 @@ function normalizeGame(igdbGame) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  STEAM API HELPERS
+//  Funções para buscar e normalizar dados da Steam Storefront API
+//  via o Cloudflare Worker (proxy CORS).
+//
+//  O Steam fornece dados principais (nome, screenshots, trailers,
+//  géneros, categorias, developer, publisher, etc.). As "tags
+//  populares" (20 por jogo) são extraídas via scrape da store page.
+//  O IGDB é mantido APENAS para buscar o campo "engine".
+// ═══════════════════════════════════════════════════════════════
+
+// Base do CDN do Steam para imagens (CORS-friendly, Access-Control-Allow-Origin: *)
+const STEAM_CDN = "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps";
+
+// ── Imagem helpers (geram URLs CDN previsíveis, sem precisar de API) ──
+
+// Cover do jogo — usa library_600x900 (retrato, como a cover do IGDB)
+function steamCoverUrl(appid) {
+  if (!appid) return null;
+  return `${STEAM_CDN}/${appid}/library_600x900.jpg`;
+}
+
+// Header image (landscape 460x215) — retornado pela API
+function steamHeaderUrl(apiData) {
+  return apiData?.header_image || null;
+}
+
+// Converte URL de screenshot do Steam para formato full (1920x1080)
+function steamScreenshotUrl(screenshot) {
+  if (!screenshot) return null;
+  return screenshot.path_full || screenshot.path_thumbnail || null;
+}
+
+// Gera a lista de URLs de imagens para o key art picker (7 opções).
+// Usa URLs CDN previsíveis — não precisa de chamar a API.
+function steamArtworkUrls(appid) {
+  if (!appid) return [];
+  return [
+    { url: `${STEAM_CDN}/${appid}/library_600x900.jpg`, label: "Library Capsule (Portrait)" },
+    { url: `${STEAM_CDN}/${appid}/library_hero.jpg`, label: "Library Hero (Wide)" },
+    { url: `${STEAM_CDN}/${appid}/page_bg_raw.jpg`, label: "Background Art" },
+    { url: `${STEAM_CDN}/${appid}/header.jpg`, label: "Header (Landscape)" },
+    { url: `${STEAM_CDN}/${appid}/capsule_616x353.jpg`, label: "Capsule (Large)" },
+    { url: `${STEAM_CDN}/${appid}/hero_capsule.jpg`, label: "Hero Capsule" },
+    { url: `${STEAM_CDN}/${appid}/library_600x900_2x.jpg`, label: "Library Capsule HD" },
+  ];
+}
+
+// ── Release status (deteta estado de lançamento a partir dos dados do Steam) ──
+// Lógica:
+//   - "Early Access" nos géneros → "Acesso Antecipado"
+//   - release_date.coming_soon == true → "Por lançar"
+//   - Caso contrário → "Lançado"
+function steamReleaseStatus(genres, releaseDate) {
+  const genreNames = (genres || []).map(g => (g.description || g || "").toLowerCase());
+  const isEarlyAccess = genreNames.some(g => g === "early access");
+
+  if (isEarlyAccess) return "Acesso Antecipado";
+
+  const comingSoon = releaseDate?.coming_soon;
+  if (comingSoon === true) return "Por lançar";
+
+  return "Lançado";
+}
+
+// ── Deteta online play a partir das categorias do Steam ──
+// Procura por Multi-player, Co-op, Online Co-op, MMO, Cross-Platform
+function steamHasOnlinePlay(categories) {
+  if (!categories) return false;
+  const onlineTerms = [
+    "multi-player", "multiplayer", "co-op", "coop", "cooperative",
+    "online", "mmo", "massively multiplayer", "cross-platform", "pvp", "versus",
+  ];
+  return categories.some(c => {
+    const desc = (c.description || "").toLowerCase();
+    return onlineTerms.some(term => desc.includes(term));
+  });
+}
+
+// ── Extrai modos de jogo das categorias do Steam ──
+// Mapeia categorias do Steam para tags equivalentes às do IGDB
+function steamModeTags(categories) {
+  if (!categories) return [];
+  const modes = [];
+  const seen = new Set();
+  categories.forEach(c => {
+    const desc = c.description || "";
+    const lower = desc.toLowerCase();
+    let tag = null;
+    if (lower.includes("single")) tag = "Single player";
+    else if (lower.includes("mmo")) tag = "Massively Multiplayer Online (MMO)";
+    else if (lower.includes("co-op") || lower.includes("coop") || lower.includes("cooperative")) tag = "Co-operative";
+    else if (lower.includes("multi")) tag = "Multiplayer";
+    else if (lower.includes("cross-platform")) tag = "Cross-Platform Multiplayer";
+    else if (lower.includes("split")) tag = "Split screen";
+    else if (lower.includes("battle royale")) tag = "Battle Royale";
+    if (tag && !seen.has(tag)) {
+      seen.add(tag);
+      modes.push(tag);
+    }
+  });
+  return modes;
+}
+
+// ── Extrai géneros do Steam (exclui "Early Access" que é um status, não género) ──
+function steamGenreTags(genres) {
+  if (!genres) return [];
+  return genres
+    .map(g => g.description || g)
+    .filter(g => g && g.toLowerCase() !== "early access")
+    .slice(0, 5);
+}
+
+// ── Extrai idiomas suportados da string HTML do Steam ──
+// Steam retorna: "English<strong>*</strong>, Portuguese - Portugal, Portuguese - Brazil, ..."
+// Procura PT-PT, PT-BR e EN-US (igual ao IGDB helper)
+function steamLanguageStr(supportedLanguages) {
+  if (!supportedLanguages) return "";
+  const lower = supportedLanguages.toLowerCase();
+  const out = [];
+  if (lower.includes("portuguese - portugal") || lower.includes("portuguese - portugal")) {
+    out.push("PT-PT");
+  }
+  if (lower.includes("portuguese - brazil") || lower.includes("portuguese-brazil")) {
+    out.push("PT-BR");
+  }
+  // EN-US é sempre mostrado (Steam games são maioritariamente em inglês)
+  if (lower.includes("english")) {
+    out.push("EN-US");
+  }
+  return out.join(" / ");
+}
+
+// ── Faz parse da data de lançamento do Steam (string → timestamp unix) ──
+// Steam retorna: "21 Aug, 2012" ou "Coming soon" ou "To be announced"
+function steamParseReleaseDate(dateStr) {
+  if (!dateStr) return null;
+  // Tenta fazer parse da string (ex: "21 Aug, 2012" ou "Jan 24, 2024")
+  const parsed = new Date(dateStr);
+  if (!isNaN(parsed.getTime())) {
+    return Math.floor(parsed.getTime() / 1000); // unix timestamp em segundos
+  }
+  return null;
+}
+
+// ── Busca engine do jogo via IGDB (por nome) ──
+// Como o Steam não tem engine, procuramos o jogo no IGDB pelo nome
+// e extraímos o campo game_engines.name.
+async function fetchEngineFromIgdb(gameName) {
+  if (!gameName) return [];
+  try {
+    const results = await igdbRequest("games", `
+      search "${gameName.replace(/"/g, "")}";
+      fields name, game_engines.name;
+      limit 1;
+    `);
+    if (results && results.length > 0 && results[0].game_engines) {
+      return engineNames(results[0].game_engines);
+    }
+  } catch (_) {}
+  return [];
+}
+
+// ── Busca dados completos de um jogo da Steam via proxy ──
+// Retorna: { steamData, tags, engines }
+async function fetchSteamGame(steamAppId) {
+  // 1. App details
+  const detailsRes = await fetch(`${API_PROXY}/steam/appdetails?appid=${encodeURIComponent(steamAppId)}`);
+  if (!detailsRes.ok) throw new Error(`Steam appdetails error: ${detailsRes.status}`);
+  const detailsJson = await detailsRes.json();
+  const steamData = detailsJson[String(steamAppId)];
+  if (!steamData || !steamData.success || !steamData.data) {
+    throw new Error("Steam: game not found or not successful");
+  }
+
+  // 2. Popular tags (scraped da store page)
+  let tags = [];
+  try {
+    const tagsRes = await fetch(`${API_PROXY}/steam/tags?appid=${encodeURIComponent(steamAppId)}`);
+    if (tagsRes.ok) {
+      const tagsJson = await tagsRes.json();
+      tags = tagsJson.tags || [];
+    }
+  } catch (_) { /* tags são opcional */ }
+
+  // 3. Engine via IGDB (procura pelo nome do jogo)
+  let engines = [];
+  try {
+    engines = await fetchEngineFromIgdb(steamData.data.name);
+  } catch (_) { /* engine é opcional */ }
+
+  return { steamData: steamData.data, tags, engines };
+}
+
+// fetchSteamGame com retry automático (3 tentativas, backoff exponencial)
+async function fetchSteamGameWithRetry(steamAppId, maxRetries = 3) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fetchSteamGame(steamAppId);
+    } catch (e) {
+      if (attempt === maxRetries) throw e;
+      const delay = 500 * Math.pow(2, attempt);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  return null;
+}
+
+// ── Normaliza dados do Steam para o formato do site ──
+// Converte a resposta da Steam API + tags + engines para o mesmo formato
+// que normalizeGame(igdbGame) produz, garantindo compatibilidade total.
+function normalizeSteamGame(steamData, tags, engines) {
+  const d = steamData;
+  const appid = d.steam_appid;
+
+  // Screenshots (1920x1080 — alta qualidade!)
+  const screenshots = (d.screenshots || []).map(s => steamScreenshotUrl(s)).filter(Boolean);
+
+  // Trailers (HLS/DASH — NÃO YouTube)
+  // Cada movie tem: { id, name, thumbnail, dash_h264, hls_h264, ... }
+  const videos = (d.movies || []).map(m => ({
+    id: m.id,
+    name: m.name || "",
+    thumbnail: m.thumbnail || null,
+    hls: m.hls_h264 || null,
+    dash: m.dash_h264 || null,
+  }));
+
+  // Data de lançamento
+  const releaseDateStr = d.release_date?.date || null;
+  const firstReleaseTs = steamParseReleaseDate(releaseDateStr);
+  const year = firstReleaseTs
+    ? new Date(firstReleaseTs * 1000).getFullYear()
+    : null;
+
+  // Géneros (exclui "Early Access" que é tratado como status)
+  const genres = steamGenreTags(d.genres);
+
+  // Tags populares (combina géneros + temas + modos do IGDB)
+  // Excluir géneros que já estão na lista de géneros para evitar duplicados
+  const genreLower = genres.map(g => g.toLowerCase());
+  const themes = (tags || []).filter(t =>
+    !genreLower.includes(t.toLowerCase()) &&
+    t.toLowerCase() !== "early access"
+  );
+
+  // Modos de jogo (extraídos das categorias)
+  const modes = steamModeTags(d.categories);
+
+  // Rating: usa recommendations.total se disponível, senão metacritic
+  let rating = null;
+  if (d.recommendations?.total) {
+    // Steam não tem rating 0-100 como IGDB. Usar recommendations como proxy.
+    // Converter para escala 0-100: log scale (1000 recs ≈ 50, 10000 ≈ 70, 100000 ≈ 85)
+    const recs = d.recommendations.total;
+    rating = Math.min(100, Math.round(30 + Math.log10(Math.max(1, recs)) * 15));
+  } else if (d.metacritic?.score) {
+    // Metacritic score é 0-100 — perfeito
+    rating = d.metacritic.score;
+  }
+
+  return {
+    steamAppId:   appid,
+    name:         d.name || "Unknown",
+    cover:        steamCoverUrl(appid),
+    screenshots,
+    artworks:     [],  // Steam não tem artworks separados — key art picker usa steamArtworkUrls()
+    videos,           // formato: [{ id, name, thumbnail, hls, dash }] (NÃO YouTube IDs)
+    genres,
+    themes,
+    modes,
+    rating,
+    summary:      d.short_description || d.detailed_description || "",
+    steamUrl:     `https://store.steampowered.com/app/${appid}`,
+    year,
+    studios:      d.publishers || [],
+    developers:   d.developers || [],
+    engines:      engines || [],
+    releaseStatus: steamReleaseStatus(d.genres, d.release_date),
+    firstReleaseTs,
+    releaseDateFull: fullReleaseDateStr(firstReleaseTs),
+    language:     steamLanguageStr(d.supported_languages),
+    // Flag para indicar que este jogo usa dados do Steam (não IGDB)
+    _source: "steam",
+  };
+}
+
 // ─────────────────────────────────────────────
 //  CACHE
 // ─────────────────────────────────────────────
@@ -961,13 +1255,16 @@ async function editUserName(newRawName) {
 //  FIREBASE — Real-time listener
 // ─────────────────────────────────────────────
 
-// Cria um objeto de jogo "fallback" quando o IGDB falha, para que o jogo
-// não desapareça da lista. Tem dados mínimos (igdbId, name placeholder,
+// Cria um objeto de jogo "fallback" quando a API falha, para que o jogo
+// não desapareça da lista. Tem dados mínimos (id, name placeholder,
 // sem cover/screenshots). Marcado com _needsRetry para retry posterior.
 function createFallbackGame(fsDoc) {
+  const id = fsDoc.steamAppId || fsDoc.igdbId;
+  const source = fsDoc.steamAppId ? "steam" : "igdb";
   return {
-    igdbId:         fsDoc.igdbId,
-    name:           isPt() ? `Jogo #${fsDoc.igdbId}` : `Game #${fsDoc.igdbId}`,
+    igdbId:         fsDoc.igdbId || null,
+    steamAppId:     fsDoc.steamAppId || null,
+    name:           isPt() ? `Jogo #${id}` : `Game #${id}`,
     cover:          null,
     screenshots:    [],
     artworks:       [],
@@ -989,7 +1286,8 @@ function createFallbackGame(fsDoc) {
     firebaseId:     fsDoc.firebaseId,
     preferredKeyArt: fsDoc.preferredKeyArt || null,
     playlistUrl:    fsDoc.playlistUrl || null,
-    _needsRetry:    true, // sinaliza que precisa de retry do IGDB
+    _needsRetry:    true,
+    _source:        source,
   };
 }
 
@@ -1007,13 +1305,26 @@ async function retryFailedGames() {
 
   for (const game of failedGames) {
     try {
-      const igdbGame = await fetchGameByIdWithRetry(game.igdbId, 2);
-      if (igdbGame) {
-        // Substitui o fallback pelos dados reais
+      let normalized = null;
+
+      // Tenta via Steam se tiver steamAppId, senão IGDB
+      if (game.steamAppId) {
+        const result = await fetchSteamGameWithRetry(game.steamAppId, 2);
+        if (result) {
+          normalized = normalizeSteamGame(result.steamData, result.tags, result.engines);
+        }
+      } else if (game.igdbId) {
+        const igdbGame = await fetchGameByIdWithRetry(game.igdbId, 2);
+        if (igdbGame) {
+          normalized = normalizeGame(igdbGame);
+        }
+      }
+
+      if (normalized) {
         const idx = gamesData.findIndex(g => g.firebaseId === game.firebaseId);
         if (idx >= 0) {
           gamesData[idx] = {
-            ...normalizeGame(igdbGame),
+            ...normalized,
             firebaseId: game.firebaseId,
             preferredKeyArt: game.preferredKeyArt || null,
             playlistUrl: game.playlistUrl || null,
@@ -1051,33 +1362,58 @@ function listenToGames() {
       return;
     }
 
-    // Fetch dados do IGDB para cada jogo (se não estiver já em cache)
+    // Fetch dados de cada jogo (Steam para novos jogos, IGDB para antigos).
+    // Verifica se o documento tem steamAppId (novo) ou igdbId (antigo).
     const cached = loadCache() || [];
-    const cachedMap = Object.fromEntries(cached.map(g => [g.igdbId, g]));
+    const cachedMap = Object.fromEntries(cached.map(g => [g.steamAppId || g.igdbId, g]));
 
-    // Controla concorrência: processa IGDB fetches em batches para não
+    // Controla concorrência: processa fetches em batches para não
     // sobrecarregar o proxy (evita rate limit e falhas temporárias).
     const CONCURRENCY = 5;
-    const failedIgdbIds = []; // jogos onde o IGDB falhou (para retry depois)
+    const failedIds = []; // jogos onde a API falhou (para retry depois)
 
     const resolved = [];
     for (let i = 0; i < firestoreDocs.length; i += CONCURRENCY) {
       const batch = firestoreDocs.slice(i, i + CONCURRENCY);
       const batchResults = await Promise.all(
         batch.map(async (fsDoc) => {
-          if (cachedMap[fsDoc.igdbId]) {
+          // Determina a chave de cache: steamAppId (prioridade) ou igdbId
+          const cacheKey = fsDoc.steamAppId || fsDoc.igdbId;
+          if (cachedMap[cacheKey]) {
             return {
-              ...cachedMap[fsDoc.igdbId],
+              ...cachedMap[cacheKey],
               firebaseId: fsDoc.firebaseId,
               preferredKeyArt: fsDoc.preferredKeyArt || null,
               playlistUrl: fsDoc.playlistUrl || null,
             };
           }
+
+          // Se tem steamAppId → usa Steam API
+          if (fsDoc.steamAppId) {
+            try {
+              const result = await fetchSteamGameWithRetry(fsDoc.steamAppId);
+              if (!result) {
+                failedIds.push(fsDoc.steamAppId);
+                return createFallbackGame(fsDoc);
+              }
+              return {
+                ...normalizeSteamGame(result.steamData, result.tags, result.engines),
+                firebaseId: fsDoc.firebaseId,
+                preferredKeyArt: fsDoc.preferredKeyArt || null,
+                playlistUrl: fsDoc.playlistUrl || null,
+              };
+            } catch(e) {
+              console.warn("Falha ao buscar jogo Steam", fsDoc.steamAppId, e);
+              failedIds.push(fsDoc.steamAppId);
+              return createFallbackGame(fsDoc);
+            }
+          }
+
+          // Sem steamAppId → usa IGDB (jogos antigos, ainda não migrados)
           try {
             const igdbGame = await fetchGameByIdWithRetry(fsDoc.igdbId);
             if (!igdbGame) {
-              // IGDB devolveu vazio — cria fallback para não perder o jogo
-              failedIgdbIds.push(fsDoc.igdbId);
+              failedIds.push(fsDoc.igdbId);
               return createFallbackGame(fsDoc);
             }
             return {
@@ -1087,8 +1423,8 @@ function listenToGames() {
               playlistUrl: fsDoc.playlistUrl || null,
             };
           } catch(e) {
-            console.warn("Falha ao buscar jogo", fsDoc.igdbId, e);
-            failedIgdbIds.push(fsDoc.igdbId);
+            console.warn("Falha ao buscar jogo IGDB", fsDoc.igdbId, e);
+            failedIds.push(fsDoc.igdbId);
             return createFallbackGame(fsDoc);
           }
         })
@@ -2841,53 +3177,57 @@ async function doHeaderSearch() {
     }).join("");
   }
 
-  // 2. Procura no IGDB em tempo real
-  let igdbHtml = "";
+  // 2. Procura no Steam em tempo real (via proxy)
+  let steamHtml = "";
   try {
-    const results = await searchGames(term);
-    if (results && results.length > 0) {
-      const alreadyAdded = new Set(gamesData.map(g => g.igdbId));
-      igdbHtml = `<div class="search-section-label">IGDB</div>`;
-      igdbHtml += results.map(game => {
-        const cover = coverUrl(game.cover?.url);
-        const year = game.first_release_date
-          ? new Date(game.first_release_date * 1000).getFullYear()
-          : "";
-        const added = alreadyAdded.has(game.id);
-        return `
-          <div class="header-search-result-item">
-            ${cover
-              ? `<img class="header-search-result-cover" src="${escHtml(cover)}" alt="" loading="lazy"/>`
-              : `<div class="header-search-result-cover" style="background:var(--surface2)"></div>`}
-            <div class="header-search-result-info">
-              <div class="header-search-result-name">${escHtml(game.name)}</div>
-              ${year ? `<div class="header-search-result-year">${year}</div>` : ""}
+    const searchUrl = `${API_PROXY}/steam/search?term=${encodeURIComponent(term)}`;
+    const searchRes = await fetch(searchUrl);
+    if (searchRes.ok) {
+      const searchData = await searchRes.json();
+      const results = searchData.items || [];
+      if (results.length > 0) {
+        const alreadyAdded = new Set(gamesData.map(g => g.steamAppId).filter(Boolean));
+        steamHtml = `<div class="search-section-label">Steam</div>`;
+        steamHtml += results.map(game => {
+          const appid = game.id;
+          const cover = game.tiny_image
+            ? game.tiny_image.replace("capsule_231x87", "library_600x900")
+            : null;
+          const added = alreadyAdded.has(appid);
+          return `
+            <div class="header-search-result-item">
+              ${cover
+                ? `<img class="header-search-result-cover" src="${escHtml(cover)}" alt="" loading="lazy"/>`
+                : `<div class="header-search-result-cover" style="background:var(--surface2)"></div>`}
+              <div class="header-search-result-info">
+                <div class="header-search-result-name">${escHtml(game.name)}</div>
+              </div>
+              <button class="header-search-result-add${added ? " added" : ""}"
+                      data-steam-appid="${appid}"
+                      ${added ? "disabled" : ""}
+                      aria-label="${escHtml(t("+ Adicionar"))}"
+                      title="${escHtml(t("+ Adicionar"))}">
+                ${added
+                  ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+                  : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
+                }
+              </button>
             </div>
-            <button class="header-search-result-add${added ? " added" : ""}"
-                    data-igdb="${game.id}"
-                    ${added ? "disabled" : ""}
-                    aria-label="${escHtml(t("+ Adicionar"))}"
-                    title="${escHtml(t("+ Adicionar"))}">
-              ${added
-                ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
-                : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
-              }
-            </button>
-          </div>
-        `;
-      }).join("");
+          `;
+        }).join("");
+      }
     }
   } catch (err) {
-    console.error("[headerSearch] IGDB erro:", err);
-    igdbHtml = `<div class="header-search-loading" style="color:#ff9a9a">${escHtml(t("Nenhum resultado."))}</div>`;
+    console.error("[headerSearch] Steam erro:", err);
+    steamHtml = `<div class="header-search-loading" style="color:#ff9a9a">${escHtml(t("Nenhum resultado."))}</div>`;
   }
 
-  if (!localHtml && !igdbHtml) {
+  if (!localHtml && !steamHtml) {
     $results.innerHTML = `<div class="header-search-loading">${escHtml(t("Nenhum resultado."))}</div>`;
     return;
   }
 
-  $results.innerHTML = localHtml + igdbHtml;
+  $results.innerHTML = localHtml + steamHtml;
 
   // Click em "Já na lista" → abre o modal do jogo
   $results.querySelectorAll(".header-search-result-item[data-game-idx]").forEach(item => {
@@ -2899,15 +3239,15 @@ async function doHeaderSearch() {
     });
   });
 
-  // Click em "Adicionar" (IGDB)
+  // Click em "Adicionar" (Steam)
   $results.querySelectorAll(".header-search-result-add:not(.added)").forEach(btn => {
     btn.addEventListener("click", async (e) => {
       e.stopPropagation();
-      const igdbId = parseInt(btn.dataset.igdb);
+      const steamAppId = parseInt(btn.dataset.steamAppid);
       btn.disabled = true;
       // Mostra spinner enquanto adiciona
       btn.innerHTML = `<svg class="header-search-add-spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>`;
-      const success = await addGameForUser(igdbId);
+      const success = await addGameForUser(steamAppId);
       if (success) {
         btn.classList.add("added");
         // Ícone de checkmark
@@ -2972,41 +3312,58 @@ function hasOnlinePlay(igdbGame) {
   return false;
 }
 
-// Adiciona um jogo do IGDB → "all" (games collection) + tab do user
-// Antes de adicionar, verifica se o jogo tem online play.
-async function addGameForUser(igdbId) {
+// Adiciona um jogo da Steam → "all" (games collection) + tab do user
+// Antes de adicionar, verifica se o jogo tem online play (categorias Steam).
+async function addGameForUser(steamAppId) {
   if (!currentUser) {
     showToast(t("Regista-te primeiro para pesquisar."));
     return false;
   }
   try {
-    // 1. Busca os dados completos do jogo no IGDB para verificar online play
-    const igdbGame = await fetchGameById(igdbId);
-    if (!igdbGame) {
+    // 1. Busca os dados completos do jogo na Steam para verificar online play
+    const result = await fetchSteamGame(steamAppId);
+    if (!result || !result.steamData) {
       showToast(t("Jogo não encontrado."));
       return false;
     }
 
-    // 2. Verifica se tem online play
-    if (!hasOnlinePlay(igdbGame)) {
+    // 2. Verifica se tem online play (usa categorias do Steam)
+    if (!steamHasOnlinePlay(result.steamData.categories)) {
       showToast(
-        `${t("Jogo rejeitado:")} ${igdbGame.name}\n${t("Apenas jogos com online play são permitidos.")}`,
+        `${t("Jogo rejeitado:")} ${result.steamData.name}\n${t("Apenas jogos com online play são permitidos.")}`,
         5000
       );
       return false;
     }
 
     // 3. Adiciona à colecção "games" (aparece em "all")
-    await addDoc(collection(db, "games"), {
-      igdbId,
+    // Guarda steamAppId (principal) + igdbId (para buscar engine no futuro)
+    const gameDoc = {
+      steamAppId,
       addedAt: serverTimestamp(),
       addedBy: currentUser.name,
-    });
+    };
+    // Se o IGDB encontrou o jogo (para engine), guarda também o igdbId
+    if (result.engines && result.engines.length > 0) {
+      // Procurar o igdbId via IGDB para guardar a referência
+      try {
+        const igdbResults = await igdbRequest("games", `
+          search "${result.steamData.name.replace(/"/g, "")}";
+          fields id;
+          limit 1;
+        `);
+        if (igdbResults && igdbResults.length > 0) {
+          gameDoc.igdbId = igdbResults[0].id;
+        }
+      } catch (_) { /* opcional */ }
+    }
+
+    await addDoc(collection(db, "games"), gameDoc);
 
     // 4. Up-vote automático do user que adicionou.
     //    O up-vote fará com que o jogo apareça na tab do user
     //    (processado pelo listener de upvotes).
-    pendingUpvotes.push({ igdbId, userId: currentUser.id, userName: currentUser.name });
+    pendingUpvotes.push({ steamAppId, userId: currentUser.id, userName: currentUser.name });
 
     clearCache();
     showToast(t("Jogo adicionado!"));
@@ -3028,7 +3385,11 @@ function processPendingUpvotes() {
   if (pendingUpvotes.length === 0) return;
   const remaining = [];
   for (const pending of pendingUpvotes) {
-    const game = gamesData.find(g => g.igdbId === pending.igdbId);
+    // Procura por steamAppId (novo) ou igdbId (antigo)
+    const game = gamesData.find(g =>
+      (pending.steamAppId && g.steamAppId === pending.steamAppId) ||
+      (pending.igdbId && g.igdbId === pending.igdbId)
+    );
     if (game && game.firebaseId) {
       // Faz up-vote (adiciona à colecção "upvotes")
       addDoc(collection(db, "upvotes"), {
@@ -5107,10 +5468,10 @@ function initNotifications() {
     });
   }
 
-  // Botão de teste de notificações (no settings menu)
-  const $testBtn = document.getElementById("test-notifications-btn");
-  if ($testBtn) {
-    $testBtn.addEventListener("click", e => {
+  // Botão de teste de notificações (no admin-tests-panel)
+  const $testNotifBtn = document.getElementById("admin-test-notifications-btn");
+  if ($testNotifBtn) {
+    $testNotifBtn.addEventListener("click", e => {
       e.stopPropagation();
       simulateTestNotifications();
     });
