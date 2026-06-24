@@ -5551,6 +5551,161 @@ function initNotifications() {
       simulateTestNotifications();
     });
   }
+
+  // Botão de migração IGDB → Steam (no admin-tests-panel)
+  const $migrateBtn = document.getElementById("admin-migrate-steam-btn");
+  if ($migrateBtn) {
+    $migrateBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      migrateGamesToSteam();
+    });
+  }
+}
+
+// ─────────────────────────────────────────────
+//  MIGRAÇÃO IGDB → Steam
+//  Para cada jogo no Firebase que tem igdbId mas NÃO steamAppId:
+//    1. Busca os dados do IGDB (websites) para encontrar o URL da Steam
+//    2. Extrai o steamAppId do URL (store.steampowered.com/app/{id})
+//    3. Atualiza o documento Firebase adicionando steamAppId
+//    4. Se não encontrar URL da Steam, tenta procurar pelo nome no Steam search
+//
+//  Jogos que já têm steamAppId são saltados (já migrados).
+//  Todos os votos, tabs, users e notificações permanecem intactos
+//  (usam firebaseId, não igdbId nem steamAppId).
+// ─────────────────────────────────────────────
+async function migrateGamesToSteam() {
+  if (!currentUser || !currentUser.isAdmin) {
+    showToast(isPt() ? "Apenas o admin pode migrar." : "Only admin can migrate.");
+    return;
+  }
+
+  // Busca todos os jogos do Firebase diretamente (não usa cache)
+  let firestoreDocs;
+  try {
+    const snap = await getDocs(query(collection(db, "games"), orderBy("addedAt", "asc")));
+    firestoreDocs = snap.docs.map(d => ({ firebaseId: d.id, ...d.data() }));
+  } catch (err) {
+    console.error("[migrate] erro ao buscar jogos:", err);
+    showToast(isPt() ? "Erro ao buscar jogos." : "Failed to fetch games.");
+    return;
+  }
+
+  // Filtra jogos que ainda não têm steamAppId
+  const toMigrate = firestoreDocs.filter(doc => !doc.steamAppId && doc.igdbId);
+  const alreadyMigrated = firestoreDocs.filter(doc => doc.steamAppId).length;
+  const noIgdbId = firestoreDocs.filter(doc => !doc.igdbId && !doc.steamAppId).length;
+
+  if (toMigrate.length === 0) {
+    showToast(isPt()
+      ? `Nada para migrar. ${alreadyMigrated} já migrados, ${noIgdbId} sem igdbId.`
+      : `Nothing to migrate. ${alreadyMigrated} already migrated, ${noIgdbId} without igdbId.`);
+    return;
+  }
+
+  const confirmMsg = isPt()
+    ? `Migrar ${toMigrate.length} jogos de IGDB para Steam?\n(${alreadyMigrated} já migrados, ${noIgdbId} sem igdbId)\n\nIsto vai buscar o steamAppId de cada jogo via IGDB e atualizar o Firebase. Os votos, tabs e users NÃO são afetados.`
+    : `Migrate ${toMigrate.length} games from IGDB to Steam?\n(${alreadyMigrated} already migrated, ${noIgdbId} without igdbId)\n\nThis will fetch the steamAppId for each game via IGDB and update Firebase. Votes, tabs and users are NOT affected.`;
+
+  if (!confirm(confirmMsg)) return;
+
+  showToast(isPt() ? `A migrar ${toMigrate.length} jogos...` : `Migrating ${toMigrate.length} games...`);
+
+  let migrated = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  // Processa em batches de 3 (para não sobrecarregar o IGDB)
+  const BATCH_SIZE = 3;
+  for (let i = 0; i < toMigrate.length; i += BATCH_SIZE) {
+    const batch = toMigrate.slice(i, i + BATCH_SIZE);
+
+    await Promise.all(batch.map(async (doc) => {
+      try {
+        // 1. Busca os websites do jogo no IGDB (para encontrar o URL da Steam)
+        const igdbResults = await igdbRequest("games", `
+          fields websites.url, websites.category;
+          where id = ${doc.igdbId};
+          limit 1;
+        `);
+
+        let steamAppId = null;
+
+        if (igdbResults && igdbResults.length > 0) {
+          const websites = igdbResults[0].websites || [];
+          // Category 13 = Steam; fallback: any URL with steampowered.com
+          const steamWebsite = websites.find(w => w.category === 13)
+                         || websites.find(w => w.url && w.url.includes("steampowered.com"));
+
+          if (steamWebsite && steamWebsite.url) {
+            // Extrai o appid do URL: store.steampowered.com/app/{appid}/...
+            const match = steamWebsite.url.match(/\/app\/(\d+)/);
+            if (match) {
+              steamAppId = parseInt(match[1]);
+            }
+          }
+        }
+
+        // 2. Se não encontrou no IGDB, tenta procurar pelo nome no Steam search
+        if (!steamAppId) {
+          // Usa o nome do jogo em gamesData (se disponível)
+          const game = gamesData.find(g => g.firebaseId === doc.firebaseId);
+          const gameName = game ? game.name : null;
+
+          if (gameName) {
+            try {
+              const searchRes = await fetch(`${API_PROXY}/steam/search?term=${encodeURIComponent(gameName)}`);
+              if (searchRes.ok) {
+                const searchData = await searchRes.json();
+                const items = searchData.items || [];
+                // Procura o primeiro resultado que seja type="game"
+                for (const item of items) {
+                  try {
+                    const detailsRes = await fetch(`${API_PROXY}/steam/appdetails?appid=${item.id}`);
+                    if (detailsRes.ok) {
+                      const detailsJson = await detailsRes.json();
+                      const ad = detailsJson[String(item.id)];
+                      if (ad && ad.success && ad.data && ad.data.type === "game") {
+                        steamAppId = item.id;
+                        break;
+                      }
+                    }
+                  } catch (_) { /* tenta próximo */ }
+                }
+              }
+            } catch (_) { /* Steam search falhou */ }
+          }
+        }
+
+        // 3. Atualiza o Firebase se encontrou o steamAppId
+        if (steamAppId) {
+          await updateDoc(doc(db, "games", doc.firebaseId), { steamAppId });
+          migrated++;
+          console.log(`[migrate] ${doc.firebaseId} → steamAppId=${steamAppId}`);
+        } else {
+          skipped++;
+          console.warn(`[migrate] ${doc.firebaseId} (igdbId=${doc.igdbId}) — Steam AppID not found`);
+        }
+      } catch (err) {
+        failed++;
+        console.error(`[migrate] erro em ${doc.firebaseId}:`, err);
+      }
+    }));
+
+    // Pequena pausa entre batches para não sobrecarregar o IGDB
+    if (i + BATCH_SIZE < toMigrate.length) {
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+
+  // Limpa o cache para que os jogos sejam re-carregados com os novos steamAppIds
+  clearCache();
+
+  const msg = isPt()
+    ? `Migração completa: ${migrated} migrados, ${skipped} sem Steam, ${failed} erros.`
+    : `Migration complete: ${migrated} migrated, ${skipped} without Steam, ${failed} errors.`;
+  showToast(msg, 5000);
+  console.log(`[migrate] ${msg}`);
 }
 
 // Inicializa o painel de settings: aplica valores guardados + liga eventos
