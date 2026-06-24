@@ -3188,95 +3188,114 @@ async function doHeaderSearch() {
       if (results.length > 0) {
         const alreadyAdded = new Set(gamesData.map(g => g.steamAppId).filter(Boolean));
 
-        // Para cada resultado, tenta buscar a cover do IGDB em paralelo
-        // (para usar como fallback se o Steam não tiver library_600x900)
-        const coverPromises = results.map(async (game) => {
+        // Para cada resultado, busca appdetails (filtro basic) para:
+        // 1. Filtrar apenas type="game" (remover DLCs, expansões, packs, etc.)
+        // 2. Obter o header_image (cover oficial do Steam)
+        // 3. Buscar cover do IGDB como fallback
+        const detailPromises = results.map(async (game) => {
           const appid = game.id;
-          const steamCover = `${STEAM_CDN}/${appid}/library_600x900.jpg`;
-          const steamFallback = game.tiny_image || null;
 
-          // Tenta buscar a cover do IGDB pelo nome do jogo
-          let igdbCover = null;
+          // Busca appdetails com filtro basic (leve, com cache de 1h no proxy)
+          let appType = "unknown";
+          let steamHeader = null;
           try {
-            const igdbResults = await igdbRequest("games", `
-              search "${game.name.replace(/"/g, "")}";
-              fields cover.url;
-              limit 1;
-            `);
-            if (igdbResults && igdbResults.length > 0 && igdbResults[0].cover) {
-              igdbCover = coverUrl(igdbResults[0].cover.url);
-            }
-          } catch (_) { /* IGDB falhou — sem fallback de cover */ }
-
-          return { appid, steamCover, igdbCover, steamFallback };
-        });
-
-        // Aguarda todas as covers serem resolvidas
-        const coverData = await Promise.all(coverPromises);
-        const coverMap = Object.fromEntries(coverData.map(c => [c.appid, c]));
-
-        steamHtml = `<div class="search-section-label">Steam</div>`;
-        steamHtml += results.map(game => {
-          const appid = game.id;
-          const added = alreadyAdded.has(appid);
-          const cd = coverMap[appid] || {};
-
-          // Cascata de fallback: Steam library_600x900 → IGDB cover → Steam tiny_image → placeholder
-          const primaryCover = cd.steamCover || null;
-          const igdbCover = cd.igdbCover || null;
-          const steamFallback = cd.steamFallback || null;
-
-          // Constrói a cadeia de onerror: primary → igdb → steamFallback → placeholder
-          let coverHtml;
-          if (primaryCover) {
-            // Constrói a lista de fallbacks para onerror
-            const fallbacks = [igdbCover, steamFallback].filter(Boolean);
-            if (fallbacks.length > 0) {
-              // onerror tenta cada fallback em sequência
-              // O último fallback não tem onerror (para não loopar)
-              let onerrorChain = "";
-              for (let i = 0; i < fallbacks.length; i++) {
-                if (i === fallbacks.length - 1) {
-                  // Último fallback — se falhar, esconde a imagem
-                  onerrorChain = `this.onerror=null;this.src='${escHtml(fallbacks[i])}';`;
-                } else {
-                  onerrorChain = `this.onerror=function(){this.onerror=null;this.src='${escHtml(fallbacks[i])}';};`;
-                }
+            const detailsRes = await fetch(`${API_PROXY}/steam/appdetails?appid=${appid}`);
+            if (detailsRes.ok) {
+              const detailsJson = await detailsRes.json();
+              const ad = detailsJson[String(appid)];
+              if (ad && ad.success && ad.data) {
+                appType = ad.data.type || "unknown";
+                steamHeader = ad.data.header_image || null;
               }
-              coverHtml = `<img class="header-search-result-cover" src="${escHtml(primaryCover)}" alt="" loading="lazy" onerror="${onerrorChain}"/>`;
-            } else {
-              // Sem fallbacks — se falhar, mostra placeholder
-              coverHtml = `<img class="header-search-result-cover" src="${escHtml(primaryCover)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"/>
-                           <div class="header-search-result-cover" style="background:var(--surface2);display:none;"></div>`;
             }
-          } else if (igdbCover) {
-            coverHtml = `<img class="header-search-result-cover" src="${escHtml(igdbCover)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"/>
-                         <div class="header-search-result-cover" style="background:var(--surface2);display:none;"></div>`;
-          } else if (steamFallback) {
-            coverHtml = `<img class="header-search-result-cover" src="${escHtml(steamFallback)}" alt="" loading="lazy"/>`;
-          } else {
-            coverHtml = `<div class="header-search-result-cover" style="background:var(--surface2)"></div>`;
+          } catch (_) { /* se falhar, mantém unknown e usa tiny_image */ }
+
+          // Busca cover do IGDB pelo nome (para fallback)
+          let igdbCover = null;
+          if (appType === "game") {
+            try {
+              const igdbResults = await igdbRequest("games", `
+                search "${game.name.replace(/"/g, "")}";
+                fields cover.url;
+                limit 1;
+              `);
+              if (igdbResults && igdbResults.length > 0 && igdbResults[0].cover) {
+                igdbCover = coverUrl(igdbResults[0].cover.url);
+              }
+            } catch (_) { /* IGDB falhou — sem fallback */ }
           }
 
-          return `
-            <div class="header-search-result-item">
-              ${coverHtml}
-              <div class="header-search-result-info">
-                <div class="header-search-result-name">${escHtml(game.name)}</div>
+          return {
+            appid,
+            name: game.name,
+            type: appType,
+            steamHeader,     // header_image do appdetails (sempre correto para o jogo base)
+            steamLibrary: `${STEAM_CDN}/${appid}/library_600x900.jpg`, // retrato (pode não existir)
+            igdbCover,       // cover do IGDB (fallback)
+            steamTiny: game.tiny_image || null, // último fallback
+          };
+        });
+
+        // Aguarda todos os detalhes (appdetails + IGDB) em paralelo
+        const allDetails = await Promise.all(detailPromises);
+
+        // Filtra apenas jogos base (type="game") — remove DLCs, expansões, packs, etc.
+        const gameResults = allDetails.filter(d => d.type === "game");
+
+        if (gameResults.length > 0) {
+          steamHtml = `<div class="search-section-label">Steam</div>`;
+          steamHtml += gameResults.map(d => {
+            const added = alreadyAdded.has(d.appid);
+
+            // Cascata de fallback para a cover:
+            // 1. Steam library_600x900 (retrato, melhor qualidade)
+            // 2. IGDB cover (retrato, fallback)
+            // 3. Steam header_image (landscape, sempre existe para games)
+            // 4. Steam tiny_image (landscape, último recurso)
+            // 5. Placeholder vazio
+            const primaryCover = d.steamLibrary;
+            const fallbacks = [d.igdbCover, d.steamHeader, d.steamTiny].filter(Boolean);
+
+            let coverHtml;
+            if (primaryCover && fallbacks.length > 0) {
+              // onerror em cadeia: primary → fallback[0] → fallback[1] → ...
+              // O último fallback desativa o onerror para evitar loops
+              let onerrorChain = "";
+              if (fallbacks.length === 1) {
+                onerrorChain = `this.onerror=null;this.src='${escHtml(fallbacks[0])}';`;
+              } else {
+                // Para múltiplos fallbacks, usa função anónima recursiva
+                const fallbackArr = fallbacks.map(f => `'${escHtml(f)}'`).join(",");
+                onerrorChain = `this.onerror=function(){var f=[${fallbackArr}];var i=parseInt(this.dataset.fb||'0');if(i<f.length){this.dataset.fb=i+1;this.src=f[i];}else{this.style.display='none';this.nextElementSibling.style.display='flex';}};`;
+              }
+              coverHtml = `<img class="header-search-result-cover" src="${escHtml(primaryCover)}" alt="" loading="lazy" onerror="${onerrorChain}"/>`;
+            } else if (primaryCover) {
+              coverHtml = `<img class="header-search-result-cover" src="${escHtml(primaryCover)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"/>
+                           <div class="header-search-result-cover" style="background:var(--surface2);display:none;"></div>`;
+            } else {
+              coverHtml = `<div class="header-search-result-cover" style="background:var(--surface2)"></div>`;
+            }
+
+            return `
+              <div class="header-search-result-item">
+                ${coverHtml}
+                <div class="header-search-result-info">
+                  <div class="header-search-result-name">${escHtml(d.name)}</div>
+                </div>
+                <button class="header-search-result-add${added ? " added" : ""}"
+                        data-steam-appid="${d.appid}"
+                        ${added ? "disabled" : ""}
+                        aria-label="${escHtml(t("+ Adicionar"))}"
+                        title="${escHtml(t("+ Adicionar"))}">
+                  ${added
+                    ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+                    : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
+                  }
+                </button>
               </div>
-              <button class="header-search-result-add${added ? " added" : ""}"
-                      data-steam-appid="${appid}"
-                      ${added ? "disabled" : ""}
-                      aria-label="${escHtml(t("+ Adicionar"))}"
-                      title="${escHtml(t("+ Adicionar"))}">
-                ${added
-                  ? `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
-                  : `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`
-                }
-              </button>
-            </div>
-          `;
-        }).join("");
+            `;
+          }).join("");
+        }
       }
     }
   } catch (err) {
