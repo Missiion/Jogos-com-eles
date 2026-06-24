@@ -233,6 +233,7 @@
     "Mutar notificações": "Mute notifications",
     "Testes": "Testing",
     "Simular notificações": "Simulate notifications",
+    "Migrar para Steam": "Migrate to Steam",
 
     "Remover voto": "Remove vote",
     "votos contra": "down-votes",
