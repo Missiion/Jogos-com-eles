@@ -173,20 +173,36 @@ function fuzzyMatchGame(query, game) {
 //  CONFIG
 // ─────────────────────────────────────────────
 
-// Cloudflare Worker proxy — faz a ponte com a API do IGDB sem erros de CORS
-const IGDB_PROXY = "https://igdb-proxy.dr-mx-droid.workers.dev";
+// Cloudflare Worker proxy — faz a ponte com as APIs do IGDB e da Steam sem erros de CORS.
+// A partir da Etapa 2, o MESMO worker faz proxy de ambas as APIs:
+//   - IGDB:  POST /<endpoint>                 (comportamento original, retrocompatível)
+//   - Steam: GET  /steam/api/appdetails?...   (Etapa 2)
+//            GET  /steam/appreviews/<id>?...  (Etapa 2)
+// Ver cloudflare-worker/worker.js para o código do worker atualizado.
+const IGDB_PROXY  = "https://igdb-proxy.dr-mx-droid.workers.dev";
+const STEAM_PROXY = IGDB_PROXY + "/steam"; // mesmo worker, prefixo /steam
 
 const IGDB_CLIENT_ID     = "m079gokvukuokos50mw73b4qluwskc";
 const IGDB_ACCESS_TOKEN  = "6d3x70gthrbk8ag7p06kyxfzu9v1r4";
 
-const CACHE_KEY     = "jce_games_cache_v3";
-const CACHE_TS_KEY  = "jce_games_cache_ts_v3";
+// ⚠️  Versão do cache bumped v3 → v4 na Etapa 1 da integração Steam.
+// Motivo: o objeto normalizado ganhou o campo `steamAppId`. Caches antigos
+// (v3) não têm este campo e foram invalidados. A limpeza das chaves v3
+// acontece mais abaixo (one-time migration) para não deixar lixo no localStorage.
+const CACHE_KEY     = "jce_games_cache_v4";
+const CACHE_TS_KEY  = "jce_games_cache_ts_v4";
 const CACHE_TTL_MS  = 5 * 60 * 1000; // 5 min TTL (Firebase real-time sobrepõe isto)
+
+// One-time migration: remove chaves de cache antigas (v3) para evitar lixo.
+try {
+  localStorage.removeItem("jce_games_cache_v3");
+  localStorage.removeItem("jce_games_cache_ts_v3");
+} catch (_) {}
 
 // ─────────────────────────────────────────────
 //  STATE
 // ─────────────────────────────────────────────
-let gamesData   = [];   // [{id, igdbId, name, cover, screenshots, videos, genres, modes, rating, summary, steamUrl, addedAt, preferredKeyArt, playlistUrl}]
+let gamesData   = [];   // [{id, igdbId, name, cover, screenshots, videos, genres, modes, rating, summary, steamUrl, steamAppId, addedAt, preferredKeyArt, playlistUrl}]
 let gamesLoaded  = false; // true após o primeiro carregamento completo do onSnapshot (listenToGames)
 let adminOpen     = false; // true enquanto o "modo editor" está ativo (cards mostram botões de admin)
 let adminExpanded = false; // true quando o painel de admin (canto inferior direito) está descolapsado
@@ -422,6 +438,101 @@ async function igdbRequest(endpoint, body) {
   return res.json();
 }
 
+// ─────────────────────────────────────────────
+//  STEAM API HELPERS (Etapa 2)
+//
+//  A Steam Storefront API não suporta CORS — todos os pedidos passam
+//  pelo Cloudflare Worker (STEAM_PROXY). As credenciais não são necessárias
+//  (a storefront API é pública, sem API key).
+//
+//  Importante sobre linguagem:
+//   - appdetails usa o parâmetro `l=` para localização de nomes/descrições.
+//     PT-PT = "portuguese", EN = "english" (ver steamLangCode()).
+//   - appreviews usa `language=`. Para totais estáveis e representativos,
+//     usamos SEMPRE "english" independentemente do idioma da UI — os totais
+//     em PT são muito mais baixos e enviesados (só reviews em português).
+//
+//  Importante sobre reviews "recentes":
+//   - A Steam API NÃO expõe um sumário de apenas reviews recentes.
+//     `filter=recent` só muda a ordenação; `query_summary.total_reviews`
+//     reflete sempre o total global. Por acordo com o user, mostramos o
+//     sumário global (review_score_desc + total).
+// ─────────────────────────────────────────────
+
+// Mapeia o idioma da UI para o código aceito pela Steam Storefront API.
+// PT-PT → "portuguese" (Europeu); EN → "english".
+// NOTA: "portuguese-brazil" NÃO funciona — cai para inglês. Para PT-BR usar "brazilian".
+function steamLangCode() {
+  return isPt() ? "portuguese" : "english";
+}
+
+// Busca os detalhes da app na Steam Storefront API.
+// Retorna o objeto `data` da resposta, ou null se:
+//   - o appId for inválido/vazio
+//   - a Steam retornar success=false (jogo removido/privado)
+//   - houver erro de rede ou rate-limit (429) — não lança, retorna null
+// Parâmetro `lang`: código Steam (default = idioma da UI).
+async function steamAppDetails(appId, lang) {
+  if (!appId) return null;
+  const l = lang || steamLangCode();
+  const url = `${STEAM_PROXY}/api/appdetails?appids=${encodeURIComponent(appId)}&l=${encodeURIComponent(l)}`;
+
+  // Cache check — a key inclui o idioma porque o conteúdo (nome, descrição,
+  // data de lançamento) é localizado pela Steam. Sem isto, trocar de idioma
+  // serviria a versão em cache no idioma antigo.
+  const cacheKey = `${appId}::${l}`;
+  const cached = getCachedSteam(STEAM_DETAILS_CACHE_KEY, cacheKey);
+  if (cached) return cached;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      // 429 = rate limit; não lançar — o caller faz fallback IGDB
+      if (res.status === 429) return null;
+      throw new Error(`Steam appdetails HTTP ${res.status}`);
+    }
+    const json = await res.json();
+    // A resposta tem a forma { "<appId>": { success: bool, data: {...} } }
+    const entry = json[String(appId)];
+    if (!entry || !entry.success || !entry.data) return null;
+    const data = entry.data;
+    setCachedSteam(STEAM_DETAILS_CACHE_KEY, cacheKey, data);
+    return data;
+  } catch (e) {
+    console.warn("[steamAppDetails] erro para appId", appId, e.message);
+    return null;
+  }
+}
+
+// Busca o sumário de reviews da Steam (totals globais + review_score_desc).
+// Sempre em inglês para totais representativos (ver nota acima).
+// Retorna { review_score, review_score_desc, total_positive, total_negative, total_reviews }
+// ou null em caso de erro / appId inválido.
+async function steamReviewSummary(appId) {
+  if (!appId) return null;
+  const url = `${STEAM_PROXY}/appreviews/${encodeURIComponent(appId)}?json=1&filter=recent&language=english&purchase_type=all&num_per_page=0`;
+
+  // Cache check
+  const cached = getCachedSteam(STEAM_REVIEWS_CACHE_KEY, appId);
+  if (cached) return cached;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      if (res.status === 429) return null;
+      throw new Error(`Steam appreviews HTTP ${res.status}`);
+    }
+    const json = await res.json();
+    if (!json || json.success !== 1 || !json.query_summary) return null;
+    const summary = json.query_summary;
+    setCachedSteam(STEAM_REVIEWS_CACHE_KEY, appId, summary);
+    return summary;
+  } catch (e) {
+    console.warn("[steamReviewSummary] erro para appId", appId, e.message);
+    return null;
+  }
+}
+
 async function searchGames(term) {
   return igdbRequest("games", `
     search "${term}";
@@ -530,6 +641,19 @@ function steamUrl(websites) {
   return steam ? steam.url : null;
 }
 
+// Extrai o Steam App ID (numérico) de uma URL da Steam Store.
+// Aceita os formatos:
+//   https://store.steampowered.com/app/<APPID>/<slug>/
+//   https://store.steampowered.com/app/<APPID>/
+//   https://store.steampowered.com/agecheck/app/<APPID>/   (age-gate interstitial)
+// Retorna o App ID como string (preserva leading zeros caso existam) ou null.
+// Não match bundle/sub URLs — esses não são app IDs.
+function steamAppId(url) {
+  if (!url) return null;
+  const m = String(url).match(/\/(?:agecheck\/)?app\/(\d+)/);
+  return m ? m[1] : null;
+}
+
 function genreTags(genres) {
   return (genres || []).map(g => g.name || g).slice(0, 3);
 }
@@ -549,6 +673,91 @@ function modeClass(name) {
 function ratingStr(r) {
   if (!r) return null;
   return (r / 10).toFixed(1);
+}
+
+// ─────────────────────────────────────────────
+//  STEAM REVIEW BADGE (Etapa 4)
+//
+//  Devolve HTML para o badge de reviews da Steam, com fallback para o
+//  rating do IGDB quando não houver dados Steam.
+//
+//  Lógica de fallback:
+//   1. Se game.steamReviewDesc existe E total_reviews > 0 → badge Steam
+//   2. Se game.steamReviewDesc === "No user reviews" → badge "Sem análises"
+//   3. Caso contrário (sem Steam, ou enrich falhou) → null (caller mostra rating IGDB)
+//
+//  O badge Steam mostra:
+//   - review_score_desc traduzido (ex: "Muito Positivas")
+//   - percentagem positiva (ex: "87%")
+//   - total de reviews abreviado (ex: "2.5M", "12K")
+//
+//  Cores (definidas no CSS via classe steam-review-{positive|mixed|negative|none}):
+//   - Positive (score 6-9): verde
+//   - Mixed (score 5): amarelo
+//   - Negative (score 1-4): vermelho
+//   - No reviews: cinzento
+// ─────────────────────────────────────────────
+
+// Abrevia um número grande: 2560529 → "2.6M", 12345 → "12K", 999 → "999"
+function abbreviateNumber(n) {
+  if (!n || n < 1000) return String(n || 0);
+  if (n < 10000) return (n / 1000).toFixed(1).replace(".0", "") + "K";
+  if (n < 1000000) return Math.round(n / 1000) + "K";
+  return (n / 1000000).toFixed(1).replace(".0", "") + "M";
+}
+
+// Mapeia review_score (int 0-9) → classe CSS para cor do badge
+function steamReviewClass(score, desc) {
+  if (desc === "No user reviews" || score === 0) return "none";
+  if (score == null) return "none";
+  if (score >= 6) return "positive"; // Positive, Very Positive, Overwhelmingly Positive
+  if (score === 5) return "mixed";   // Mixed
+  return "negative";                 // Negative, Mostly Negative, Very Negative, Overwhelmingly Negative
+}
+
+// Traduz o review_score_desc da Steam (EN) para o idioma da UI.
+// O DICT tem as keys em PT; precisamos de inverter a lookup quando estamos
+// em modo PT (desc vem em EN da Steam, mas em PT queremos a nossa tradução).
+function translateSteamReviewDesc(desc) {
+  if (!desc) return null;
+  // Mapa inverso: EN → PT (para modo PT)
+  const EN_TO_PT = {
+    "Overwhelmingly Positive": "Esmagadoramente Positivas",
+    "Very Positive":           "Muito Positivas",
+    "Mostly Positive":         "Maioritariamente Positivas",
+    "Positive":                "Positivas",
+    "Mixed":                   "Misturadas",
+    "Negative":                "Negativas",
+    "Mostly Negative":         "Maioritariamente Negativas",
+    "Very Negative":           "Muito Negativas",
+    "Overwhelmingly Negative": "Esmagadoramente Negativas",
+    "No user reviews":         "Sem análises",
+  };
+  if (isPt()) {
+    return EN_TO_PT[desc] || desc; // fallback: mostra o EN se não houver tradução
+  }
+  return desc; // modo EN: mostra o desc original da Steam
+}
+
+// Devolve HTML do badge de review Steam, ou null se não houver dados Steam.
+// O caller (card/modal/discover) usa isto; se retorn null, mostra o rating IGDB.
+function steamReviewBadgeHtml(game) {
+  if (!game || !game.steamEnriched) return null;
+  const desc = game.steamReviewDesc;
+  if (!desc) return null;
+
+  const cls = steamReviewClass(game.steamReviewScore, desc);
+  const descTranslated = translateSteamReviewDesc(desc);
+
+  // Badge: apenas o descritor traduzido (sem % nem total visíveis).
+  // O total fica disponível no tooltip (title) para quem quiser detalhe.
+  const total = game.steamReviewTotal > 0 ? abbreviateNumber(game.steamReviewTotal) : null;
+  const reviewsLabel = isPt() ? "análises" : "reviews";
+  const title = total
+    ? `${descTranslated} • ${total} ${reviewsLabel}`
+    : descTranslated;
+
+  return `<span class="steam-review-badge steam-review-${cls}" title="${escHtml(title)}">${escHtml(descTranslated)}</span>`;
 }
 
 // Nomes de empresas envolvidas, filtrados por papel ("developer" ou "publisher")
@@ -642,6 +851,83 @@ function fullReleaseDateStr(unixTs) {
   } catch(e) { return null; }
 }
 
+// ─────────────────────────────────────────────
+//  RELEASE STATUS & DATE — Steam + IGDB crossover (Etapa 5)
+//
+//  A Steam pode ter informação mais atualizada que o IGDB sobre o estado
+//  de lançamento (ex: jogo que saiu de Early Access mas o IGDB ainda marca
+//  como status=4). Esta função cruza as duas fontes com fallback graceful.
+//
+//  PRIORIDADE:
+//   1. Steam coming_soon === true → "Por lançar" (a Steam é a fonte mais
+//      fiável para "ainda não lançou")
+//   2. Steam coming_soon === false E IGDB status=4 (Early Access) com data
+//      no passado → "Lançado" (saiu de early access; Steam atualizou, IGDB não)
+//   3. Steam coming_soon === false (sem status IGDB) → "Lançado"
+//   4. Caso contrário → lógica IGDB original (releaseStatusStr)
+//
+//  Nota: mantemos os labels PT como identificadores internos (igual ao IGDB)
+//  para que as notificações (detectGameChanges) continuem a funcionar.
+// ─────────────────────────────────────────────
+function computeReleaseStatus(game) {
+  if (!game) return "Por lançar";
+
+  const steamComingSoon = game.steamComingSoon;
+  const igdbStatus = game.releaseStatus; // já calculado por releaseStatusStr no normalizeGame
+
+  // 1. Steam diz que ainda vai lançar — é a fonte mais fiável
+  if (steamComingSoon === true) {
+    // Mas se o IGDB tem status mais específico (Alpha/Beta/Early Access),
+    // respeita-o — a Steam não distingue estes estados
+    if (igdbStatus === "Alpha" || igdbStatus === "Beta" || igdbStatus === "Acesso Antecipado") {
+      // Early Access com data futura → mantém "Por lançar" (lógica IGDB original)
+      if (!game.firstReleaseTs || game.firstReleaseTs * 1000 > Date.now()) {
+        return "Por lançar";
+      }
+      return igdbStatus;
+    }
+    return "Por lançar";
+  }
+
+  // 2. Steam diz que já lançou (coming_soon === false)
+  if (steamComingSoon === false) {
+    // Se o IGDB marca como Early Access mas a Steam diz que já lançou,
+    // o jogo saiu de early access → "Lançado"
+    if (igdbStatus === "Acesso Antecipado") {
+      return "Lançado";
+    }
+    // Se o IGDB marca como "Por lançar" mas a Steam diz que já lançou,
+    // confia na Steam → "Lançado"
+    if (igdbStatus === "Por lançar") {
+      return "Lançado";
+    }
+    // Senão, mantém o estado do IGDB (que pode ser mais específico:
+    // Offline, Cancelado, Removido de venda, etc.)
+    return igdbStatus || "Lançado";
+  }
+
+  // 3. Sem dados Steam (steamComingSoon === null) — fallback IGDB
+  return igdbStatus || "Por lançar";
+}
+
+// Devolve a data de lançamento formatada, preferindo a data da Steam se disponível.
+// A Steam devolve uma string localizada ("21 Aug, 2012" em EN, "21 ago, 2012" em PT)
+// que já vem no idioma correto — usamo-la diretamente.
+// Se não houver data Steam, usa o timestamp IGDB formatado via fullReleaseDateStr.
+function computeReleaseDateFull(game) {
+  if (!game) return null;
+  // Steam tem data e está no idioma correto (vinda com l=portuguese ou l=english)
+  if (game.steamReleaseDate && game.steamEnriched) {
+    return game.steamReleaseDate;
+  }
+  // Fallback: timestamp IGDB
+  if (game.firstReleaseTs) {
+    return fullReleaseDateStr(game.firstReleaseTs);
+  }
+  // Último recurso: data em cache (pode estar null)
+  return game.releaseDateFull || null;
+}
+
 // Normaliza dados do IGDB para o nosso formato
 function normalizeGame(igdbGame) {
   const screenshots = (igdbGame.screenshots || []).map(s => screenshotUrl(s.url)).filter(Boolean);
@@ -650,6 +936,10 @@ function normalizeGame(igdbGame) {
   const year = igdbGame.first_release_date
     ? new Date(igdbGame.first_release_date * 1000).getFullYear()
     : null;
+
+  // Steam URL + App ID extraídos do array `websites` do IGDB.
+  // O App ID é derivado da URL (regex) — é a chave para a Steam Storefront API.
+  const steam = steamUrl(igdbGame.websites);
 
   return {
     igdbId:      igdbGame.id,
@@ -663,7 +953,29 @@ function normalizeGame(igdbGame) {
     modes:       modeTags(igdbGame.game_modes),
     rating:      igdbGame.rating || null,
     summary:     igdbGame.summary || "",
-    steamUrl:    steamUrl(igdbGame.websites),
+    steamUrl:    steam,
+    steamAppId:  steamAppId(steam),
+    // ── Steam enrichment (Etapa 3 + 4) ──
+    // Populados async por fetchSteamImageFields() em paralelo com o IGDB.
+    // Quando vazios (null/[]), o UI faz fallback para os dados IGDB acima.
+    steamHeaderImage:  null,             // 460×215 — usado como fallback de cover
+    steamScreenshots:  [],               // [{src, thumb}] — 1920×1080 (qualidade superior ao IGDB)
+    steamBackground:   null,             // background_raw — hero opcional
+    steamEnriched:     false,            // true após fetchSteamImageFields() completar
+    // ── Steam reviews (Etapa 4) ──
+    // review_score_desc da Steam (em EN); traduzido no render via t().
+    // Se null após enrich, o UI mostra o rating IGDB (fallback).
+    steamReviewDesc:     null,           // "Very Positive" / "No user reviews" / null
+    steamReviewScore:    null,           // int 0-9 (escala Steam)
+    steamReviewTotal:    0,              // int (total de reviews)
+    steamReviewPositive: 0,              // int
+    steamReviewNegative: 0,              // int
+    steamReviewPct:      null,           // int 0-100 (percentagem positiva)
+    // ── Steam release date (Etapa 5) ──
+    // Populados por fetchSteamImageFields(). Usados por computeReleaseStatus()
+    // e computeReleaseDateFull() para cruzar com os dados IGDB.
+    steamReleaseDate:    null,           // string localizada da Steam ("21 Aug, 2012") ou null
+    steamComingSoon:     null,           // bool da Steam (true = por lançar) ou null se sem Steam
     year,
     studios:        companyNames(igdbGame.involved_companies, "publisher"),
     developers:     companyNames(igdbGame.involved_companies, "developer"),
@@ -698,6 +1010,68 @@ function clearCache() {
   localStorage.removeItem(CACHE_KEY);
   localStorage.removeItem(CACHE_TS_KEY);
 }
+
+// ─────────────────────────────────────────────
+//  STEAM CACHE (Etapa 2)
+//
+//  Cache SEPARADO do cache de jogos IGDB. Razões:
+//   - TTLs diferentes: appdetails = 1h (alinhado com Steam CDN),
+//     reviews = 10min (mais volátil).
+//   - Shape diferente: mapas appId → { data, ts }, não arrays.
+//   - Não precisa de ser invalidado quando se adiciona/remove jogos
+//     (ao contrário do cache IGDB que é limpo em clearCache()).
+//
+//  Estrutura: localStorage guarda um JSON { "<appId>": { data, ts }, ... }
+//  por cada tipo de cache. Se a quota estourar, falha silenciosamente
+//  (os dados são re-buscados — sem quebrar a UI).
+// ─────────────────────────────────────────────
+const STEAM_DETAILS_CACHE_KEY  = "jce_steam_details_v1";
+const STEAM_REVIEWS_CACHE_KEY  = "jce_steam_reviews_v1";
+const STEAM_DETAILS_TTL_MS     = 60 * 60 * 1000;  // 1 hora
+const STEAM_REVIEWS_TTL_MS     = 10 * 60 * 1000;  // 10 minutos
+
+// Lê o mapa de cache (appId → { data, ts }) do localStorage.
+function _loadSteamCacheMap(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : {};
+  } catch (_) { return {}; }
+}
+
+// Guarda o mapa de cache no localStorage (silencioso em caso de quota).
+function _saveSteamCacheMap(key, map) {
+  try { localStorage.setItem(key, JSON.stringify(map)); } catch (_) {}
+}
+
+// Devolve o dado em cache se existir e não tiver expirado, ou null.
+// `ttlMs` controla a validade temporal — passado o TTL, o entry é ignorado
+// (mas não removido do mapa para evitar writes desnecessários; será
+// sobreescrito na próxima chamada a setCachedSteam).
+function getCachedSteam(key, appId) {
+  if (!appId) return null;
+  const map = _loadSteamCacheMap(key);
+  const entry = map[appId];
+  if (!entry) return null;
+  const ttl = (key === STEAM_DETAILS_CACHE_KEY) ? STEAM_DETAILS_TTL_MS : STEAM_REVIEWS_TTL_MS;
+  if (Date.now() - entry.ts > ttl) return null; // expirado
+  return entry.data;
+}
+
+// Guarda um dado no cache com timestamp atual.
+function setCachedSteam(key, appId, data) {
+  if (!appId || !data) return;
+  const map = _loadSteamCacheMap(key);
+  map[appId] = { data, ts: Date.now() };
+  _saveSteamCacheMap(key, map);
+}
+
+// Limpa todo o cache Steam (appdetails + reviews).
+// Útil para debugging ou para forçar refresh. Expor em window para testes.
+function clearSteamCache() {
+  localStorage.removeItem(STEAM_DETAILS_CACHE_KEY);
+  localStorage.removeItem(STEAM_REVIEWS_CACHE_KEY);
+}
+window.clearSteamCache = clearSteamCache;
 
 // ─────────────────────────────────────────────
 //  USERS — Listener em tempo real (Firebase "users" collection)
@@ -978,6 +1352,25 @@ function createFallbackGame(fsDoc) {
     rating:         null,
     summary:        "",
     steamUrl:       null,
+    steamAppId:     fsDoc.steamAppId || null, // preserva App ID do Firestore mesmo sem IGDB
+    // ── Steam enrichment (Etapa 3 + 4) ──
+    // Fallback games não têm dados Steam (IGDB falhou); ficam a null.
+    // Se o fetchSteamImageFields() correr mais tarde e tiver steamAppId,
+    // estes campos serão populados nessa altura.
+    steamHeaderImage:  null,
+    steamScreenshots:  [],
+    steamBackground:   null,
+    steamEnriched:     false,
+    // ── Steam reviews (Etapa 4) ──
+    steamReviewDesc:     null,
+    steamReviewScore:    null,
+    steamReviewTotal:    0,
+    steamReviewPositive: 0,
+    steamReviewNegative: 0,
+    steamReviewPct:      null,
+    // ── Steam release date (Etapa 5) ──
+    steamReleaseDate:    null,
+    steamComingSoon:     null,
     year:           null,
     studios:        [],
     developers:     [],
@@ -1012,8 +1405,19 @@ async function retryFailedGames() {
         // Substitui o fallback pelos dados reais
         const idx = gamesData.findIndex(g => g.firebaseId === game.firebaseId);
         if (idx >= 0) {
+          const normalized = normalizeGame(igdbGame);
+          // STEAM ENRICHMENT (Etapa 3): também enricha jogos que recuperaram
+          // de fallback, para que ganhem imagens Steam assim que o IGDB retoma.
+          let enrichedFields = null;
+          const appId = normalized.steamAppId || game.steamAppId;
+          if (appId && !normalized.steamEnriched) {
+            try {
+              enrichedFields = await fetchSteamImageFields(appId);
+            } catch (_) { enrichedFields = null; }
+          }
           gamesData[idx] = {
-            ...normalizeGame(igdbGame),
+            ...normalized,
+            ...(enrichedFields || {}),
             firebaseId: game.firebaseId,
             preferredKeyArt: game.preferredKeyArt || null,
             playlistUrl: game.playlistUrl || null,
@@ -1033,6 +1437,108 @@ async function retryFailedGames() {
     renderAdminList(gamesData);
     renderTagFilter();
   }
+}
+
+// Backfill silencioso: grava o `steamAppId` no Firestore se o doc ainda não o tiver.
+// Isto é uma migração one-time — jogos adicionados antes da Etapa 1 da integração
+// Steam não têm este campo. O backfill corre quando o IGDB (ou o cache) produz um
+// steamAppId válido e o doc Firestore não o tem.
+// Fire-and-forget: não bloqueia o render; erros são silenciosos (haverá retry no
+// próximo snapshot do Firebase).
+async function backfillSteamAppId(firebaseId, appId) {
+  if (!firebaseId || !appId) return;
+  try {
+    await updateDoc(doc(db, "games", firebaseId), { steamAppId: appId });
+  } catch (e) {
+    // Silencioso — will retry on next snapshot
+  }
+}
+
+// ─────────────────────────────────────────────
+//  STEAM ENRICHMENT (Etapa 3)
+//
+//  Busca os appdetails da Steam para um jogo e devolve os campos de imagem
+//  (steamHeaderImage, steamScreenshots, steamBackground). Estes campos são
+//  mergeados no objeto normalizado do jogo.
+//
+//  Estratégia: INTEGRADO no listenToGames (Etapa 3 v2).
+//   - O fetch Steam corre EM PARALELO com o fetch IGDB dentro de cada batch.
+//   - O cache Steam (TTL 1h) torna a maioria dos fetches instantânea (cache hit).
+//   - A Steam API é muito tolerante a paralelismo (10 calls paralelas = ~0.6s,
+//     sem 429), ao contrário do IGDB (4 req/s).
+//   - Resultado: as imagens Steam aparecem JÁ NO PRIMEIRO RENDER, sem delay.
+//
+//  Fallback: se o fetch Steam falhar (rede, rate-limit, jogo removido), retorna
+//  null — o jogo mantém os dados IGDB (fallback graceful).
+// ─────────────────────────────────────────────
+
+// Busca os dados de imagem da Steam para um appId e devolve os campos enriched,
+// ou null se não for possível enrichar.
+// Não muta gamesData — o caller faz o merge no objeto normalizado.
+//
+// Etapa 4: também busca o sumário de reviews em paralelo (Promise.all).
+// A review summary é sempre em inglês (totais estáveis, não enviesados por idioma).
+async function fetchSteamImageFields(appId) {
+  if (!appId) return null;
+  // Busca appdetails + reviews EM PARALELO (a Steam tolera paralelismo massivo).
+  const [data, reviewSummary] = await Promise.all([
+    steamAppDetails(appId),
+    steamReviewSummary(appId),
+  ]);
+  if (!data) return null; // Steam falhou ou jogo não existe — fallback IGDB
+
+  const steamScreenshots = (data.screenshots || [])
+    .map(s => ({
+      src:   s.path_full,       // 1920×1080 — qualidade superior ao IGDB
+      thumb: s.path_thumbnail,  // 600×338 — para scrub dots no card
+    }))
+    .filter(s => s.src && s.thumb);
+
+  // ── Reviews (Etapa 4) ──
+  // review_score_desc vem em inglês da Steam ("Very Positive", etc.).
+  // Guardamos o original para referência + a percentagem positiva calculada.
+  // A tradução PT/EN acontece no render via t() — usamos o desc PT como key.
+  let steamReviewDesc       = null;
+  let steamReviewScore      = null;
+  let steamReviewTotal      = 0;
+  let steamReviewPositive   = 0;
+  let steamReviewNegative   = 0;
+  let steamReviewPct        = null; // percentagem positiva (0-100)
+
+  if (reviewSummary && reviewSummary.total_reviews > 0) {
+    steamReviewDesc     = reviewSummary.review_score_desc || null;
+    steamReviewScore    = reviewSummary.review_score ?? null;
+    steamReviewTotal    = reviewSummary.total_reviews || 0;
+    steamReviewPositive = reviewSummary.total_positive || 0;
+    steamReviewNegative = reviewSummary.total_negative || 0;
+    steamReviewPct      = Math.round(
+      (steamReviewPositive / steamReviewTotal) * 100
+    );
+  } else if (reviewSummary && reviewSummary.total_reviews === 0) {
+    // Jogo existe na Steam mas não tem reviews → marcador explícito
+    steamReviewDesc = "No user reviews"; // será traduzido via t("Sem análises")
+  }
+
+  return {
+    steamHeaderImage: data.header_image || null,
+    steamScreenshots,
+    steamBackground:  data.background_raw || data.background || null,
+    steamEnriched:    true,
+    // ── Reviews ──
+    steamReviewDesc,       // string EN da Steam ("Very Positive") ou "No user reviews" ou null
+    steamReviewScore,      // int 0-9 (escala Steam) ou null
+    steamReviewTotal,      // int (total de reviews)
+    steamReviewPositive,   // int
+    steamReviewNegative,   // int
+    steamReviewPct,        // int 0-100 (percentagem positiva) ou null
+    // ── Release date (Etapa 5) ──
+    // A Steam devolve release_date como { coming_soon: bool, date: "DD MMM, YYYY" }.
+    // `date` é uma string LOCALIZADA (depende do parâmetro `l=`) — não é ISO.
+    // Guardamos para exibição direta (já localizada pela Steam) e para cruzar
+    // com o coming_soon no cálculo do estado de lançamento.
+    steamReleaseDate:    data.release_date?.date || null,       // ex: "21 Aug, 2012" (localizada)
+    steamComingSoon:     data.release_date?.coming_soon === true, // bool
+  };
 }
 
 function listenToGames() {
@@ -1057,7 +1563,25 @@ function listenToGames() {
 
     // Controla concorrência: processa IGDB fetches em batches para não
     // sobrecarregar o proxy (evita rate limit e falhas temporárias).
-    const CONCURRENCY = 5;
+    //
+    // ⚠️  IGDB free tier = máx. 4 requests por segundo.
+    //   - CONCURRENCY = 3 (era 5): garante que cada batch fica dentro do limite
+    //     mesmo com latência variável. 5 em paralelo excedia frequentemente
+    //     quando o proxy respondia rápido → 429 (Rate Limit Exceeded).
+    //   - BATCH_DELAY_MS = 350: pausa entre batches para o token bucket do
+    //     IGDB recuperar. Custo total para 71 jogos: ~9s (vs ~5s antes, mas
+    //     sem falhas). O cache tornará os loads subsequentes instantâneos.
+    //   - Esta otimização é preventiva — não altera a lógica nem o resultado.
+    //
+    //  STEAM ENRICHMENT (Etapa 3 v2):
+    //   - O fetch Steam corre EM PARALELO com o fetch IGDB dentro de cada batch,
+    //     via Promise.all. A Steam API é muito tolerante a paralelismo
+    //     (10 calls paralelas = ~0.6s, sem 429) — pode correr ao lado do IGDB
+    //     sem problemas. O cache Steam (TTL 1h) torna a maioria dos fetches
+    //     instantânea (cache hit).
+    //   - Resultado: as imagens Steam aparecem JÁ NO PRIMEIRO RENDER.
+    const CONCURRENCY = 3;
+    const BATCH_DELAY_MS = 350;
     const failedIgdbIds = []; // jogos onde o IGDB falhou (para retry depois)
 
     const resolved = [];
@@ -1066,8 +1590,25 @@ function listenToGames() {
       const batchResults = await Promise.all(
         batch.map(async (fsDoc) => {
           if (cachedMap[fsDoc.igdbId]) {
+            const cachedGame = cachedMap[fsDoc.igdbId];
+            // Backfill: se o doc Firestore não tem steamAppId mas temos no cache,
+            // grava-o silenciosamente (migração one-time).
+            if (fsDoc.steamAppId == null && cachedGame.steamAppId) {
+              backfillSteamAppId(fsDoc.firebaseId, cachedGame.steamAppId);
+            }
+            // Se o jogo tem steamAppId mas ainda NÃO foi enriched, tenta enrichar
+            // AGORA (em paralelo com os outros jogos do batch). Se o cache Steam
+            // tiver o appId, isto é instantâneo (cache hit).
+            let enrichedFields = null;
+            const appId = cachedGame.steamAppId || fsDoc.steamAppId;
+            if (appId && !cachedGame.steamEnriched) {
+              try {
+                enrichedFields = await fetchSteamImageFields(appId);
+              } catch (_) { enrichedFields = null; }
+            }
             return {
-              ...cachedMap[fsDoc.igdbId],
+              ...cachedGame,
+              ...(enrichedFields || {}),
               firebaseId: fsDoc.firebaseId,
               preferredKeyArt: fsDoc.preferredKeyArt || null,
               playlistUrl: fsDoc.playlistUrl || null,
@@ -1080,8 +1621,25 @@ function listenToGames() {
               failedIgdbIds.push(fsDoc.igdbId);
               return createFallbackGame(fsDoc);
             }
+            const normalized = normalizeGame(igdbGame);
+            // Backfill: se o doc Firestore não tem steamAppId mas o IGDB produziu
+            // um, grava-o silenciosamente (migração one-time).
+            if (fsDoc.steamAppId == null && normalized.steamAppId) {
+              backfillSteamAppId(fsDoc.firebaseId, normalized.steamAppId);
+            }
+            // STEAM ENRICHMENT: busca imagens Steam em paralelo com o resto do batch.
+            // Se o appId vier do Firestore (backfilled) ou do IGDB, aproveita.
+            // fallback graceful: se falhar, o jogo fica só com dados IGDB.
+            let enrichedFields = null;
+            const appId = normalized.steamAppId || fsDoc.steamAppId;
+            if (appId && !normalized.steamEnriched) {
+              try {
+                enrichedFields = await fetchSteamImageFields(appId);
+              } catch (_) { enrichedFields = null; }
+            }
             return {
-              ...normalizeGame(igdbGame),
+              ...normalized,
+              ...(enrichedFields || {}),
               firebaseId: fsDoc.firebaseId,
               preferredKeyArt: fsDoc.preferredKeyArt || null,
               playlistUrl: fsDoc.playlistUrl || null,
@@ -1094,6 +1652,11 @@ function listenToGames() {
         })
       );
       resolved.push(...batchResults);
+      // Pausa entre batches para respeitar o rate limit do IGDB (4 req/s).
+      // Só aplica se houver mais batches por vir (evita delay desnecessário no fim).
+      if (i + CONCURRENCY < firestoreDocs.length) {
+        await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
+      }
     }
 
     gamesData = resolved.filter(Boolean);
@@ -1113,6 +1676,10 @@ function listenToGames() {
     if (gamesData.some(g => g._needsRetry)) {
       setTimeout(retryFailedGames, 3000);
     }
+
+    // ── Steam Enrichment (Etapa 3 v2) ──
+    // O enrichment agora corre INLINE no listenToGames (em paralelo com cada
+    // batch IGDB via Promise.all). Não é preciso um pass separado em background.
 
     // ── Deteção de mudanças para notificações ──
     // Compara o estado atual com o snapshot anterior. Se for o primeiro
@@ -1349,10 +1916,36 @@ function buildCard(game, globalIdx) {
   const artworks    = game.artworks    || [];
   const videos      = game.videos || [];
 
-  // card-bg: preferência global de admin → key-art do IGDB → fallback para screenshot → fallback para cover
-  const coverSrc = game.preferredKeyArt || artworks[0] || screenshots[0] || game.cover || "";
+  // card-bg: preferência global de admin → key-art do IGDB → screenshot Steam (1920×1080)
+  //          → screenshot IGDB → header Steam → cover IGDB
+  // Etapa 3: screenshots Steam (steamScreenshots[0].src) entram na cadeia de fallback
+  // antes das do IGDB por terem qualidade superior. O header_image da Steam (460×215,
+  // landscape) é o último recurso — é landscape, menos ideal para card portrait,
+  // mas melhor que nada se o IGDB não tiver cover.
+  const steamFirstShot = (game.steamScreenshots && game.steamScreenshots[0]?.src) || null;
+  const coverSrc = game.preferredKeyArt
+    || artworks[0]
+    || steamFirstShot
+    || screenshots[0]
+    || game.steamHeaderImage
+    || game.cover
+    || "";
 
   const ratingVal   = ratingStr(game.rating);
+
+  // ── Etapa 4: Badge de reviews Steam com fallback IGDB ──
+  // Se o jogo tem reviews Steam (enriched + desc), mostra o badge Steam.
+  // Senão (sem Steam, enrich falhou, ou sem reviews), mostra o rating IGDB.
+  const steamBadge = steamReviewBadgeHtml(game);
+  const ratingHtml = steamBadge
+    ? steamBadge
+    : (ratingVal
+        ? `<div class="card-rating">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffb347" stroke="none"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+            ${ratingVal}
+            <span class="rating-count">/10</span>
+          </div>`
+        : "");
 
   // Tags: traduz via glossário (síncrono); se não estiver no glossário,
   // mantém o original (EN) — a tradução via API seria demais para cada render.
@@ -1397,19 +1990,14 @@ function buildCard(game, globalIdx) {
       </a>`
     : "";
 
-  const ratingHtml = ratingVal
-    ? `<div class="card-rating">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="#ffb347" stroke="none"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
-        ${ratingVal}
-        <span class="rating-count">/10</span>
-      </div>`
-    : "";
+  // (ratingHtml já foi definido acima com fallback Steam → IGDB)
 
   // Sumário: mostra o original (EN) imediatamente; a tradução é feita
   // async depois do render (translateCardSummaries).
   const summaryText = game.summary || t("Sem descrição disponível.");
-  // Estado de lançamento traduzido para exibição
-  const releaseStatusDisplay = game.releaseStatus ? t(game.releaseStatus) : "";
+  // Estado de lançamento — Etapa 5: cruza Steam + IGDB via computeReleaseStatus
+  const computedStatus = computeReleaseStatus(game);
+  const releaseStatusDisplay = computedStatus ? t(computedStatus) : "";
 
   return `
     <div class="game-card"
@@ -1456,7 +2044,7 @@ function buildCard(game, globalIdx) {
         </div>
 
         <!-- Release status label — bottom-right of card-top -->
-        ${releaseStatusDisplay ? `<span class="card-release-status card-release-status--${releaseStatusClass(game.releaseStatus)}">${escHtml(releaseStatusDisplay)}</span>` : ""}
+        ${releaseStatusDisplay ? `<span class="card-release-status card-release-status--${releaseStatusClass(computedStatus)}">${escHtml(releaseStatusDisplay)}</span>` : ""}
       </div>
 
       <!-- Expand panel — drops below image on hover -->
@@ -1653,8 +2241,18 @@ function buildModalMedia(game) {
     ageRestricted: isVideoAgeRestricted(vid),
   }));
 
-  // Constrói a lista de screenshots
-  const imageItems = screenshots.map(url => ({ type: "img", src: url }));
+  // ── Screenshots: Steam primeiro (1920×1080), depois IGDB (fallback) ──
+  // Etapa 3: se o jogo foi enriched com dados Steam, as screenshots Steam
+  // (path_full = 1920×1080) têm qualidade superior às do IGDB e aparecem
+  // primeiro na galeria. As do IGDB são mantidas como fallback suplementar
+  // (podem ter ângulos diferentes).
+  const steamImgItems = (game.steamScreenshots || []).map(s => ({
+    type: "img",
+    src: s.src,        // 1920×1080
+    steam: true,       // marca para debugging/estilos se necessário
+  }));
+  const igdbImgItems = screenshots.map(url => ({ type: "img", src: url, steam: false }));
+  const imageItems = [...steamImgItems, ...igdbImgItems];
 
   // ── Ordenação dos vídeos ──
   // Vídeos NÃO age-restricted primeiro (pela ordem original),
@@ -1752,13 +2350,23 @@ function renderModalMedia(idx) {
        </button>` : "";
 
   // ── Renderização do conteúdo de media ──
-  // - Imagem: <img> normal
+  // - Imagem: <img> normal + botão de fullscreen (zoom/pan)
   // - Vídeo embebível: <iframe> do YouTube
   // - Vídeo age-restricted (já confirmado pela cache): placeholder com
   //   thumbnail + botão "Ver no YouTube", em vez de tentar embeber.
   let mediaContent;
+  let fullscreenBtnHtml = "";
   if (item.type === "img") {
     mediaContent = `<img src="${escHtml(item.src)}" alt="${escHtml(t("Screenshot"))}" onload="this.classList.add('loaded')"/>`;
+    // Botão minimalista de fullscreen — só em imagens (vídeos têm o próprio player)
+    fullscreenBtnHtml = `<button class="modal-media-fullscreen-btn" id="modal-media-fullscreen-btn" type="button" aria-label="${escHtml(isPt() ? "Ecrã inteiro" : "Fullscreen")}" title="${escHtml(isPt() ? "Ecrã inteiro" : "Fullscreen")}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3H5a2 2 0 0 0-2 2v3"/>
+        <path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
+        <path d="M3 16v3a2 2 0 0 0 2 2h3"/>
+        <path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+      </svg>
+    </button>`;
   } else if (item.ageRestricted) {
     mediaContent = renderAgeRestrictedPlaceholder(item);
   } else {
@@ -1770,6 +2378,7 @@ function renderModalMedia(idx) {
     ${prevHtml}
     ${nextHtml}
     ${mediaContent}
+    ${fullscreenBtnHtml}
     ${modalMediaList.length > 1 ? `<div class="modal-media-nav">${dotsHtml}</div>` : ""}
   `;
 
@@ -1782,6 +2391,22 @@ function renderModalMedia(idx) {
   const nextBtn = document.getElementById("modal-next");
   if (prevBtn) prevBtn.addEventListener("click", () => renderModalMedia(modalIndex - 1));
   if (nextBtn) nextBtn.addEventListener("click", () => renderModalMedia(modalIndex + 1));
+
+  // ── Fullscreen image viewer (Etapa extra) ──
+  // Botão de fullscreen só existe em imagens (fullscreenBtnHtml não vazio).
+  // Abre um overlay com a imagem em tamanho real, zoom (scroll) e pan (drag).
+  const fsBtn = document.getElementById("modal-media-fullscreen-btn");
+  if (fsBtn && item.type === "img") {
+    fsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openImageFullscreen(item.src);
+    });
+    // Duplo clique na imagem também abre fullscreen (UX comum em galerias)
+    const img = $modalMedia.querySelector("img");
+    if (img) {
+      img.addEventListener("dblclick", () => openImageFullscreen(item.src));
+    }
+  }
 
   scheduleModalAutoAdvance(item);
 }
@@ -2095,13 +2720,11 @@ function renderModalExtraInfo(game) {
     ? game.studios.join(", ") : fallbackDisplay;
   const devStr = (game.developers && game.developers.length)
     ? game.developers.join(", ") : fallbackDisplay;
-  // Data: calculada on-the-fly a partir do timestamp, para usar o locale
-  // do idioma activo (pt-PT ou en-GB).
-  const dateStr = game.firstReleaseTs
-    ? fullReleaseDateStr(game.firstReleaseTs)
-    : (game.releaseDateFull || fallbackDisplay);
-  // Release status: o valor interno é PT (identificador); traduz para exibição
-  const statusStr = game.releaseStatus ? t(game.releaseStatus) : fallbackDisplay;
+  // Data: Etapa 5 — prefere a data da Steam (localizada), fallback IGDB
+  const dateStr = computeReleaseDateFull(game) || fallbackDisplay;
+  // Release status: Etapa 5 — cruza Steam + IGDB via computeReleaseStatus
+  const computedStatus = computeReleaseStatus(game);
+  const statusStr = computedStatus ? t(computedStatus) : fallbackDisplay;
   const engineStr = (game.engines && game.engines.length)
     ? game.engines.join(", ") : fallbackDisplay;
   const languageStrVal = game.language || fallbackDisplay;
@@ -2156,6 +2779,14 @@ function openModal(gameIdx) {
          ${ratingVal} / 10
        </div>` : "";
 
+  // ── Etapa 4: Badge de reviews Steam com fallback IGDB ──
+  // No modal, mostramos AMBOS se possível: badge Steam (reviews reais) +
+  // rating IGDB (nota crítica). Se só houver um, mostra esse.
+  const steamBadgeModal = steamReviewBadgeHtml(game);
+  const modalRatingHtml = steamBadgeModal
+    ? `${steamBadgeModal}${ratingHtml}`
+    : ratingHtml;
+
   const infoSteamHtml = game.steamUrl
     ? `<a class="modal-info-steam" href="${escHtml(game.steamUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
         <img src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://store.steampowered.com/t&size=128" width="11" height="11" alt="Steam" style="object-fit:contain;display:block;"/>
@@ -2201,7 +2832,7 @@ function openModal(gameIdx) {
       </button>
     </div>
     <div class="modal-tags">${themeTagsHtml}${modeTagsHtml}</div>
-    <div class="modal-meta">${ratingHtml}</div>
+    <div class="modal-meta">${modalRatingHtml}</div>
     <p class="modal-desc" id="modal-desc">${escHtml(game.summary || t("Sem descrição disponível."))}</p>
   `;
 
@@ -2996,11 +3627,15 @@ async function addGameForUser(igdbId) {
       return false;
     }
 
-    // 3. Adiciona à colecção "games" (aparece em "all")
+    // 3. Adiciona à colecção "games" (aparece em "all").
+    //    Aproveita o fetch IGDB já feito para extrair e persistir o steamAppId
+    //    — evita um backfill posterior.
+    const steam = steamUrl(igdbGame.websites);
     await addDoc(collection(db, "games"), {
       igdbId,
       addedAt: serverTimestamp(),
       addedBy: currentUser.name,
+      steamAppId: steamAppId(steam) || null,
     });
 
     // 4. Up-vote automático do user que adicionou.
@@ -5294,6 +5929,11 @@ function openDiscoverGame(queueIdx) {
            <svg width="16" height="16" viewBox="0 0 24 24" fill="#ffc86a"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
            ${ratingVal} / 10
          </div>` : "";
+    // ── Etapa 4: Badge Steam + fallback IGDB (igual ao openModal) ──
+    const steamBadgeModal = steamReviewBadgeHtml(game);
+    const modalRatingHtml = steamBadgeModal
+      ? `${steamBadgeModal}${ratingHtml}`
+      : ratingHtml;
     const infoSteamHtml = game.steamUrl
       ? `<a class="modal-info-steam" href="${escHtml(game.steamUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">
           <img src="https://t0.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://store.steampowered.com/t&size=128" width="11" height="11" alt="Steam" style="object-fit:contain;display:block;"/>
@@ -5334,7 +5974,7 @@ function openDiscoverGame(queueIdx) {
         </button>
       </div>
       <div class="modal-tags">${themeTagsHtml}${modeTagsHtml}</div>
-      <div class="modal-meta">${ratingHtml}</div>
+      <div class="modal-meta">${modalRatingHtml}</div>
       <p class="modal-desc" id="modal-desc">${escHtml(game.summary || t("Sem descrição disponível."))}</p>
     `;
     document.getElementById("modal-info-expand-btn")
@@ -5496,7 +6136,9 @@ function buildDiscoverNavCard(game, direction) {
   const screenshots = game.screenshots || [];
   const artworks = game.artworks || [];
   const coverSrc = game.preferredKeyArt || artworks[0] || screenshots[0] || game.cover || "";
-  const releaseStatusDisplay = game.releaseStatus ? t(game.releaseStatus) : "";
+  // Etapa 5: cruza Steam + IGDB para o estado de lançamento
+  const computedStatus = computeReleaseStatus(game);
+  const releaseStatusDisplay = computedStatus ? t(computedStatus) : "";
 
   return `
     <div class="game-card discover-card--${direction}" tabindex="0" role="button"
@@ -5517,7 +6159,7 @@ function buildDiscoverNavCard(game, direction) {
             <span class="card-banner-title">${escHtml(game.name)}</span>
           </span>
         </div>
-        ${releaseStatusDisplay ? `<span class="card-release-status card-release-status--${releaseStatusClass(game.releaseStatus)}">${escHtml(releaseStatusDisplay)}</span>` : ""}
+        ${releaseStatusDisplay ? `<span class="card-release-status card-release-status--${releaseStatusClass(computedStatus)}">${escHtml(releaseStatusDisplay)}</span>` : ""}
       </div>
     </div>
   `;
@@ -5729,6 +6371,38 @@ function init() {
       if (blurLabel) {
         blurLabel.textContent = currentBlur === 0 ? t("Off") : `${currentBlur}px`;
       }
+      // ── Etapa 5: Re-enrich Steam quando o idioma muda ──
+      // A data de lançamento da Steam é localizada (vem em PT ou EN consoante l=).
+      // O cache agora é keyed por appId+lang, pelo que mudar de idioma requer
+      // re-buscar os appdetails no novo idioma. Marcamos os jogos como não-enriched
+      // para que o próximo render os re-busque (com cache hit se já existir no novo lang).
+      // Corre em background — não bloqueia o render imediato (que usa fallback IGDB).
+      setTimeout(() => {
+        let reEnriched = 0;
+        gamesData.forEach(g => {
+          if (g.steamAppId && g.steamEnriched) {
+            // Tenta buscar no novo idioma (cache hit se já existir)
+            fetchSteamImageFields(g.steamAppId).then(fields => {
+              if (fields) {
+                const idx = gamesData.findIndex(x => x.firebaseId === g.firebaseId);
+                if (idx >= 0) {
+                  gamesData[idx] = { ...gamesData[idx], ...fields };
+                  reEnriched++;
+                  // Re-render periódico para mostrar datas atualizadas
+                  renderGameList(gamesData);
+                  if (modalOpen && _modalCurrentGame?.firebaseId === g.firebaseId) {
+                    const gi = gamesData.indexOf(_modalCurrentGame);
+                    if (gi >= 0) {
+                      _modalCurrentGame = gamesData[gi];
+                      renderModalExtraInfo(_modalCurrentGame);
+                    }
+                  }
+                }
+              }
+            }).catch(() => {});
+          }
+        });
+      }, 100);
       // Se o modal estiver aberto, re-renderiza o conteúdo traduzido
       if (modalOpen && _modalCurrentGame) {
         const gameIdx = gamesData.indexOf(_modalCurrentGame);
@@ -5749,4 +6423,207 @@ function init() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  FULLSCREEN IMAGE VIEWER (Etapa extra)
+//
+//  Overlay fullscreen para imagens do modal-media com:
+//   - Zoom com scroll do rato (wheel) — 1x a 5x
+//   - Pan arrastando a imagem (drag) — só quando zoom > 1x
+//   - Reset do zoom com duplo clique
+//   - Fechar com Esc, clique no backdrop, ou botão X
+//
+//  O overlay é criado dinamicamente (1 único elemento reutilizado).
+//  Estilo: fundo preto quase opaco (95%), imagem centrada, botão X
+//  minimalista no canto superior direito.
+// ═══════════════════════════════════════════════════════════════
+
+let _fsOverlay = null;       // elemento do overlay (reutilizado)
+let _fsImg = null;           // elemento <img> dentro do overlay
+let _fsScale = 1;            // zoom atual (1 = sem zoom)
+let _fsMinScale = 1;
+let _fsMaxScale = 5;
+let _fsX = 0;                // offset X do pan (px)
+let _fsY = 0;                // offset Y do pan (px)
+let _fsIsDragging = false;
+let _fsDragStartX = 0;
+let _fsDragStartY = 0;
+let _fsPanStartX = 0;
+let _fsPanStartY = 0;
+
+// Aplica a transformação (scale + translate) à imagem
+function _fsApplyTransform() {
+  if (!_fsImg) return;
+  _fsImg.style.transform = `translate(${_fsX}px, ${_fsY}px) scale(${_fsScale})`;
+  // Cursor: sempre grab (pode arrastar mesmo sem zoom), grabbing durante o drag
+  _fsImg.style.cursor = _fsIsDragging ? "grabbing" : "grab";
+  // Classe .dragging desativa a transition CSS para a imagem seguir o cursor 1:1
+  // (sem efeito "ímã" / lag). Sem isto, a transition de 0.15s faz a imagem
+  // "perseguir" o cursor em vez de o seguir instantaneamente.
+  _fsImg.classList.toggle("dragging", _fsIsDragging);
+}
+
+// Cria o overlay (uma só vez; reutilizado nas aberturas seguintes)
+function _fsCreateOverlay() {
+  if (_fsOverlay) return _fsOverlay;
+  _fsOverlay = document.createElement("div");
+  _fsOverlay.className = "image-fs-overlay";
+  _fsOverlay.setAttribute("role", "dialog");
+  _fsOverlay.setAttribute("aria-modal", "true");
+  // Sem botão X — fecha ao clicar fora da imagem (no backdrop/container)
+  _fsOverlay.innerHTML = `
+    <div class="image-fs-container">
+      <img class="image-fs-img" alt=""/>
+    </div>
+    <div class="image-fs-hint">${escHtml(isPt() ? "Scroll: zoom · Arrastar: mover · Duplo clique: reset · Esc: fechar" : "Scroll: zoom · Drag: pan · Double-click: reset · Esc: close")}</div>
+  `;
+  document.body.appendChild(_fsOverlay);
+
+  _fsImg = _fsOverlay.querySelector(".image-fs-img");
+  const container = _fsOverlay.querySelector(".image-fs-container");
+
+  // ── Close handler: clique no backdrop (container) fecha ──
+  // Clique na imagem NÃO fecha (para permitir drag sem fechar acidentalmente).
+  // Usamos mousedown + mouseup no mesmo sítio para distinguir click de drag.
+  let _downTarget = null;
+  let _downX = 0, _downY = 0;
+  container.addEventListener("mousedown", (e) => {
+    _downTarget = e.target;
+    _downX = e.clientX;
+    _downY = e.clientY;
+  });
+  container.addEventListener("mouseup", (e) => {
+    // Só fecha se: o mousedown foi no backdrop (não na imagem) E o mouseup
+    // está perto do mousedown (não foi um drag acidental).
+    if (_downTarget === container && e.target === container) {
+      const dx = Math.abs(e.clientX - _downX);
+      const dy = Math.abs(e.clientY - _downY);
+      if (dx < 5 && dy < 5) closeImageFullscreen();
+    }
+    _downTarget = null;
+  });
+
+  // ── Zoom com scroll ──
+  // Zoom em direção ao cursor para UX natural.
+  _fsOverlay.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    if (!_fsImg) return;
+    const delta = -e.deltaY;
+    const factor = delta > 0 ? 1.15 : 1 / 1.15;
+    const newScale = Math.max(_fsMinScale, Math.min(_fsMaxScale, _fsScale * factor));
+    if (newScale === _fsScale) return;
+
+    // Zoom em direção ao cursor: ajusta o translate para o ponto sob o cursor
+    // ficar fixo. Usa as coordenadas relativas ao centro da imagem.
+    const rect = _fsImg.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = e.clientX - cx;
+    const dy = e.clientY - cy;
+    const ratio = newScale / _fsScale;
+    _fsX = dx - (dx - _fsX) * ratio;
+    _fsY = dy - (dy - _fsY) * ratio;
+    _fsScale = newScale;
+    _fsApplyTransform();
+  }, { passive: false });
+
+  // ── Pan com drag ──
+  // Permitido SEMPRE (mesmo sem zoom) — o utilizador pode reposicionar a imagem.
+  _fsImg.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    e.stopPropagation(); // não propaga para o container (senão fecha no mouseup)
+    _fsIsDragging = true;
+    _fsDragStartX = e.clientX;
+    _fsDragStartY = e.clientY;
+    _fsPanStartX = _fsX;
+    _fsPanStartY = _fsY;
+    _fsApplyTransform();
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!_fsIsDragging) return;
+    _fsX = _fsPanStartX + (e.clientX - _fsDragStartX);
+    _fsY = _fsPanStartY + (e.clientY - _fsDragStartY);
+    _fsApplyTransform();
+  });
+  window.addEventListener("mouseup", () => {
+    if (!_fsIsDragging) return;
+    _fsIsDragging = false;
+    _fsApplyTransform();
+  });
+
+  // ── Touch support (mobile) ──
+  // Pan com 1 dedo sempre (mesmo sem zoom).
+  let _touchStartX = 0, _touchStartY = 0, _touchPanX = 0, _touchPanY = 0;
+  _fsImg.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    _touchStartX = e.touches[0].clientX;
+    _touchStartY = e.touches[0].clientY;
+    _touchPanX = _fsX;
+    _touchPanY = _fsY;
+  }, { passive: true });
+  _fsImg.addEventListener("touchmove", (e) => {
+    if (e.touches.length !== 1) return;
+    e.preventDefault();
+    _fsX = _touchPanX + (e.touches[0].clientX - _touchStartX);
+    _fsY = _touchPanY + (e.touches[0].clientY - _touchStartY);
+    _fsApplyTransform();
+  }, { passive: false });
+
+  // ── Duplo clique = reset do zoom ──
+  _fsImg.addEventListener("dblclick", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    _fsScale = 1;
+    _fsX = 0;
+    _fsY = 0;
+    _fsApplyTransform();
+  });
+
+  return _fsOverlay;
+}
+
+// Abre o overlay fullscreen com a imagem dada
+function openImageFullscreen(src) {
+  if (!src) return;
+  const overlay = _fsCreateOverlay();
+  // Reset state a cada abertura
+  _fsScale = 1;
+  _fsX = 0;
+  _fsY = 0;
+  _fsIsDragging = false;
+  _fsImg.src = src;
+  _fsImg.style.transform = "";
+  _fsImg.style.cursor = "grab";
+  overlay.classList.add("open");
+  document.body.style.overflow = "hidden";
+
+  // ── Pausar o auto-advance do modal-media ──
+  // Enquanto o fullscreen está aberto, a rotação automática de imagens
+  // fica em pausa (não avança para a próxima screenshot). O utilizador
+  // pode navegar manualmente após fechar o fullscreen.
+  if (modalAutoTimer) {
+    clearTimeout(modalAutoTimer);
+    modalAutoTimer = null;
+  }
+}
+
+// Fecha o overlay fullscreen
+function closeImageFullscreen() {
+  if (!_fsOverlay) return;
+  _fsOverlay.classList.remove("open");
+  document.body.style.overflow = "";
+  // Limpa o src para libertar memória (a imagem volta a carregar se reabrir)
+  if (_fsImg) _fsImg.src = "";
+}
+
+// Listener global para Esc fechar o fullscreen
+document.addEventListener("keydown", (e) => {
+  if (!_fsOverlay || !_fsOverlay.classList.contains("open")) return;
+  if (e.key === "Escape") {
+    e.stopPropagation();
+    closeImageFullscreen();
+  }
+});
+
 init();
+
+
