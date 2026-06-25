@@ -6,15 +6,41 @@
 //  • Expõe window.dismissLoader() e window.forceShowLoader()
 //  • Mostra mensagens rotativas enquanto carrega
 //  • Usa .loader-out (transição opacity) — igual ao comportamento original
+//
+//  Animação: recursive setTimeout (NÃO setInterval) para evitar overlap.
+//  Cada frase: typewriter → hold → próxima frase. Loop smooth sem reinícios.
 // ═══════════════════════════════════════════════════════════════
 
 (function () {
   "use strict";
 
+  // ── Frases rotativas (mais variadas para loads longos) ──
+  // O cycleTimeout (abaixo) ajusta-se ao tamanho de cada frase.
   const PHRASES = {
-    pt: ["A iniciar...", "A carregar jogos...", "A preparar...", "Quase..."],
-    en: ["Starting up...", "Loading games...", "Preparing...", "Almost there..."],
+    pt: [
+      "A iniciar...",
+      "A carregar jogos...",
+      "A preparar a biblioteca...",
+      "A sincronizar com a Steam...",
+      "A otimizar imagens...",
+      "A buscar análises...",
+      "A finalizar...",
+      "Quase lá...",
+    ],
+    en: [
+      "Starting up...",
+      "Loading games...",
+      "Preparing library...",
+      "Syncing with Steam...",
+      "Optimizing images...",
+      "Fetching reviews...",
+      "Finalizing...",
+      "Almost there...",
+    ],
   };
+
+  const TYPE_SPEED_MS = 55;    // velocidade do typewriter (ms por char)
+  const HOLD_AFTER_TYPE_MS = 900; // pausa depois de escrever a frase completa
 
   const loader = document.getElementById("page-loader");
   const loaderText = document.getElementById("loader-text");
@@ -25,14 +51,16 @@
   let phraseIdx = 0;
   let charIdx = 0;
   let typingTimer = null;
-  let phraseTimer = null;
+  let cycleTimer = null;   // setTimeout para a próxima frase (recursive)
+  let animationRunning = false;
 
   function currentPhrases() {
     const lang = (window.i18n && window.i18n.getCurrentLang()) || "pt";
     return PHRASES[lang] || PHRASES.pt;
   }
 
-  function typeText(text) {
+  // Typewriter: escreve a frase char a char, chama onComplete quando terminar.
+  function typeText(text, onComplete) {
     if (!loaderText) return;
     loaderText.textContent = "";
     charIdx = 0;
@@ -43,26 +71,42 @@
         charIdx++;
       } else {
         clearInterval(typingTimer);
+        typingTimer = null;
+        if (typeof onComplete === "function") onComplete();
       }
-    }, 55);
+    }, TYPE_SPEED_MS);
   }
 
-  function nextPhrase() {
+  // Ciclo de animação: escreve frase → hold → próxima frase (recursive).
+  // Usa setTimeout (NÃO setInterval) para que o timing se ajuste ao tamanho
+  // de cada frase e nunca haja overlap entre frases.
+  function runCycle() {
+    if (!animationRunning) return;
     const phrases = currentPhrases();
-    typeText(phrases[phraseIdx % phrases.length]);
+    const phrase = phrases[phraseIdx % phrases.length];
     phraseIdx++;
+
+    typeText(phrase, () => {
+      // Depois de escrever, espera HOLD_AFTER_TYPE_MS e passa à próxima.
+      if (!animationRunning) return;
+      cycleTimer = setTimeout(runCycle, HOLD_AFTER_TYPE_MS);
+    });
   }
 
+  // Inicia a animação. IDEMPOTENTE — pode ser chamada várias vezes sem
+  // criar intervals/timers duplicados (era o bug anterior).
   function startAnimation() {
-    nextPhrase();
-    phraseTimer = setInterval(nextPhrase, 2200);
+    if (animationRunning) return; // já está a correr — não faz nada
+    animationRunning = true;
+    runCycle();
   }
 
   function stopAnimation() {
+    animationRunning = false;
     clearInterval(typingTimer);
-    clearInterval(phraseTimer);
+    clearTimeout(cycleTimer);
     typingTimer = null;
-    phraseTimer = null;
+    cycleTimer = null;
   }
 
   function dismissLoader() {
@@ -89,6 +133,7 @@
       if (loader) {
         loader.classList.remove("loader-out");
       }
+      // startAnimation é idempotente — não cria timers duplicados
       startAnimation();
     } else {
       // Ao parar o force, dispensa normalmente
@@ -100,17 +145,20 @@
   window.dismissLoader = dismissLoader;
   window.forceShowLoader = forceShowLoader;
 
-  // Arranque — inicia animação e sincroniza o blur do loader com o do body
+  // Arranque — inicia animação
   if (loader) {
     startAnimation();
   }
 
-  // Safety net: se algo correr mal e o loader não for dispensado em 15s,
+  // Safety net: se algo correr mal e o loader não for dispensado em 30s,
   // dispensa automaticamente para não bloquear a UI.
+  // NOTA: 30s (era 15s) para dar tempo aos fetches IGDB+Steam completarem.
+  // O forceShowLoader(true) no init() impede o dismiss prematuro; este safety
+  // net só dispara se algo correr muito mal (Firebase em baixo, etc.).
   setTimeout(() => {
     if (!dismissed && !forced) {
-      console.warn("[loader.js] Safety net: a forçar dismiss após 15s.");
+      console.warn("[loader.js] Safety net: a forçar dismiss após 30s.");
       dismissLoader();
     }
-  }, 15000);
+  }, 30000);
 })();
