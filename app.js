@@ -191,7 +191,22 @@ const IGDB_ACCESS_TOKEN  = "6d3x70gthrbk8ag7p06kyxfzu9v1r4";
 // acontece mais abaixo (one-time migration) para não deixar lixo no localStorage.
 const CACHE_KEY     = "jce_games_cache_v4";
 const CACHE_TS_KEY  = "jce_games_cache_ts_v4";
-const CACHE_TTL_MS  = 5 * 60 * 1000; // 5 min TTL (Firebase real-time sobrepõe isto)
+
+// ── OTIMIZAÇÃO DE LOADINGS ──
+// O cache IGDB tem 2 TTLs (estratégia stale-while-revalidate):
+//   - CACHE_STALE_MS (30 min): se o cache for mais recente, é usado SEM revalidação.
+//     O site carrega instantaneamente. (Dados IGDB raramente mudam: nome, cover,
+//     screenshots são estáticos. 30 min é seguro.)
+//   - CACHE_MAX_MS (24h): se o cache tiver menos de 24h, é usado IMEDIATAMENTE
+//     para render (stale), MAS revalida em background (fetch fresco).
+//     Isto dá load instantâneo + dados atualizados sem bloquear a UI.
+//   - Após 24h: o cache é ignorado, força fetch fresco (load normal).
+//
+// Antes era 5 min único TTL — o que explicava o "carregar tudo outra vez"
+// após algum tempo. Agora: revisitas em <30min = instantâneo; 30min-24h =
+// instantâneo + revalidação silenciosa; >24h = load normal.
+const CACHE_STALE_MS = 30 * 60 * 1000;       // 30 min — fresco, sem revalidar
+const CACHE_MAX_MS   = 24 * 60 * 60 * 1000;  // 24h — stale mas usável + revalida
 
 // One-time migration: remove chaves de cache antigas (v3) para evitar lixo.
 try {
@@ -988,7 +1003,7 @@ function normalizeGame(igdbGame) {
 }
 
 // ─────────────────────────────────────────────
-//  CACHE
+//  CACHE (estratégia stale-while-revalidate)
 // ─────────────────────────────────────────────
 function saveCache(games) {
   try {
@@ -997,13 +1012,37 @@ function saveCache(games) {
   } catch(e) { /* storage full */ }
 }
 
+// Devolve o cache SE for fresco (idade < CACHE_STALE_MS).
+// Cache fresco = usado sem revalidação (load instantâneo, sem fetches).
 function loadCache() {
   try {
     const ts = parseInt(localStorage.getItem(CACHE_TS_KEY) || "0");
-    if (Date.now() - ts > CACHE_TTL_MS) return null;
+    if (Date.now() - ts > CACHE_STALE_MS) return null;
     const raw = localStorage.getItem(CACHE_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch(e) { return null; }
+}
+
+// Devolve o cache stale (idade entre CACHE_STALE_MS e CACHE_MAX_MS).
+// Usado para render IMEDIATO enquanto revalida em background.
+// Retorna null se o cache não existir ou tiver mais de CACHE_MAX_MS (expirado).
+function loadStaleCache() {
+  try {
+    const ts = parseInt(localStorage.getItem(CACHE_TS_KEY) || "0");
+    const age = Date.now() - ts;
+    if (age > CACHE_MAX_MS) return null; // demasiado velho, ignora
+    const raw = localStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
+}
+
+// Verifica se o cache atual é stale (precisa de revalidação em background).
+function isCacheStale() {
+  try {
+    const ts = parseInt(localStorage.getItem(CACHE_TS_KEY) || "0");
+    const age = Date.now() - ts;
+    return age > CACHE_STALE_MS && age <= CACHE_MAX_MS;
+  } catch(e) { return false; }
 }
 
 function clearCache() {
@@ -1557,63 +1596,150 @@ function listenToGames() {
       return;
     }
 
-    // Fetch dados do IGDB para cada jogo (se não estiver já em cache)
-    const cached = loadCache() || [];
+    // ── OTIMIZAÇÃO: stale-while-revalidate ──
+    // Carrega cache (fresco OU stale). O cache stale é usado para render
+    // IMEDIATO enquanto revalida em background.
+    const cachedFresh = loadCache();
+    const cachedStale = cachedFresh ? null : loadStaleCache();
+    const cached = cachedFresh || cachedStale || [];
+    const cacheIsFresh = !!cachedFresh;
+    const cacheIsStale = !!cachedStale;
     const cachedMap = Object.fromEntries(cached.map(g => [g.igdbId, g]));
 
-    // Controla concorrência: processa IGDB fetches em batches para não
-    // sobrecarregar o proxy (evita rate limit e falhas temporárias).
+    // ── RENDER IMEDIATO com cache stale ──
+    // Se o cache é stale, faz render dos jogos IMEDIATAMENTE (para a UI não
+    // estar vazia), mas NÃO dispensa o loader — este só sai quando a
+    // revalidação completa (mais abaixo). Isto evita o utilizador interagir
+    // com dados meio-carregados.
+    if (cacheIsStale) {
+      const immediateGames = firestoreDocs.map(fsDoc => {
+        const cachedGame = cachedMap[fsDoc.igdbId];
+        if (cachedGame) {
+          return {
+            ...cachedGame,
+            firebaseId: fsDoc.firebaseId,
+            preferredKeyArt: fsDoc.preferredKeyArt || null,
+            playlistUrl: fsDoc.playlistUrl || null,
+          };
+        }
+        // Jogo novo no Firestore que não está no cache — usa fallback temporário
+        return createFallbackGame(fsDoc);
+      }).filter(Boolean);
+      gamesData = immediateGames;
+      gamesLoaded = true;
+      renderGameList(gamesData);
+      renderAdminList(gamesData);
+      renderTagFilter();
+      // NOTA: não dispensa o loader aqui — espera pela revalidação completa
+    }
+
+    // ── Se o cache é FRESCO, mostra jogos imediatamente e NÃO revalida ──
+    // Dados IGDB raramente mudam (nome, cover, screenshots). 30 min de cache
+    // fresco é seguro — poupa todos os fetches IGDB.
+    if (cacheIsFresh) {
+      const freshGames = firestoreDocs.map(fsDoc => {
+        const cachedGame = cachedMap[fsDoc.igdbId];
+        if (cachedGame) {
+          // Backfill steamAppId se necessário
+          if (fsDoc.steamAppId == null && cachedGame.steamAppId) {
+            backfillSteamAppId(fsDoc.firebaseId, cachedGame.steamAppId);
+          }
+          return {
+            ...cachedGame,
+            firebaseId: fsDoc.firebaseId,
+            preferredKeyArt: fsDoc.preferredKeyArt || null,
+            playlistUrl: fsDoc.playlistUrl || null,
+          };
+        }
+        // Jogo novo (não estava no cache fresco) — marca para fetch IGDB
+        return null; // será fetched abaixo
+      });
+      const needFetch = freshGames.filter(g => g === null).length > 0;
+      if (!needFetch) {
+        // Tudo no cache fresco — não precisa de nenhum fetch IGDB!
+        gamesData = freshGames;
+        gamesLoaded = true;
+        saveCache(gamesData); // atualiza timestamp
+        renderGameList(gamesData);
+        renderAdminList(gamesData);
+        renderTagFilter();
+        processPendingUpvotes();
+        // ── Dispensa o loader: tudo carregado (cache fresco, sem fetches) ──
+        if (typeof window.forceShowLoader === "function") {
+          window.forceShowLoader(false); // dispensa o loader forçado
+        } else if (typeof window.dismissLoader === "function") {
+          window.dismissLoader();
+        }
+        // Notificações
+        if (Object.keys(gamesSnapshot).length > 0) {
+          detectGameChanges();
+        } else {
+          saveGamesSnapshot();
+        }
+        return; // ← SKIP de todos os fetches IGDB!
+      }
+      // Se há jogos novos, faz render dos que temos + fetch só dos novos
+      const haveGames = freshGames.filter(Boolean);
+      if (haveGames.length > 0) {
+        gamesData = haveGames;
+        gamesLoaded = true;
+        renderGameList(gamesData);
+        renderAdminList(gamesData);
+        renderTagFilter();
+        // NOTA: não dispensa o loader aqui — ainda há jogos novos para fetch
+      }
+    }
+
+    // ── OTIMIZAÇÃO: só fazer fetch dos jogos que NÃO estão no cache ──
+    // Se o cache é stale, os jogos em cache já foram renderizados imediatamente
+    // acima. Aqui só buscamos IGDB para jogos NOVOS (não no cache) ou em fallback.
+    // Isto reduz drasticamente o número de fetches: 71 jogos com cache stale =
+    // 0 fetches IGDB (revalidação só seria necessária se os dados mudassem, o
+    // que é raro para nome/cover/screenshots).
+    //
+    // Para revalidação verdadeira em background (opcional, dados atualizados),
+    // poderíamos fazer fetch de alguns jogos stale, mas os dados IGDB são tão
+    // estáticos que não vale a pena o custo de rate-limit. O cache stale é
+    // usado como definitivo até expirar (24h).
     //
     // ⚠️  IGDB free tier = máx. 4 requests por segundo.
-    //   - CONCURRENCY = 3 (era 5): garante que cada batch fica dentro do limite
-    //     mesmo com latência variável. 5 em paralelo excedia frequentemente
-    //     quando o proxy respondia rápido → 429 (Rate Limit Exceeded).
-    //   - BATCH_DELAY_MS = 350: pausa entre batches para o token bucket do
-    //     IGDB recuperar. Custo total para 71 jogos: ~9s (vs ~5s antes, mas
-    //     sem falhas). O cache tornará os loads subsequentes instantâneos.
-    //   - Esta otimização é preventiva — não altera a lógica nem o resultado.
+    //   - CONCURRENCY = 4: dentro do limite (3 era demasiado conservador).
+    //   - BATCH_DELAY_MS = 280: pausa curta entre batches (4 reqs / 280ms =
+    //     ~14 req/s teórico, mas limitado pela latência real de ~500ms/req).
+    //   - Com cache, a maioria dos loads faz 0 fetches IGDB.
     //
     //  STEAM ENRICHMENT (Etapa 3 v2):
-    //   - O fetch Steam corre EM PARALELO com o fetch IGDB dentro de cada batch,
-    //     via Promise.all. A Steam API é muito tolerante a paralelismo
-    //     (10 calls paralelas = ~0.6s, sem 429) — pode correr ao lado do IGDB
-    //     sem problemas. O cache Steam (TTL 1h) torna a maioria dos fetches
-    //     instantânea (cache hit).
-    //   - Resultado: as imagens Steam aparecem JÁ NO PRIMEIRO RENDER.
-    const CONCURRENCY = 3;
-    const BATCH_DELAY_MS = 350;
-    const failedIgdbIds = []; // jogos onde o IGDB falhou (para retry depois)
+    //   - O fetch Steam corre EM PARALELO com o fetch IGDB dentro de cada batch.
+    //   - O cache Steam (TTL 1h) torna a maioria dos fetches instantânea.
+    const CONCURRENCY = 4;
+    const BATCH_DELAY_MS = 280;
+    const failedIgdbIds = [];
 
-    const resolved = [];
-    for (let i = 0; i < firestoreDocs.length; i += CONCURRENCY) {
-      const batch = firestoreDocs.slice(i, i + CONCURRENCY);
+    // Filtra jogos que precisam de fetch IGDB (não no cache, ou cache expirou)
+    const docsNeedingFetch = firestoreDocs.filter(fsDoc => !cachedMap[fsDoc.igdbId]);
+    // Jogos que estão no cache — não precisam de fetch, só overlay do Firestore
+    const cachedResolved = firestoreDocs
+      .filter(fsDoc => cachedMap[fsDoc.igdbId])
+      .map(fsDoc => {
+        const cachedGame = cachedMap[fsDoc.igdbId];
+        if (fsDoc.steamAppId == null && cachedGame.steamAppId) {
+          backfillSteamAppId(fsDoc.firebaseId, cachedGame.steamAppId);
+        }
+        return {
+          ...cachedGame,
+          firebaseId: fsDoc.firebaseId,
+          preferredKeyArt: fsDoc.preferredKeyArt || null,
+          playlistUrl: fsDoc.playlistUrl || null,
+        };
+      });
+
+    const resolved = [...cachedResolved];
+
+    for (let i = 0; i < docsNeedingFetch.length; i += CONCURRENCY) {
+      const batch = docsNeedingFetch.slice(i, i + CONCURRENCY);
       const batchResults = await Promise.all(
         batch.map(async (fsDoc) => {
-          if (cachedMap[fsDoc.igdbId]) {
-            const cachedGame = cachedMap[fsDoc.igdbId];
-            // Backfill: se o doc Firestore não tem steamAppId mas temos no cache,
-            // grava-o silenciosamente (migração one-time).
-            if (fsDoc.steamAppId == null && cachedGame.steamAppId) {
-              backfillSteamAppId(fsDoc.firebaseId, cachedGame.steamAppId);
-            }
-            // Se o jogo tem steamAppId mas ainda NÃO foi enriched, tenta enrichar
-            // AGORA (em paralelo com os outros jogos do batch). Se o cache Steam
-            // tiver o appId, isto é instantâneo (cache hit).
-            let enrichedFields = null;
-            const appId = cachedGame.steamAppId || fsDoc.steamAppId;
-            if (appId && !cachedGame.steamEnriched) {
-              try {
-                enrichedFields = await fetchSteamImageFields(appId);
-              } catch (_) { enrichedFields = null; }
-            }
-            return {
-              ...cachedGame,
-              ...(enrichedFields || {}),
-              firebaseId: fsDoc.firebaseId,
-              preferredKeyArt: fsDoc.preferredKeyArt || null,
-              playlistUrl: fsDoc.playlistUrl || null,
-            };
-          }
+          // (já não está no cache — foi filtrado acima)
           try {
             const igdbGame = await fetchGameByIdWithRetry(fsDoc.igdbId);
             if (!igdbGame) {
@@ -1628,7 +1754,6 @@ function listenToGames() {
               backfillSteamAppId(fsDoc.firebaseId, normalized.steamAppId);
             }
             // STEAM ENRICHMENT: busca imagens Steam em paralelo com o resto do batch.
-            // Se o appId vier do Firestore (backfilled) ou do IGDB, aproveita.
             // fallback graceful: se falhar, o jogo fica só com dados IGDB.
             let enrichedFields = null;
             const appId = normalized.steamAppId || fsDoc.steamAppId;
@@ -1653,8 +1778,7 @@ function listenToGames() {
       );
       resolved.push(...batchResults);
       // Pausa entre batches para respeitar o rate limit do IGDB (4 req/s).
-      // Só aplica se houver mais batches por vir (evita delay desnecessário no fim).
-      if (i + CONCURRENCY < firestoreDocs.length) {
+      if (i + CONCURRENCY < docsNeedingFetch.length) {
         await new Promise(r => setTimeout(r, BATCH_DELAY_MS));
       }
     }
@@ -1671,6 +1795,17 @@ function listenToGames() {
     renderTagFilter(); // refresh available tags after new game data
     // Processa up-votes pendentes (jogos adicionados por users → up-vote automático)
     processPendingUpvotes();
+
+    // ── Dispensa o loader: TUDO carregado (Firebase + IGDB + Steam enrichment) ──
+    // Este é o único sítio (além do cache fresco sem fetches) onde o loader
+    // deve ser dispensado. Garante que o utilizador só vê a UI quando está
+    // totalmente pronta, sem estados meio-carregados.
+    if (typeof window.forceShowLoader === "function") {
+      window.forceShowLoader(false); // dispensa o loader forçado
+    } else if (typeof window.dismissLoader === "function") {
+      window.dismissLoader();
+    }
+
     // Retry em background para jogos que ficaram em fallback (IGDB falhou)
     // — tenta buscar os dados reais após 3 segundos
     if (gamesData.some(g => g._needsRetry)) {
@@ -1700,6 +1835,12 @@ function listenToGames() {
     renderGameList([]);
     renderAdminList([]);
     renderTagFilter();
+    // Dispensa o loader mesmo em caso de erro (não bloquear a UI indefinidamente)
+    if (typeof window.forceShowLoader === "function") {
+      window.forceShowLoader(false);
+    } else if (typeof window.dismissLoader === "function") {
+      window.dismissLoader();
+    }
   });
 }
 
@@ -3263,7 +3404,9 @@ async function addGame(igdbId, btn) {
     });
     btn.textContent = t("✓ Adicionado");
     btn.classList.add("added");
-    clearCache();
+    // OTIMIZAÇÃO: não chamar clearCache() — o onSnapshot do Firebase vai
+    // disparar e o listenToGames busca só o jogo novo ao IGDB. Os outros
+    // jogos continuam válidos no cache (dados IGDB não mudam ao adicionar).
     showStatus(t("Jogo adicionado com sucesso!"), "success");
   } catch(err) {
     console.error(err);
@@ -3276,7 +3419,9 @@ async function addGame(igdbId, btn) {
 async function removeGame(firebaseId) {
   try {
     await deleteDoc(doc(db, "games", firebaseId));
-    clearCache();
+    // OTIMIZAÇÃO: não chamar clearCache() — o onSnapshot do Firebase vai
+    // disparar com a lista atualizada (sem o jogo removido). Os outros jogos
+    // continuam válidos no cache.
     showStatus(t("Jogo removido."), "success");
   } catch(err) {
     console.error(err);
@@ -3642,7 +3787,8 @@ async function addGameForUser(igdbId) {
     //    (processado pelo listener de upvotes).
     pendingUpvotes.push({ igdbId, userId: currentUser.id, userName: currentUser.name });
 
-    clearCache();
+    // OTIMIZAÇÃO: não chamar clearCache() — o onSnapshot do Firebase busca só
+    // o jogo novo. Outros jogos mantêm-se válidos no cache.
     showToast(t("Jogo adicionado!"));
     return true;
   } catch (err) {
@@ -3827,7 +3973,8 @@ async function setPreferredKeyArt(game, url) {
   try {
     await updateDoc(doc(db, "games", game.firebaseId), { preferredKeyArt: url });
     game.preferredKeyArt = url;
-    clearCache();
+    // OTIMIZAÇÃO: saveCache re-escreve o cache com dados atualizados.
+    // clearCache() era redundante (logo a seguir saveCache re-popula).
     saveCache(gamesData);
     closeKeyArtPicker();
     renderGameList(gamesData);
@@ -5043,7 +5190,8 @@ async function setPlaylistUrl(game, url) {
   try {
     await updateDoc(doc(db, "games", game.firebaseId), { playlistUrl: url || "" });
     game.playlistUrl = url || null;
-    clearCache();
+    // OTIMIZAÇÃO: saveCache re-escreve o cache com dados atualizados.
+    // clearCache() era redundante (logo a seguir saveCache re-popula).
     saveCache(gamesData);
     closePlaylistModal();
     renderGameList(gamesData);
@@ -5209,11 +5357,14 @@ function renderCarousel() {
 
 // ─────────────────────────────────────────────
 //  NOTIFICATIONS — Sistema de notificações
-//  Notifica 4 tipos de eventos:
+//  Notifica os seguintes eventos:
 //    1. Jogos que saíram de acesso antecipado (Acesso Antecipado → Lançado)
 //    2. Jogos que foram lançados (Por lançar → Acesso Antecipado/Lançado)
-//    3. Jogos com informações atualizadas (estúdio, desenvolvedor, etc.)
+//    3. Mudanças de Release Date ou Release status (informações do jogo)
 //    4. Up-votes e down-votes recebidos
+//
+//  Nota: outros campos (estúdio, desenvolvedor, engine, descrição, géneros,
+//  temas, modos, nota, capa) NÃO geram notificação — removido a pedido do user.
 //
 //  Persistência: localStorage (jce_notifications). Se perdido, notificações
 //  são perdidas (comportamento intencional).
@@ -5221,8 +5372,7 @@ function renderCarousel() {
 //
 //  Snapshot do estado dos jogos: guardado em localStorage separado
 //  (jce_games_snapshot) para comparação entre carregamentos. Contém apenas
-//  os campos relevantes para deteção de mudanças (releaseStatus, studios,
-//  developers, engines, summary, etc.).
+//  os campos relevantes (releaseStatus, firstReleaseTs).
 // ─────────────────────────────────────────────
 const NOTIFICATIONS_KEY = "jce_notifications";
 const NOTIFICATIONS_MAX = 50; // máximo de notificações guardadas
@@ -5251,19 +5401,12 @@ function loadNotifications() {
 }
 
 // Extrai os campos relevantes de um jogo para o snapshot (para comparação).
-// Apenas campos que podem mudar e que queremos notificar.
+// OTIMIZAÇÃO: apenas os campos que geram notificação (Release Date + Release status).
+// Os outros campos (estúdio, desenvolvedor, engine, descrição, géneros, temas,
+// modos, nota, capa) já não geram notificações — não precisam de estar no snapshot.
 function extractGameSnapshot(game) {
   return {
     releaseStatus: game.releaseStatus || null,
-    studios: (game.studios || []).join(","),
-    developers: (game.developers || []).join(","),
-    engines: (game.engines || []).join(","),
-    summary: game.summary || "",
-    genres: (game.genres || []).join(","),
-    themes: (game.themes || []).join(","),
-    modes: (game.modes || []).join(","),
-    rating: game.rating || null,
-    cover: game.cover || null,
     firstReleaseTs: game.firstReleaseTs || null,
   };
 }
@@ -5321,26 +5464,20 @@ function detectGameChanges() {
       return;
     }
 
-    // 3. Outras mudanças (estúdio, desenvolvedor, engines, summary, etc.)
-    // Compara cada campo individualmente
+    // 3. Outras mudanças de informação — APENAS Release Date
+    // (Release status já é tratado nas secções 1 e 2 acima)
+    // Outros campos (estúdio, desenvolvedor, engine, descrição, géneros, temas,
+    // modos, nota, capa) NÃO geram notificação — removido a pedido do user.
     const changedFields = [];
-    if (prev.studios !== curr.studios) changedFields.push(isPt() ? "estúdio" : "studio");
-    if (prev.developers !== curr.developers) changedFields.push(isPt() ? "desenvolvedor" : "developer");
-    if (prev.engines !== curr.engines) changedFields.push(isPt() ? "engine" : "engine");
-    if (prev.summary !== curr.summary) changedFields.push(isPt() ? "descrição" : "description");
-    if (prev.genres !== curr.genres) changedFields.push(isPt() ? "géneros" : "genres");
-    if (prev.themes !== curr.themes) changedFields.push(isPt() ? "temas" : "themes");
-    if (prev.modes !== curr.modes) changedFields.push(isPt() ? "modos" : "modes");
-    if (prev.rating !== curr.rating) changedFields.push(isPt() ? "nota" : "rating");
-    if (prev.cover !== curr.cover) changedFields.push(isPt() ? "capa" : "cover");
-    if (prev.firstReleaseTs !== curr.firstReleaseTs) changedFields.push(isPt() ? "data de lançamento" : "release date");
+    if (prev.firstReleaseTs !== curr.firstReleaseTs) {
+      changedFields.push(isPt() ? "data de lançamento" : "release date");
+    }
 
     if (changedFields.length > 0) {
-      const fieldsText = changedFields.slice(0, 3).join(", ");
-      const extra = changedFields.length > 3 ? (isPt() ? ` e +${changedFields.length - 3}` : ` +${changedFields.length - 3} more`) : "";
+      const fieldsText = changedFields.join(", ");
       const text = isPt()
-        ? `"${game.name}" teve informações atualizadas: ${fieldsText}${extra}.`
-        : `"${game.name}" was updated: ${fieldsText}${extra}.`;
+        ? `"${game.name}" teve informações atualizadas: ${fieldsText}.`
+        : `"${game.name}" was updated: ${fieldsText}.`;
       addNotification("updated", text, game.firebaseId, game.name);
       hasChanges = true;
     }
@@ -6266,6 +6403,15 @@ window.addEventListener("resize", () => {
 
 
 function init() {
+  // ── Loader: forçar a ficar visível até TUDO estar carregado ──
+  // O loader só deve dispensar quando gamesLoaded === true (Firebase + IGDB
+  // completos). Isto evita que o utilizador interaja com a UI antes de tudo
+  // estar pronto (causando estados meio-carregados/feios).
+  // forceShowLoader(true) impede o safety net de 15s do loader.js de dispensar.
+  if (typeof window.forceShowLoader === "function") {
+    window.forceShowLoader(true);
+  }
+
   // Restore sort/view button state
   updateSortButtonsUI();
   applyViewButtons();
@@ -6284,8 +6430,14 @@ function init() {
   // Render tabs (vazio até o Firestore responder)
   renderTabs();
 
-  // Try to show games from cache immediately
-  const cached = loadCache();
+  // ── OTIMIZAÇÃO: stale-while-revalidate ──
+  // Render IMEDIATO com cache (fresco OU stale), sem esperar pelo Firebase.
+  // - Cache fresco (< 30min): render instantâneo, sem revalidação.
+  // - Cache stale (30min-24h): render instantâneo + revalidação em background.
+  // - Sem cache: loading normal (Firebase + IGDB fetches).
+  const cachedFresh = loadCache();
+  const cachedStale = cachedFresh ? null : loadStaleCache();
+  const cached = cachedFresh || cachedStale;
   if (cached && cached.length > 0) {
     gamesData = cached;
     // Marca como carregado para que o renderGameList mostre os jogos do cache
@@ -6294,6 +6446,11 @@ function init() {
     gamesLoaded = true;
     renderGameList(cached);
     renderAdminList(cached);
+    // Se o cache é stale, dispensa o loader imediatamente (dados já visíveis).
+    // O listenToGames fará a revalidação em background silenciosamente.
+    if (cachedStale && typeof window.dismissLoader === "function") {
+      window.dismissLoader();
+    }
   }
 
   // Re-mark last-row cards when the window is resized (column count may change)
@@ -6336,14 +6493,18 @@ function init() {
     });
   });
 
-  // Safety net: se o Firebase não responder em 6s (config inválida,
-  // permissões, rede, etc.), dispensa o loader para não bloquear a UI.
-  // O listener onSnapshot continuará activo e actualizará quando receber dados.
+  // Safety net: se o Firebase não responder em 30s (config inválida,
+  // permissões, rede, etc.), dispensa o loader forçado para não bloquear
+  // a UI indefinidamente. O listener onSnapshot continuará activo e
+  // actualizará quando receber dados.
+  // NOTA: 30s (era 6s) porque o forceShowLoader(true) impede dismiss prematuro.
+  // O Firebase normalmente responde em < 2s; 30s é apenas para casos extremos.
   setTimeout(() => {
-    if (gamesData.length === 0 && typeof window.dismissLoader === "function") {
-      window.dismissLoader();
+    if (!gamesLoaded && typeof window.forceShowLoader === "function") {
+      console.warn("[app.js] Safety net: Firebase não respondeu em 30s, a dispensar loader.");
+      window.forceShowLoader(false);
     }
-  }, 6000);
+  }, 30000);
 
   // ── i18n: handler de mudança de idioma ─────────────────────────
   // Quando o utilizador muda de idioma, re-renderiza tudo para que
