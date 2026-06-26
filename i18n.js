@@ -136,6 +136,7 @@
     "Desenvolvedor": "Developer",
     "Data de lançamento": "Release date",
     "Estado de lançamento": "Release status",
+    "Último update": "Last update",
     "Engine": "Engine",
     "Linguagem": "Language",
     "Géneros": "Genres",
@@ -486,6 +487,35 @@
   let _translateFailCount = 0;
   let _translateWarned = false;
 
+  // ── Worker proxy para tradução (Cloudflare Worker) ──
+  // Usa o MESMO worker do IGDB/Steam (igdb-proxy.dr-mx-droid.workers.dev).
+  // O worker chama Google Translate server-side → resolve CORS e rate-limit.
+  // Endpoint: GET /translate?text=...&target=pt
+  const TRANSLATE_PROXY = "https://igdb-proxy.dr-mx-droid.workers.dev/translate";
+  let _translateProxyAvailable = true; // se falhar, faz fallback para outros métodos
+
+  // ── Cache persistente em localStorage ──
+  // As traduções são estáticas (um texto traduz-se sempre igual). Persistir
+  // em localStorage evita re-traduzir na próxima visita — poupa chamadas API.
+  const TRANSLATE_STORAGE_KEY = "jce_translations_v1";
+  let _persistentCache = {};
+  try {
+    const raw = localStorage.getItem(TRANSLATE_STORAGE_KEY);
+    if (raw) _persistentCache = JSON.parse(raw);
+  } catch (_) { _persistentCache = {}; }
+
+  function _savePersistentCache() {
+    try {
+      // Limita a 500 entries para não estourar a quota do localStorage
+      const keys = Object.keys(_persistentCache);
+      if (keys.length > 500) {
+        // Remove as 50 mais antigas (não há timestamp, remove do início)
+        for (let i = 0; i < 50; i++) delete _persistentCache[keys[i]];
+      }
+      localStorage.setItem(TRANSLATE_STORAGE_KEY, JSON.stringify(_persistentCache));
+    } catch (_) { /* quota cheia — ignora */ }
+  }
+
   // Queue simples para limitar concorrência de traduções a 3 em paralelo.
   // Evita disparar 40+ requests simultâneos aos proxies CORS (causa 429).
   const _MAX_CONCURRENT_TRANSLATIONS = 3;
@@ -511,6 +541,50 @@
     });
   }
 
+  // ─────────────────────────────────────────────
+  //  CHUNKING — divide textos longos para respeitar o limite de 500 chars
+  //  do MyMemory API. Divide por frases (".", "!", "?") e agrupa em chunks
+  //  menores que maxLen. Cada chunk é traduzido separadamente e os resultados
+  //  são juntados com espaços preservando a pontuação original.
+  // ─────────────────────────────────────────────
+  const MYMEMORY_MAX_CHARS = 450; // margem de segurança sob o limite de 500
+
+  // Divide um texto em chunks de no máximo maxLen chars, cortando em limites
+  // de frases (., !, ?) quando possível. Se uma frase individual exceder
+  // maxLen, corta-a por espaços (palavras).
+  function _splitIntoChunks(text, maxLen) {
+    if (!text || text.length <= maxLen) return [text];
+
+    const chunks = [];
+    // Primeiro divide por fim de frase (preserva o delimitador)
+    const sentences = text.match(/[^.!?]+[.!?]+|\S[^.!?]*$/g) || [text];
+
+    let current = "";
+    for (const sentence of sentences) {
+      if (sentence.length > maxLen) {
+        // Frase demasiado longa — guarda o current e divide a frase por palavras
+        if (current) { chunks.push(current); current = ""; }
+        const words = sentence.split(/(\s+)/);
+        for (const w of words) {
+          if ((current + w).length > maxLen) {
+            if (current) chunks.push(current);
+            current = w;
+          } else {
+            current += w;
+          }
+        }
+      } else if ((current + sentence).length > maxLen) {
+        // Adicionar a frase excederia o limite — guarda current e começa novo
+        if (current) chunks.push(current);
+        current = sentence;
+      } else {
+        current += sentence;
+      }
+    }
+    if (current) chunks.push(current);
+    return chunks.filter(Boolean);
+  }
+
   async function translateText(text, targetLang) {
     if (text == null) return "";
     const trimmed = String(text);
@@ -528,10 +602,33 @@
     const glossary = glossaryLookup(trimmed);
     if (glossary != null) return glossary;
 
-    // 2. Cache
+    // 2. Cache em memória
     const cacheKey = `${lang}::${trimmed}`;
     if (translateCache.has(cacheKey)) {
       return translateCache.get(cacheKey);
+    }
+
+    // 2b. Cache persistente em localStorage (sobrevive entre sessões)
+    // Se já traduzimos este texto antes, devolve imediatamente — zero chamadas API.
+    if (_persistentCache[cacheKey]) {
+      translateCache.set(cacheKey, _persistentCache[cacheKey]); // também em memória
+      return _persistentCache[cacheKey];
+    }
+
+    // ── CHUNKING: se o texto exceder o limite do MyMemory (500 chars),
+    //    divide em chunks e traduz cada um. Isto evita o erro
+    //    "QUERY LENGTH LIMIT EXCEEDED" que aparecia em descrições longas.
+    if (trimmed.length > MYMEMORY_MAX_CHARS) {
+      const chunks = _splitIntoChunks(trimmed, MYMEMORY_MAX_CHARS);
+      if (chunks.length > 1) {
+        // Traduz cada chunk e junta os resultados
+        const translatedChunks = await Promise.all(
+          chunks.map(c => translateText(c, lang))
+        );
+        const joined = translatedChunks.join(" ").replace(/\s+([.,!?;:])/g, "$1");
+        translateCache.set(cacheKey, joined);
+        return joined;
+      }
     }
 
     // Enfileira a tradução para limitar concorrência
@@ -540,18 +637,39 @@
       if (translateCache.has(cacheKey)) {
         return translateCache.get(cacheKey);
       }
+      if (_persistentCache[cacheKey]) {
+        translateCache.set(cacheKey, _persistentCache[cacheKey]);
+        return _persistentCache[cacheKey];
+      }
 
-      // 3. Backend proxy (Next.js API route)
-      //    Só funciona quando o site corre através do Next.js dev server.
-      //    Em GitHub Pages / servidores estáticos devolve 404 — depois da
-      //    primeira falha, skipamos esta etapa para evitar spam de 404.
       let translated = null;
-      if (_apiTranslateAvailable) {
+
+      // 3. Worker proxy (Cloudflare Worker → Google Translate server-side)
+      //    PRIMEIRA OPÇÃO: resolve CORS e rate-limit do MyMemory/proxies públicos.
+      //    O worker tem cache server-side próprio, por isso traduções repetidas
+      //    são instantâneas e não contam para qualquer rate-limit.
+      if (_translateProxyAvailable) {
+        try {
+          const url = `${TRANSLATE_PROXY}?target=${encodeURIComponent(lang)}&text=${encodeURIComponent(trimmed)}`;
+          const res = await fetch(url, { method: "GET" });
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.translatedText) {
+              translated = data.translatedText;
+            }
+          } else if (res.status === 404) {
+            // Worker não tem a rota /translate (precisa de deploy atualizado)
+            _translateProxyAvailable = false;
+          }
+        } catch (_) { /* rede — tenta fallback */ }
+      }
+
+      // 4. Fallback: backend proxy Next.js (só em dev server)
+      if (!translated && _apiTranslateAvailable) {
         try {
           const url = `/api/translate?target=${encodeURIComponent(lang)}&text=${encodeURIComponent(trimmed)}`;
           const res = await fetch(url, { method: "GET" });
           if (res.status === 404) {
-            // Endpoint não existe (GitHub Pages) — desativa para futuras chamadas
             _apiTranslateAvailable = false;
           } else if (res.ok) {
             const data = await res.json();
@@ -559,32 +677,31 @@
               translated = data.translatedText;
             }
           }
-        } catch (_) { /* rede — tenta método directo */ }
+        } catch (_) { /* rede */ }
       }
 
-      // 4. Google Translate via proxy CORS
-      //    Verifica backoff: se um proxy retornou 429 recentemente, espera.
-      if (!translated && Date.now() < _proxyBackoffUntil) {
-        // Em backoff — não tenta proxies CORS, vai direto ao MyMemory
-      } else if (!translated) {
+      // 5. Fallback: Google Translate via proxy CORS público (pouco fiável)
+      if (!translated && Date.now() >= _proxyBackoffUntil) {
         translated = await translateViaCorsProxy(trimmed, lang);
       }
 
-      // 5. MyMemory API directa (CORS-friendly, último recurso)
-      //    Requer idioma de origem; assumimos EN (maioria dos summaries IGDB).
+      // 6. Fallback final: MyMemory API directa
       if (!translated) {
         translated = await translateViaMyMemory(trimmed, lang);
       }
 
       if (translated) {
         translateCache.set(cacheKey, translated);
+        // Persiste em localStorage para próximas visitas (zero chamadas API)
+        _persistentCache[cacheKey] = translated;
+        _savePersistentCache();
         return translated;
       }
 
       // Falhou — agrupa warnings para não spamar a consola
       _translateFailCount++;
       if (!_translateWarned && _translateFailCount >= 3) {
-        console.warn(`[i18n] ${_translateFailCount} traduções falharam (proxys CORS indisponíveis ou rate-limited). As traduções serão tentadas novamente mais tarde.`);
+        console.warn(`[i18n] ${_translateFailCount} traduções falharam (worker/proxies indisponíveis ou rate-limited). As traduções serão tentadas novamente mais tarde.`);
         _translateWarned = true;
       }
       return trimmed;
@@ -632,6 +749,9 @@
 
   // MyMemory API — gratuita e CORS-friendly.
   // Requer langpair=SOURCE|TARGET; assumimos EN como origem.
+  // ⚠️  Limite de 500 chars por pedido. Textos maiores são rejeitados com
+  //     "QUERY LENGTH LIMIT EXCEEDED. MAX ALLOWED QUERY : 500 CHARS".
+  //     O translateText() divide textos longos em chunks antes de chamar isto.
   async function translateViaMyMemory(text, lang) {
     try {
       const url =
@@ -647,7 +767,9 @@
         if (
           t.startsWith("MYMEMORY WARNING") ||
           t === "PLEASE SELECT TWO DISTINCT LANGUAGES" ||
-          t.startsWith("INVALID LANGUAGE PAIR")
+          t.startsWith("INVALID LANGUAGE PAIR") ||
+          t.startsWith("QUERY LENGTH LIMIT") ||  // texto > 500 chars
+          t.includes("MAX ALLOWED QUERY")
         ) {
           return null;
         }
