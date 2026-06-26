@@ -181,6 +181,7 @@ function fuzzyMatchGame(query, game) {
 // Ver cloudflare-worker/worker.js para o código do worker atualizado.
 const IGDB_PROXY  = "https://igdb-proxy.dr-mx-droid.workers.dev";
 const STEAM_PROXY = IGDB_PROXY + "/steam"; // mesmo worker, prefixo /steam
+const STEAM_API_PROXY = IGDB_PROXY + "/steamapi"; // rota para api.steampowered.com (News API)
 
 const IGDB_CLIENT_ID     = "m079gokvukuokos50mw73b4qluwskc";
 const IGDB_ACCESS_TOKEN  = "6d3x70gthrbk8ag7p06kyxfzu9v1r4";
@@ -548,6 +549,134 @@ async function steamReviewSummary(appId) {
   }
 }
 
+// ─────────────────────────────────────────────
+//  STEAM NEWS API — último update (Etapa Updates)
+//
+//  Busca a data do último patch/update do jogo via Steam News API.
+//  Endpoint: ISteamNews/GetNewsForApp/v2/?appid=<ID>&count=1&maxlength=1&tags=patchnotes
+//  - tags=patchnotes filtra só patch notes (ignora anúncios/marketing)
+//  - count=1 + maxlength=1 = payload mínimo (só precisamos da data)
+//  - Não precisa de API key (endpoint público)
+//  - Passa pelo Worker (rota /steamapi/) por causa de CORS
+//
+//  Retorna { date, title, gid, url } ou null se:
+//    - appId invazio
+//    - jogo sem patch notes (newsitems vazio)
+//    - erro de rede/rate-limit (429)
+// ─────────────────────────────────────────────
+async function fetchSteamLastUpdate(appId) {
+  if (!appId) return null;
+
+  // Cache check (1h TTL — os updates não mudam frequentemente)
+  const cached = getCachedSteam(STEAM_UPDATES_CACHE_KEY, appId);
+  if (cached) return cached;
+
+  const url = `${STEAM_API_PROXY}/ISteamNews/GetNewsForApp/v2/?appid=${encodeURIComponent(appId)}&count=1&maxlength=1&tags=patchnotes`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      if (res.status === 429) return null; // rate-limit — fallback IGDB
+      throw new Error(`Steam News HTTP ${res.status}`);
+    }
+    const json = await res.json();
+    const item = json?.appnews?.newsitems?.[0];
+    if (!item || !item.date) return null;
+
+    const result = {
+      date: item.date,                                              // Unix seconds
+      title: item.title || null,
+      gid: item.gid || null,
+      // URL canónico da página de updates do jogo.
+      // Nota: testámos /view/<gid> (deep-link para patch note específico) mas
+      // não funciona para todos os jogos — gids com 19+ dígitos retornam
+      // "Erro: o evento não existe" na Steam. A página geral de updates é
+      // fiável e mostra o patch note mais recente logo no topo.
+      url: `https://store.steampowered.com/news/app/${appId}`,
+    };
+    setCachedSteam(STEAM_UPDATES_CACHE_KEY, appId, result);
+    return result;
+  } catch (e) {
+    console.warn("[fetchSteamLastUpdate] erro para appId", appId, e.message);
+    return null;
+  }
+}
+
+// Devolve info do último update do jogo, preferindo Steam sobre IGDB.
+// Retorna { source: "steam"|"igdb", date, title, url } ou null.
+// - Steam: data do último patch note (fiável) + URL para página de updates
+// - IGDB: updated_at (data de edição do registo — menos fiável, sem URL)
+async function computeLastUpdate(game) {
+  if (!game) return null;
+
+  // 1. Tentar Steam (se jogo tem steamAppId e foi enriched)
+  if (game.steamAppId) {
+    const steamUpdate = await fetchSteamLastUpdate(game.steamAppId);
+    if (steamUpdate) {
+      return {
+        source: "steam",
+        date: steamUpdate.date,        // Unix seconds
+        title: steamUpdate.title,
+        url: steamUpdate.url,
+      };
+    }
+  }
+
+  // 2. Fallback: IGDB updated_at (data de edição do registo)
+  if (game.igdbUpdatedAt) {
+    return {
+      source: "igdb",
+      date: game.igdbUpdatedAt,        // Unix seconds
+      title: null,
+      url: null,                       // IGDB não tem página de updates canónica
+    };
+  }
+
+  return null;
+}
+
+// Versão SÍNCRONA de computeLastUpdate para uso no render (renderModalExtraInfo).
+// Usa os dados já em cache no objeto do jogo (steamLastUpdate populado pelo
+// enrichment). Não faz fetches — se steamLastUpdate for null, usa igdbUpdatedAt.
+function computeLastUpdateSync(game) {
+  if (!game) return null;
+
+  // 1. Steam (se já enriched com steamLastUpdate)
+  if (game.steamLastUpdate) {
+    return {
+      source: "steam",
+      date: game.steamLastUpdate.date,
+      title: game.steamLastUpdate.title,
+      url: game.steamLastUpdate.url,
+    };
+  }
+
+  // 2. Fallback: IGDB updated_at
+  if (game.igdbUpdatedAt) {
+    return {
+      source: "igdb",
+      date: game.igdbUpdatedAt,
+      title: null,
+      url: null,
+    };
+  }
+
+  return null;
+}
+
+// Formata a data do último update para exibição.
+// Usa o locale consoante o idioma activo (pt-PT ou en-GB).
+// Formato: "24 de junho de 2026" (PT) / "24 June 2026" (EN)
+function formatLastUpdateDate(unixTs) {
+  if (!unixTs) return null;
+  try {
+    const locale = isPt() ? "pt-PT" : "en-GB";
+    return new Date(unixTs * 1000).toLocaleDateString(locale, {
+      day: "2-digit", month: "long", year: "numeric"
+    });
+  } catch (e) { return null; }
+}
+
 async function searchGames(term) {
   return igdbRequest("games", `
     search "${term}";
@@ -556,7 +685,7 @@ async function searchGames(term) {
            screenshots.url, videos.video_id, artworks.url,
            websites.url, websites.category,
            involved_companies.company.name, involved_companies.developer, involved_companies.publisher,
-           game_engines.name, status,
+           game_engines.name, status, updated_at,
            language_supports.language.locale, language_supports.language_support_type.name;
     limit 8;
   `);
@@ -569,7 +698,7 @@ async function fetchGameById(igdbId) {
            screenshots.url, videos.video_id, artworks.url,
            websites.url, websites.category,
            involved_companies.company.name, involved_companies.developer, involved_companies.publisher,
-           game_engines.name, status,
+           game_engines.name, status, updated_at,
            language_supports.language.locale, language_supports.language_support_type.name;
     where id = ${igdbId};
     limit 1;
@@ -991,6 +1120,11 @@ function normalizeGame(igdbGame) {
     // e computeReleaseDateFull() para cruzar com os dados IGDB.
     steamReleaseDate:    null,           // string localizada da Steam ("21 Aug, 2012") ou null
     steamComingSoon:     null,           // bool da Steam (true = por lançar) ou null se sem Steam
+    // ── Last update (Etapa Updates) ──
+    // steamLastUpdate: populado async por fetchSteamImageFields() (data do último patch)
+    // igdbUpdatedAt: data de edição do registo IGDB (fallback quando não há Steam)
+    steamLastUpdate:     null,           // { date, title, url } ou null — populado por enrichment
+    igdbUpdatedAt:       igdbGame.updated_at || null, // Unix seconds — fallback IGDB
     year,
     studios:        companyNames(igdbGame.involved_companies, "publisher"),
     developers:     companyNames(igdbGame.involved_companies, "developer"),
@@ -1066,8 +1200,10 @@ function clearCache() {
 // ─────────────────────────────────────────────
 const STEAM_DETAILS_CACHE_KEY  = "jce_steam_details_v1";
 const STEAM_REVIEWS_CACHE_KEY  = "jce_steam_reviews_v1";
+const STEAM_UPDATES_CACHE_KEY  = "jce_steam_updates_v1"; // último update (Etapa Updates)
 const STEAM_DETAILS_TTL_MS     = 60 * 60 * 1000;  // 1 hora
 const STEAM_REVIEWS_TTL_MS     = 10 * 60 * 1000;  // 10 minutos
+const STEAM_UPDATES_TTL_MS     = 60 * 60 * 1000;  // 1 hora (updates não mudam frequentemente)
 
 // Lê o mapa de cache (appId → { data, ts }) do localStorage.
 function _loadSteamCacheMap(key) {
@@ -1091,7 +1227,12 @@ function getCachedSteam(key, appId) {
   const map = _loadSteamCacheMap(key);
   const entry = map[appId];
   if (!entry) return null;
-  const ttl = (key === STEAM_DETAILS_CACHE_KEY) ? STEAM_DETAILS_TTL_MS : STEAM_REVIEWS_TTL_MS;
+  // Seleciona o TTL consoante o tipo de cache
+  let ttl;
+  if (key === STEAM_DETAILS_CACHE_KEY) ttl = STEAM_DETAILS_TTL_MS;
+  else if (key === STEAM_REVIEWS_CACHE_KEY) ttl = STEAM_REVIEWS_TTL_MS;
+  else if (key === STEAM_UPDATES_CACHE_KEY) ttl = STEAM_UPDATES_TTL_MS;
+  else ttl = STEAM_DETAILS_TTL_MS; // default
   if (Date.now() - entry.ts > ttl) return null; // expirado
   return entry.data;
 }
@@ -1109,6 +1250,7 @@ function setCachedSteam(key, appId, data) {
 function clearSteamCache() {
   localStorage.removeItem(STEAM_DETAILS_CACHE_KEY);
   localStorage.removeItem(STEAM_REVIEWS_CACHE_KEY);
+  localStorage.removeItem(STEAM_UPDATES_CACHE_KEY);
 }
 window.clearSteamCache = clearSteamCache;
 
@@ -1410,6 +1552,9 @@ function createFallbackGame(fsDoc) {
     // ── Steam release date (Etapa 5) ──
     steamReleaseDate:    null,
     steamComingSoon:     null,
+    // ── Last update (Etapa Updates) ──
+    steamLastUpdate:     null,
+    igdbUpdatedAt:       null,
     year:           null,
     studios:        [],
     developers:     [],
@@ -1516,13 +1661,15 @@ async function backfillSteamAppId(firebaseId, appId) {
 // Não muta gamesData — o caller faz o merge no objeto normalizado.
 //
 // Etapa 4: também busca o sumário de reviews em paralelo (Promise.all).
-// A review summary é sempre em inglês (totais estáveis, não enviesados por idioma).
+// Etapa Updates: também busca o último update (Steam News API) em paralelo.
 async function fetchSteamImageFields(appId) {
   if (!appId) return null;
-  // Busca appdetails + reviews EM PARALELO (a Steam tolera paralelismo massivo).
-  const [data, reviewSummary] = await Promise.all([
+  // Busca appdetails + reviews + último update EM PARALELO (3 calls simultâneas).
+  // A Steam tolera paralelismo massivo, pelo que 3 calls em paralelo não causam 429.
+  const [data, reviewSummary, lastUpdate] = await Promise.all([
     steamAppDetails(appId),
     steamReviewSummary(appId),
+    fetchSteamLastUpdate(appId),
   ]);
   if (!data) return null; // Steam falhou ou jogo não existe — fallback IGDB
 
@@ -1577,6 +1724,10 @@ async function fetchSteamImageFields(appId) {
     // com o coming_soon no cálculo do estado de lançamento.
     steamReleaseDate:    data.release_date?.date || null,       // ex: "21 Aug, 2012" (localizada)
     steamComingSoon:     data.release_date?.coming_soon === true, // bool
+    // ── Last update (Etapa Updates) ──
+    // steamLastUpdate: { date, title, url } do último patch note da Steam.
+    // null se o jogo não tem patch notes (fallback para igdbUpdatedAt no computeLastUpdate).
+    steamLastUpdate:     lastUpdate || null,
   };
 }
 
@@ -2382,17 +2533,21 @@ function buildModalMedia(game) {
     ageRestricted: isVideoAgeRestricted(vid),
   }));
 
-  // ── Screenshots: Steam primeiro (1920×1080), depois IGDB (fallback) ──
-  // Etapa 3: se o jogo foi enriched com dados Steam, as screenshots Steam
-  // (path_full = 1920×1080) têm qualidade superior às do IGDB e aparecem
-  // primeiro na galeria. As do IGDB são mantidas como fallback suplementar
-  // (podem ter ângulos diferentes).
+  // ── Screenshots: Steam como fonte PRIMÁRIA, IGDB só como fallback ──
+  // Etapa 3 (revisão): se o jogo tem screenshots Steam (enriched), usa APENAS
+  // essas (1920×1080, qualidade superior). As do IGDB só aparecem se a Steam
+  // não estiver disponível (jogo sem Steam, ou enrich falhou).
+  // Isto também acelera o carregamento — menos imagens para carregar no modal.
   const steamImgItems = (game.steamScreenshots || []).map(s => ({
     type: "img",
     src: s.src,        // 1920×1080
     steam: true,       // marca para debugging/estilos se necessário
   }));
-  const igdbImgItems = screenshots.map(url => ({ type: "img", src: url, steam: false }));
+  // Fallback: se há screenshots Steam, NÃO inclui as do IGDB (evita duplicados
+  // e reduz o número de imagens). Só usa IGDB se Steam estiver vazio.
+  const igdbImgItems = steamImgItems.length > 0
+    ? []
+    : screenshots.map(url => ({ type: "img", src: url, steam: false }));
   const imageItems = [...steamImgItems, ...igdbImgItems];
 
   // ── Ordenação dos vídeos ──
@@ -2876,20 +3031,48 @@ function renderModalExtraInfo(game) {
   const genresStr = (game.genres && game.genres.length)
     ? game.genres.map(translateTagSync).join(", ") : fallbackDisplay;
 
+  // ── Último update (Etapa Updates) ──
+  // computeLastUpdate devolve { source, date, title, url } ou null.
+  // Se source === "steam": o valor é clicável (link para a página de updates)
+  //   com seta SVG a apontar ao canto superior direito + hover com zoom.
+  // Se source === "igdb": texto normal, não clicável, sem seta.
+  // Se null: mostra o fallback "Não disponível".
+  const lastUpdate = computeLastUpdateSync(game);
+  let lastUpdateHtml;
+  if (!lastUpdate) {
+    lastUpdateHtml = `<span class="extra-info-value unknown">${escHtml(fallbackDisplay)}</span>`;
+  } else {
+    const dateText = formatLastUpdateDate(lastUpdate.date);
+    if (lastUpdate.source === "steam" && lastUpdate.url) {
+      // Steam: link clicável com seta + hover zoom
+      lastUpdateHtml = `<a class="extra-info-value extra-info-update" href="${escHtml(lastUpdate.url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="${escHtml(lastUpdate.title || '')}">
+        <span class="extra-info-update-text">${escHtml(dateText)}</span>
+        <svg class="extra-info-update-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 17L17 7"/>
+          <path d="M8 7h9v9"/>
+        </svg>
+      </a>`;
+    } else {
+      // IGDB: texto normal, não clicável
+      lastUpdateHtml = `<span class="extra-info-value">${escHtml(dateText)}</span>`;
+    }
+  }
+
   const rows = [
-    [t("Estúdio"), studioStr],
-    [t("Desenvolvedor"), devStr],
-    [t("Data de lançamento"), dateStr],
-    [t("Estado de lançamento"), statusStr],
-    [t("Engine"), engineStr],
-    [t("Linguagem"), languageStrVal],
-    [t("Géneros"), genresStr],
+    [t("Estúdio"), studioStr, false],
+    [t("Desenvolvedor"), devStr, false],
+    [t("Data de lançamento"), dateStr, false],
+    [t("Estado de lançamento"), statusStr, false],
+    [t("Último update"), lastUpdateHtml, true],  // ← HTML raw (não escapar)
+    [t("Engine"), engineStr, false],
+    [t("Linguagem"), languageStrVal, false],
+    [t("Géneros"), genresStr, false],
   ];
 
-  $modalExtraInfo.innerHTML = rows.map(([label, value]) => `
+  $modalExtraInfo.innerHTML = rows.map(([label, value, isHtml]) => `
     <div class="extra-info-row">
       <span class="extra-info-label">${escHtml(label)}</span>
-      <span class="extra-info-value${value === fallbackDisplay ? " unknown" : ""}">${escHtml(value)}</span>
+      ${isHtml ? value : `<span class="extra-info-value${value === fallbackDisplay ? " unknown" : ""}">${escHtml(value)}</span>`}
     </div>
   `).join("");
 }
@@ -5401,13 +5584,18 @@ function loadNotifications() {
 }
 
 // Extrai os campos relevantes de um jogo para o snapshot (para comparação).
-// OTIMIZAÇÃO: apenas os campos que geram notificação (Release Date + Release status).
-// Os outros campos (estúdio, desenvolvedor, engine, descrição, géneros, temas,
-// modos, nota, capa) já não geram notificações — não precisam de estar no snapshot.
+// OTIMIZAÇÃO: apenas os campos que geram notificação:
+//   - Release Date + Release status (Etapa 5)
+//   - Last update Steam + IGDB updated_at (Etapa Updates)
+// Os outros campos (estúdio, desenvolvedor, engine, etc.) não geram notificação.
 function extractGameSnapshot(game) {
   return {
     releaseStatus: game.releaseStatus || null,
     firstReleaseTs: game.firstReleaseTs || null,
+    // Last update: usa o timestamp do último patch (Steam) ou IGDB updated_at.
+    // steamLastUpdate é { date, title, url } — só guardamos o date para comparar.
+    steamLastUpdateTs: game.steamLastUpdate?.date || null,
+    igdbUpdatedAt: game.igdbUpdatedAt || null,
   };
 }
 
@@ -5426,9 +5614,17 @@ function saveGamesSnapshot() {
 
 // Compara o estado atual dos jogos com o snapshot anterior e gera notificações.
 // Tipos de mudanças detetadas:
+//   - "added": jogo novo adicionado à lista
 //   - "released": Acesso Antecipado → Lançado (jogo saiu de early access)
 //   - "early-access": Por lançar → Acesso Antecipado/Lançado (jogo foi lançado)
-//   - "updated": outros campos mudaram (estúdio, desenvolvedor, etc.)
+//   - "patch": último update mudou (jogo recebeu um patch)
+//   - "updated": release date mudou
+//
+// FILTRO PER-USER (Etapa 5):
+//   - Jogos que o utilizador DEU DOWN-VOTE (hiddenGames) → NÃO notifica
+//   - Jogos na tab "Jogados" (isPlayed) → NÃO notifica
+//   - Jogos na tab "Aprovados" → MANTÉM notificações
+//   Isto é per-user porque hiddenGames é local (localStorage por utilizador).
 function detectGameChanges() {
   if (notificationsMuted) return;
 
@@ -5437,8 +5633,29 @@ function detectGameChanges() {
   gamesData.forEach(game => {
     if (!game.firebaseId || game._needsRetry) return; // ignora jogos em fallback
 
+    // ── FILTRO PER-USER (Etapa 5) ──
+    // Não notifica jogos que o utilizador escondeu (down-vote) ou marcou como jogados.
+    // hiddenGames é local (localStorage) — cada utilizador só vê as suas próprias
+    // notificações. Jogos na tab "Aprovados" NÃO são filtrados (continuam a notificar).
+    if (hiddenGames.has(game.firebaseId)) return;
+    if (isPlayed(game.firebaseId)) return;
+
     const prev = gamesSnapshot[game.firebaseId];
-    if (!prev) return; // jogo novo ou sem snapshot anterior — não notifica
+
+    // 0. Jogo NOVO (não estava no snapshot anterior) → notifica "added"
+    // Só notifica jogos novos se o snapshot já existia (não é o primeiro load).
+    // Isto evita spamar notificações no arranque inicial.
+    if (!prev) {
+      // Verifica se o snapshot já tinha jogos (se não, é primeiro load — skip)
+      if (Object.keys(gamesSnapshot).length > 0) {
+        const text = isPt()
+          ? `"${game.name}" foi adicionado à lista!`
+          : `"${game.name}" was added to the list!`;
+        addNotification("added", text, game.firebaseId, game.name);
+        hasChanges = true;
+      }
+      return; // jogo novo não tem prev para comparar — não cai nas secções abaixo
+    }
 
     const curr = extractGameSnapshot(game);
     const prevStatus = prev.releaseStatus;
@@ -5464,7 +5681,26 @@ function detectGameChanges() {
       return;
     }
 
-    // 3. Outras mudanças de informação — APENAS Release Date
+    // 3. Último update mudou (Etapa Updates)
+    // Deteta se a data do último patch (Steam) ou updated_at (IGDB) mudou.
+    // PROTEÇÃO contra notificações espúrias: só notifica se o valor ANTERIOR
+    // não era null (primeiro enrichment não gera notificação — evita spamar
+    // todos os jogos quando o steamLastUpdate é populado pela primeira vez).
+    const prevUpdateTs = prev.steamLastUpdateTs;
+    const currUpdateTs = curr.steamLastUpdateTs;
+    if (prevUpdateTs !== null && currUpdateTs !== null && prevUpdateTs !== currUpdateTs) {
+      // A data do último update mudou — notifica!
+      const prevDate = formatLastUpdateDate(prevUpdateTs);
+      const currDate = formatLastUpdateDate(currUpdateTs);
+      const text = isPt()
+        ? `"${game.name}" recebeu um update! (${currDate})`
+        : `"${game.name}" received an update! (${currDate})`;
+      addNotification("patch", text, game.firebaseId, game.name);
+      hasChanges = true;
+      return; // já notificámos o update — não cai na secção 4
+    }
+
+    // 4. Outras mudanças de informação — APENAS Release Date
     // (Release status já é tratado nas secções 1 e 2 acima)
     // Outros campos (estúdio, desenvolvedor, engine, descrição, géneros, temas,
     // modos, nota, capa) NÃO geram notificação — removido a pedido do user.
@@ -5567,7 +5803,7 @@ function saveNotifications() {
 }
 
 // Adiciona uma notificação (se não estiver mutado)
-// type: "released" | "early-access" | "updated" | "upvote" | "downvote"
+// type: "added" | "released" | "early-access" | "updated" | "patch" | "upvote" | "downvote"
 // text: mensagem a mostrar
 // gameId: firebaseId do jogo (para abrir o modal ao clicar)
 // gameName: nome do jogo (para mostrar na notificação)
@@ -5848,6 +6084,11 @@ function initNotifications() {
   const $wrap = document.getElementById("notifications-wrap");
   const $trigger = document.getElementById("notifications-trigger");
 
+  // Scroll trapping: impede que o scroll propague para a página quando
+  // se chega ao limite da lista de notificações.
+  const $menu = document.getElementById("notifications-menu");
+  if ($menu) trapScroll($menu);
+
   if ($trigger) {
     $trigger.addEventListener("click", e => {
       e.stopPropagation();
@@ -5935,6 +6176,11 @@ function initSettings() {
     });
   }
 
+  // Scroll trapping: impede que o scroll propague para a página quando
+  // se chega ao limite do menu de definições.
+  const $settingsMenu = document.getElementById("settings-menu");
+  if ($settingsMenu) trapScroll($settingsMenu);
+
   // 5. Ligar checkboxes de opções
   const showHiddenChk = document.getElementById("option-show-hidden");
   if (showHiddenChk) {
@@ -5974,6 +6220,40 @@ function initSettings() {
 //  Fecha todos os menus dropdown exceto o que está a ser aberto.
 //  Menus: tabs-dropdown, tag-filter, notifications-wrap, settings-wrap
 // ─────────────────────────────────────────────
+
+// Impede o "scroll chaining": quando o utilizador faz scroll dentro de um
+// elemento scrollable (menu, dropdown, lista) e chega ao limite (topo ou
+// fundo), o scroll NÃO propaga para a página. Isto evita que a página role
+// quando se está a navegar num menu.
+// Reutilizado por: notifications-menu, settings-menu (e outros no futuro).
+function trapScroll($el) {
+  if (!$el) return;
+  $el.addEventListener("wheel", (e) => {
+    // Só contém o scroll se o elemento tiver conteúdo scrollable
+    const hasScrollableContent = $el.scrollHeight > $el.clientHeight;
+    if (!hasScrollableContent) {
+      // Sem scroll possível — bloqueia para não propagar à página
+      e.preventDefault();
+      return;
+    }
+    const scrollTop = $el.scrollTop;
+    const maxScroll = $el.scrollHeight - $el.clientHeight;
+    const scrollingUp = e.deltaY < 0;
+    const scrollingDown = e.deltaY > 0;
+    // No limite superior + scroll para cima → bloqueia
+    if (scrollingUp && scrollTop <= 0) {
+      e.preventDefault();
+      return;
+    }
+    // No limite inferior + scroll para baixo → bloqueia
+    if (scrollingDown && scrollTop >= maxScroll) {
+      e.preventDefault();
+      return;
+    }
+    // Caso contrário: deixa o scroll ocorrer dentro do elemento
+  }, { passive: false });
+}
+
 function closeAllDropdowns(exceptId) {
   const dropdownIds = ["tabs-dropdown", "tag-filter", "notifications-wrap", "settings-wrap"];
   dropdownIds.forEach(id => {
