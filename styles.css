@@ -1129,6 +1129,51 @@ body.editor-mode .card-played-btn {
   color: var(--muted2);
 }
 
+/* ── Último update (Etapa Updates) ──
+   Link clicável para a página de updates da Steam.
+   - Sem cor de link (herda var(--text) como os outros valores)
+   - Seta SVG minimalista que escala com o texto
+   - Hover: pequeno zoom (scale 1.03) + seta mais visível
+   - Não tem sublinhado (text-decoration: none) para manter o estilo limpo */
+.extra-info-update {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.15s ease, color 0.15s ease;
+  transform-origin: left center;
+}
+
+.extra-info-update:hover {
+  transform: scale(1.03);
+  color: #fff;
+}
+
+.extra-info-update-text {
+  /* O texto herda tudo do parent */
+}
+
+/* Seta SVG — tamanho relativo ao texto (1em), cor herda do parent */
+.extra-info-update-arrow {
+  width: 0.9em;
+  height: 0.9em;
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  transform-origin: center;
+}
+
+.extra-info-update:hover .extra-info-update-arrow {
+  opacity: 1;
+  transform: translate(1px, -1px); /* seta move-se ligeiramente ao hover */
+}
+
 /* Painéis laterais — aparecem quando há espaço físico suficiente no viewport
    para o modal (1100px) + banner (200px) + extra-info (240px) + margens (56px) + padding (48px)
    ≈ 1644px. Com o rem fluido, o conteúdo dentro dos painéis cresce junto. */
@@ -2559,6 +2604,8 @@ body.editor-mode .tabs-dropdown-item .tab-delete { display: flex; }
 .notification-type-dot.type-released { background: var(--green); color: var(--green); }
 .notification-type-dot.type-early-access { background: var(--blue); color: var(--blue); }
 .notification-type-dot.type-updated { background: var(--text); color: var(--text); }
+.notification-type-dot.type-added { background: var(--amber); color: var(--amber); }
+.notification-type-dot.type-patch { background: var(--orange); color: var(--orange); }
 .notification-type-dot.type-upvote { background: var(--green); color: var(--green); }
 .notification-type-dot.type-downvote { background: var(--red); color: var(--red); }
 
