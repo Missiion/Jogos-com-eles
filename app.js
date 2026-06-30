@@ -357,6 +357,11 @@ function loadPreferences() {
   try {
     youtubeAutoplay = localStorage.getItem("jce_yt_autoplay") !== "0";
   } catch (_) {}
+  // BUG #5 fix: carregar notificationsMuted aqui (em vez de em loadNotifications)
+  // porque initSettings() corre ANTES de initNotifications() e precisa do valor.
+  try {
+    notificationsMuted = localStorage.getItem("jce_mute_notifications") === "1";
+  } catch (_) {}
 }
 
 // ─────────────────────────────────────────────
@@ -5599,15 +5604,29 @@ function extractGameSnapshot(game) {
   };
 }
 
-// Guarda o snapshot atual de todos os jogos no localStorage
+// Guarda o snapshot atual de todos os jogos no localStorage E em memória.
+// CRÍTICO: sem atualizar gamesSnapshot em memória, detectGameChanges compara
+// sempre contra um snapshot stale → notificações perdidas ou duplicadas.
 function saveGamesSnapshot() {
   try {
     const snap = {};
     gamesData.forEach(g => {
-      if (g.firebaseId && !g._needsRetry) {
+      if (g.firebaseId) {
+        // BUG #4 fix: NÃO salvar no snapshot jogos que o utilizador escondeu
+        // (hiddenGames) ou marcou como jogados (isPlayed). Se salvarmos, quando
+        // o utilizador un-hide/un-play, prev===curr e a notificação é perdida
+        // permanentemente. Ao não salvar, o snapshot retém o estado ANTIGO
+        // e a mudança será detetada quando o jogo voltar a ser visível.
+        if (hiddenGames.has(g.firebaseId)) return;
+        if (isPlayed(g.firebaseId)) return;
+        // BUG #7 fix: salvar TAMBÉM jogos em fallback (_needsRetry). Sem isto,
+        // quando um jogo fallback recupera (retryFailedGames), o snapshot não
+        // o tem e detectGameChanges gera uma falsa notificação "added".
+        // O fallback já tem releaseStatus/firstReleaseTs/etc (de createFallbackGame).
         snap[g.firebaseId] = extractGameSnapshot(g);
       }
     });
+    gamesSnapshot = snap; // ← CRÍTICO: atualiza em memória (BUG #1 fix)
     localStorage.setItem(GAMES_SNAPSHOT_KEY, JSON.stringify(snap));
   } catch (_) {}
 }
@@ -5753,13 +5772,10 @@ function detectVoteNotifications(newVotes, voteType) {
     const game = gamesData.find(g => g.firebaseId === gameId);
     if (!game) return;
 
-    // Verifica se o jogo foi adicionado pelo utilizador atual
-    // (usando Firebase docs que têm addedBy; gamesData não tem este campo,
-    // mas podemos verificar via Firestore docs originais — não disponível aqui.
-    // Alternativa: notificar sobre TODOS os votos em qualquer jogo,
-    // mas apenas se o voter não for o próprio utilizador.
-    // Como não temos addedBy em gamesData, vamos notificar sobre todos
-    // os votos externos — o utilizador pode clicar para ver o jogo.)
+    // BUG #6 fix: aplicar filtro per-user (igual a detectGameChanges)
+    // Não notificar sobre votos em jogos que o utilizador escondeu ou jogou.
+    if (hiddenGames.has(gameId)) return;
+    if (isPlayed(gameId)) return;
 
     const count = votes.length;
     const voterNames = votes.map(v => v.userName).filter(Boolean);
@@ -5809,13 +5825,26 @@ function saveNotifications() {
 // gameName: nome do jogo (para mostrar na notificação)
 function addNotification(type, text, gameId, gameName) {
   if (notificationsMuted) return;
+
+  // BUG #8 fix: dedup — se já existe uma notificação com o mesmo type+gameId
+  // nos últimos 5 segundos, não adiciona duplicada. Previne spam quando
+  // detectGameChanges é chamado múltiplas vezes rapidamente.
+  const now = Date.now();
+  const DEDUP_WINDOW_MS = 5000;
+  const isDuplicate = notifications.some(n =>
+    n.type === type &&
+    n.gameId === gameId &&
+    (now - n.timestamp) < DEDUP_WINDOW_MS
+  );
+  if (isDuplicate) return;
+
   const notif = {
-    id: Date.now() + "-" + Math.random().toString(36).substr(2, 9),
+    id: now + "-" + Math.random().toString(36).substr(2, 9),
     type,
     text,
     gameId: gameId || null,
     gameName: gameName || null,
-    timestamp: Date.now(),
+    timestamp: now,
     read: false,
   };
   notifications.unshift(notif); // adiciona no início (mais recente primeiro)
@@ -6086,8 +6115,11 @@ function initNotifications() {
 
   // Scroll trapping: impede que o scroll propague para a página quando
   // se chega ao limite da lista de notificações.
-  const $menu = document.getElementById("notifications-menu");
-  if ($menu) trapScroll($menu);
+  // NOTA: aplicado à .notifications-list (que tem overflow-y:auto), NÃO ao
+  // .notifications-menu (que tem overflow:hidden). Aplicar ao menu quebrava
+  // o scroll para cima porque menu.scrollTop é sempre 0.
+  const $notifList = document.getElementById("notifications-list");
+  if ($notifList) trapScroll($notifList);
 
   if ($trigger) {
     $trigger.addEventListener("click", e => {
@@ -6097,7 +6129,13 @@ function initNotifications() {
       if (isOpen) {
         closeAllDropdowns("notifications-wrap");
         // Marca como lidas após abrir (com pequeno delay para o utilizador ver o badge)
-        setTimeout(() => markAllNotificationsRead(), 1500);
+        // BUG #11 fix: só marca se o menu ainda estiver aberto (utilizador pode
+        // ter fechado entretanto)
+        setTimeout(() => {
+          if ($wrap.classList.contains("open")) {
+            markAllNotificationsRead();
+          }
+        }, 1500);
       }
     });
   }
