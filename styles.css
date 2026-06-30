@@ -2526,6 +2526,8 @@ body.editor-mode .tabs-dropdown-item .tab-delete { display: flex; }
 .notifications-list {
   overflow-y: auto;
   flex: 1;
+  min-height: 0; /* CRÍTICO: sem isto, o flexbox não permite que a lista encolha
+                    para menos que o conteúdo, bloqueando o scroll (BUG #3 fix) */
   padding: 6px;
   scrollbar-width: thin;
   scrollbar-color: var(--surface3) transparent;
