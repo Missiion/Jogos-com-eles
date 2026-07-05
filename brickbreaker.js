@@ -34,12 +34,15 @@
   const PADDLE_SPEED = 8;
 
   const BALL_R = 7;
-  // Velocidade progressiva (Etapa 4 — aumentada novamente):
-  //   Nível 1: 7.0 → Nível 2: 7.65 → Nível 3: 8.3 → Nível 4: 8.95 → Nível 5: 9.6
-  //   A partir do nível 5: fica em 11.04 (BALL_SPEED_MAX) — equilibrado, controlável.
-  const BALL_SPEED_START = 8.05;      // +15% (era 7.0)
-  const BALL_SPEED_MAX = 11.04;        // +15% (era 9.6), atingida no nível 5 (8.05 + 0.75×4)
-  const BALL_SPEED_INC = 0.75;         // +15% (era 0.65)
+  // Velocidade progressiva:
+  //   Nível 1: 8.05 → Nível 2: 8.80 → Nível 3: 9.55 → Nível 4: 10.30 → Nível 5: 11.05
+  //   Nível 6: 11.80 → Nível 7: 12.55 (cap)
+  //   Antes o cap era no nível 5 (11.04). Agora continua até ao nível 7 (12.55)
+  //   para deixar o jogo um pouco mais difícil. As velocidades dos níveis 1-5
+  //   não mudaram — apenas o cap foi aumentado.
+  const BALL_SPEED_START = 8.05;      // nível 1
+  const BALL_SPEED_MAX = 12.55;        // cap no nível 7 (8.05 + 0.75×6)
+  const BALL_SPEED_INC = 0.75;         // por nível
 
   const BRICK_COLS = 11;
   const BRICK_ROWS = 7;
@@ -53,25 +56,21 @@
   const LIVES = 3;
 
   // ── Power-ups ──
-  // Pesos determinam a probabilidade relativa de cada power-up cair.
-  // POWERUP_WEIGHT_TOTAL = soma de todos os pesos (calculado abaixo).
-  // O power-up "extra" (vida extra) tem peso 3 num total de 103 → ~2.9% ≈ 3%.
-  // Como POWERUP_DROP_CHANCE = 0.10 (10% dos tijolos dropam), a probabilidade
-  // real de um tijolo dar vida extra é 10% × 3% ≈ 0.3% por tijolo.
+  // Pesos = percentagem de probabilidade (total = 100).
+  // POWERUP_DROP_CHANCE = 0.10 (10% dos tijolos dropam um power-up).
   const POWERUP_DROP_CHANCE = 0.10;
   const POWERUP_FALL_SPEED = 2.3;
   const POWERUP_RADIUS = 11;
-  // Etapa fix: substituí o power-up "Sticky" (iman, bola cola no paddle) por
-  // "Shield" — barra protetora que aparece na parte inferior do ecrã e rebate
-  // as bolas para cima. Mais divertido e útil que o iman.
   const POWERUPS = {
-    wide:   { color: "#3fb8d4", label: "W", name: "Wide Paddle", duration: 12000, weight: 25 },
-    slow:   { color: "#5a78e8", label: "S", name: "Slow Ball",   duration: 7000,  weight: 20 },
-    shield: { color: "#ff8c1a", label: "D", name: "Shield",      duration: 10000, weight: 18 },  // D = Defesa
-    laser:  { color: "#ff4040", label: "L", name: "Laser",       duration: 10000, weight: 15 },
-    through:{ color: "#b06be0", label: "T", name: "Pierce",      duration: 5000,  weight: 12 },
-    multi:  { color: "#4dd964", label: "M", name: "Multi-Ball",  duration: 0,     weight: 10 },
-    extra:  { color: "#ff5e7a", label: "+", name: "Extra Life",  duration: 0,     weight: 3 },  // ~3% de probabilidade
+    wide:    { color: "#3fb8d4", label: "W", name: "Wide Paddle", duration: 12000, weight: 18 },
+    slow:    { color: "#5a78e8", label: "S", name: "Slow Ball",   duration: 7000,  weight: 14 },
+    shield:  { color: "#ff8c1a", label: "D", name: "Shield",      duration: 10000, weight: 13 },
+    laser:   { color: "#ff4040", label: "L", name: "Laser",       duration: 10000, weight: 11 },
+    through: { color: "#b06be0", label: "T", name: "Pierce",      duration: 5000,  weight: 9 },
+    multi:   { color: "#4dd964", label: "M", name: "Multi-Ball",  duration: 0,     weight: 10 },
+    extra:   { color: "#ff5e7a", label: "+", name: "Extra Life",  duration: 0,     weight: 10 },  // 10%
+    grenade: { color: "#ffaa00", label: "G", name: "Grenade",     duration: 0,     weight: 10 },  // 10% — explode 5 tijolos por bola
+    nuke:    { color: "#ff0040", label: "N", name: "Nuke",        duration: 0,     weight: 5 },   // 5% — limpa o nível
   };
   // Posição Y do shield (barra protetora) — logo acima do fundo do ecrã.
   const SHIELD_Y = H - 8;
@@ -81,6 +80,13 @@
   const LASER_SPEED = 9;
   const LASER_COOLDOWN_MS = 600;  // auto-fire ritmo balanceado (era 220 manual)
   const LASER_W = 2, LASER_H = 12;
+
+  // ── Combo system ──
+  // Se a bola destrói tijolos em rápida sucessão (dentro de COMBO_WINDOW_MS),
+  // o combo incrementa. Pontos multiplicam até x5 (cap). O combo continua
+  // infinitamente após x5, mas o multiplicador fica em x5.
+  const COMBO_WINDOW_MS = 600;   // janela de tempo para continuar o combo
+  const COMBO_MAX_MULT = 5;      // multiplicador máximo (x5)
 
   // Moedas = Math.floor(score / COIN_DIVISOR).
   // Aumentado de 25 → 50 (2x mais difícil ganhar moedas).
@@ -154,6 +160,14 @@
       buy:     function () { [659, 784, 988, 1318].forEach(function (f, i) { setTimeout(function () { tone(f, 0.09, "square", 0.13); }, i * 55); }); },
       equip:   function () { tone(784, 0.06, "square", 0.12, 1046); },
       deny:    function () { tone(200, 0.15, "sawtooth", 0.12, 120); },
+      // Combo sound: escala com o multiplicador (mais agudo + harmonicos em combos altas)
+      combo:   function (mult) {
+        const base = 440 + mult * 80;  // frequência base sobe com o multiplicador
+        tone(base, 0.06, "square", 0.10);
+        if (mult >= 2) setTimeout(function () { tone(base * 1.5, 0.05, "square", 0.08); }, 30);
+        if (mult >= 4) setTimeout(function () { tone(base * 2, 0.04, "square", 0.06); }, 60);
+      },
+      explosion: function () { noise(0.15, 0.18, 300); tone(80, 0.12, "sawtooth", 0.15); },
       prime:  function () { ensure(); resume(); },
       setLocalMuted: function (m) { localMuted = !!m; try { localStorage.setItem("jce_bb_sound", m ? "0" : "1"); } catch (_) {} },
       isLocalMuted:  function () { return localMuted; }
@@ -161,49 +175,119 @@
   })();
 
   // ─────────────────────────────────────────────
-  //  LAYOUTS — 11 organizações (Etapa fix: +3 novos)
-  //  Garantia: o próximo layout é sempre diferente do atual (ver startGame/level advance).
+  //  LAYOUTS PROCEDURAIS — gera padrões sempre diferentes
+  //  Em vez de layouts pre-feitos, cada nível gera um padrão único combinando
+  //  vários algoritmos com parâmetros aleatórios. Todos os padrões são
+  //  simétricos (left-right) para apelo visual.
   // ─────────────────────────────────────────────
-  const LAYOUTS = [
-    // 1: Full rectangle (todos os tijolos)
-    function () { const g = []; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push(1); g.push(row); } return g; },
-    // 2: Triangle (pirâmide — base larga no topo, ponto no fundo)
-    function () { const g = []; const mid = (BRICK_COLS - 1) / 2; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push(Math.abs(c - mid) <= (BRICK_ROWS - 1 - r) ? 1 : 0); g.push(row); } return g; },
-    // 3: Diamond (losango — distância Manhattan ao centro)
-    function () { const g = []; const cx = (BRICK_COLS - 1) / 2, cy = (BRICK_ROWS - 1) / 2, rad = Math.max(cx, cy); for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push((Math.abs(c - cx) + Math.abs(r - cy)) <= rad ? 1 : 0); g.push(row); } return g; },
-    // 4: Checkerboard (xadrez)
-    function () { const g = []; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push((r + c) % 2 ? 1 : 0); g.push(row); } return g; },
-    // 5: Vertical stripes (colunas alternadas)
-    function () { const g = []; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push(c % 2 ? 1 : 0); g.push(row); } return g; },
-    // 6: Hollow border (só a borda)
-    function () { const g = []; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push((r === 0 || r === BRICK_ROWS - 1 || c === 0 || c === BRICK_COLS - 1) ? 1 : 0); g.push(row); } return g; },
-    // 7: X (duas diagonais cruzadas)
-    function () { const g = []; const mid = (BRICK_COLS - 1) / 2; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push(Math.abs(c - mid) === r ? 1 : 0); g.push(row); } return g; },
-    // 8: Plus / Cross (cruz espessa)
-    function () { const g = []; const mid = (BRICK_COLS - 1) / 2, cmid = Math.floor(BRICK_ROWS / 2); for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push((c === Math.floor(mid) || c === Math.ceil(mid) || r === cmid) ? 1 : 0); g.push(row); } return g; },
-    // 9: Arrow down (seta a apontar para baixo — V invertido no topo + base larga)
-    function () { const g = []; const mid = (BRICK_COLS - 1) / 2; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) { const inV = Math.abs(c - mid) <= r; const inBase = r >= BRICK_ROWS - 2; row.push((inV || inBase) ? 1 : 0); } g.push(row); } return g; },
-    // 10: Zigzag (linhas alternadas deslocadas — ondas horizontais)
-    function () { const g = []; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) { const offset = (r % 2) * 2; row.push((c + offset) % 4 < 2 ? 1 : 0); } g.push(row); } return g; },
-    // 11: Double diagonal (duas diagonais paralelas — como // espesso)
-    function () { const g = []; const mid = (BRICK_COLS - 1) / 2; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) { const d1 = Math.abs((c - mid) - r) <= 1; const d2 = Math.abs((c - mid) - (BRICK_ROWS - 1 - r)) <= 1; row.push((d1 || d2) ? 1 : 0); } g.push(row); } return g; },
-  ];
+  function generateLayout() {
+    const mid = (BRICK_COLS - 1) / 2;
+    const g = [];
+    for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push(0); g.push(row); }
+
+    // Escolhe aleatoriamente um dos vários algoritmos de pattern
+    const algo = Math.floor(Math.random() * 8);
+    switch (algo) {
+      case 0: {
+        // Triângulo/V invertido com largura aleatória
+        const width = 0.3 + Math.random() * 0.5;
+        for (let r = 0; r < BRICK_ROWS; r++) {
+          const w = (BRICK_ROWS - r) * width;
+          for (let c = 0; c < BRICK_COLS; c++) if (Math.abs(c - mid) <= w) g[r][c] = 1;
+        }
+        break;
+      }
+      case 1: {
+        // Losango/diamante com raio aleatório
+        const cx = mid, cy = (BRICK_ROWS - 1) / 2;
+        const rad = 2 + Math.random() * (Math.max(cx, cy) + 1);
+        for (let r = 0; r < BRICK_ROWS; r++)
+          for (let c = 0; c < BRICK_COLS; c++)
+            if ((Math.abs(c - cx) + Math.abs(r - cy)) <= rad) g[r][c] = 1;
+        break;
+      }
+      case 2: {
+        // Colunas com densidade aleatória (simétricas)
+        const numCols = 2 + Math.floor(Math.random() * 3);
+        const positions = [];
+        for (let i = 0; i < numCols; i++) positions.push(Math.floor(Math.random() * (BRICK_COLS / 2)));
+        for (let r = 0; r < BRICK_ROWS; r++)
+          for (let c = 0; c < BRICK_COLS; c++)
+            if (positions.indexOf(Math.min(c, BRICK_COLS - 1 - c)) >= 0) g[r][c] = 1;
+        break;
+      }
+      case 3: {
+        // X / diagonais com espessura aleatória
+        const thick = Math.random() < 0.5 ? 0 : 1;
+        for (let r = 0; r < BRICK_ROWS; r++)
+          for (let c = 0; c < BRICK_COLS; c++) {
+            const d1 = Math.abs(Math.abs(c - mid) - r) <= thick;
+            const d2 = Math.abs(Math.abs(c - mid) - (BRICK_ROWS - 1 - r)) <= thick;
+            if (d1 || d2) g[r][c] = 1;
+          }
+        break;
+      }
+      case 4: {
+        // Densidade aleatória com simetria — cada "célula" tem probabilidade aleatória
+        const density = 0.4 + Math.random() * 0.5;
+        for (let r = 0; r < BRICK_ROWS; r++)
+          for (let c = 0; c <= mid; c++) {
+            if (Math.random() < density) { g[r][c] = 1; g[r][BRICK_COLS - 1 - c] = 1; }
+          }
+        break;
+      }
+      case 5: {
+        // Banda horizontal aleatória + colunas
+        const bandStart = Math.floor(Math.random() * (BRICK_ROWS - 3));
+        const bandH = 2 + Math.floor(Math.random() * 3);
+        for (let r = bandStart; r < Math.min(BRICK_ROWS, bandStart + bandH); r++)
+          for (let c = 0; c < BRICK_COLS; c++) g[r][c] = 1;
+        // Fura algumas colunas
+        const holes = Math.floor(Math.random() * 3);
+        for (let i = 0; i < holes; i++) {
+          const hc = Math.floor(Math.random() * (BRICK_COLS / 2));
+          for (let r = 0; r < BRICK_ROWS; r++) { g[r][hc] = 0; g[r][BRICK_COLS - 1 - hc] = 0; }
+        }
+        break;
+      }
+      case 6: {
+        // Cruz/plus com espessura aleatória
+        const cw = 1 + Math.floor(Math.random() * 2);
+        const ch = Math.floor(BRICK_ROWS / 2);
+        for (let r = 0; r < BRICK_ROWS; r++)
+          for (let c = 0; c < BRICK_COLS; c++)
+            if ((Math.abs(c - mid) < cw || r === ch || r === ch - 1 || r === ch + 1) && Math.random() > 0.1) g[r][c] = 1;
+        break;
+      }
+      default: {
+        // Arco/curva senoidal com amplitude e fase aleatórias
+        const amp = 1 + Math.random() * 2;
+        const phase = Math.random() * Math.PI * 2;
+        for (let r = 0; r < BRICK_ROWS; r++) {
+          const centerY = Math.floor(BRICK_ROWS / 2 + Math.sin(r / BRICK_ROWS * Math.PI * 2 + phase) * amp);
+          for (let c = 0; c < BRICK_COLS; c++) {
+            if (Math.abs(r - centerY) <= 1 || Math.abs(r - (BRICK_ROWS - 1 - centerY)) <= 1) g[r][c] = 1;
+          }
+        }
+        break;
+      }
+    }
+    // Fallback: se a grid tiver muito poucos tijolos (< 15), preenche linhas
+    // aleatórias até atingir o mínimo. Isto garante que o nível é jogável.
+    let count = 0;
+    for (let r = 0; r < BRICK_ROWS; r++) for (let c = 0; c < BRICK_COLS; c++) count += g[r][c];
+    while (count < 15) {
+      const r = Math.floor(Math.random() * BRICK_ROWS);
+      const c = Math.floor(Math.random() * BRICK_COLS);
+      if (!g[r][c]) { g[r][c] = 1; count++; }
+    }
+    return g;
+  }
 
   // ─────────────────────────────────────────────
   //  Estado
   // ─────────────────────────────────────────────
   function createBall() { return { x: W / 2, y: PADDLE_Y - BALL_R - 1, vx: 0, vy: 0, attached: true, r: BALL_R }; }
-
-  // Etapa fix: escolhe o próximo layout garantindo que é SEMPRE diferente do atual.
-  // Antes, usava Math.floor(Math.random() * LAYOUTS.length) que podia repetir o
-  // mesmo layout duas vezes seguidas. Agora, se o random escolher o mesmo índice,
-  // avança para o seguinte (wrap-around). Isto garante variedade entre níveis.
-  function pickNextLayout(currentIdx) {
-    if (LAYOUTS.length <= 1) return 0;
-    let next = Math.floor(Math.random() * LAYOUTS.length);
-    if (next === currentIdx) next = (next + 1) % LAYOUTS.length;
-    return next;
-  }
 
   function defaultEquipped() {
     return window.BBSkins ? Object.assign({}, window.BBSkins.DEFAULT_EQUIPPED) : { bricks: "brick-default", ball: "ball-default", paddle: "pad-default", bg: "bg-void" };
@@ -220,6 +304,7 @@
       bricks: [],
       capsules: [],
       lasers: [],
+      particles: [],  // partículas de explosão (combo + grenade)
       effects: { wide: 0, slow: 0, shield: 0, laser: 0, through: 0 },
       speedMul: 1.0,
       laserCooldown: 0,
@@ -233,7 +318,14 @@
       lastTs: 0,
       keys: { left: false, right: false },
       mouseX: null,
-      layoutIdx: 0,
+      layoutIdx: 0,  // não usado (layouts são procedurais agora), mantido para compat
+      combo: 0,         // contador de combo atual (incrementa a cada tijolo rápido)
+      lastBrickTime: 0, // timestamp do último tijolo destruído (para combo window)
+      comboMult: 1,     // multiplicador atual (1-5, cap em 5)
+      comboPunch: 0,    // animação de "murro" no texto do combo (1=acabou de levar murro, 0=repouso)
+      comboFade: 0,     // fade-out do combo (1=visível, 0=invisível). Quando combo expira, fade decai.
+      shake: 0,         // intensidade do screen shake (decai ao longo do tempo)
+      paddleHitTime: 0, // timestamp do último hit da bola na paddle (para animação tier 5/6)
       coins: 0,
       coinsReady: false,
       lastAward: 0,
@@ -309,10 +401,28 @@
       return;
     }
     if (type === "extra") {
-      // Vida extra: acumula em state.extraLives (não usa o sistema de effects
-      // com timestamp). Quando o utilizador morrer, consome uma vida extra
-      // antes de decrementar state.lives.
+      // Vida extra: acumula em state.extraLives
       state.extraLives++;
+      updateHud(state);
+      return;
+    }
+    if (type === "grenade") {
+      // Grenade: atribui grenade=true a UMA bola (a primeira livre ou a primeira).
+      // Quando essa bola atinge um tijolo, explode 5 tijolos no total.
+      // O efeito é por bola (não por tempo) — funciona até a bola explodir ou cair.
+      const target = state.balls.find(function (b) { return !b.attached; }) || state.balls[0];
+      if (target) target.grenade = true;
+      return;
+    }
+    if (type === "nuke") {
+      // Nuke: destrói todos os tijolos do nível instantaneamente.
+      // O step() vai detetar bricksLeft=false e avançar de nível.
+      let count = 0;
+      for (let i = 0; i < state.bricks.length; i++) {
+        if (state.bricks[i].alive) { state.bricks[i].alive = false; state.score += state.bricks[i].points; count++; }
+      }
+      state.shake = 25; // shake massivo
+      sfx.clear();
       updateHud(state);
       return;
     }
@@ -371,6 +481,15 @@
     updateLasers(state, k);
     updatePowerups(state, k);
 
+    // Update partículas (combo + grenade explosions)
+    for (let pi = state.particles.length - 1; pi >= 0; pi--) {
+      const p = state.particles[pi];
+      p.x += p.vx * k; p.y += p.vy * k;
+      p.vy += 0.15 * k;  // gravidade ligeira
+      p.life -= 0.04 * k;
+      if (p.life <= 0) state.particles.splice(pi, 1);
+    }
+
     for (let bi = state.balls.length - 1; bi >= 0; bi--) {
       const b = state.balls[bi];
       if (b.attached) { b.x = state.paddle.x + state.paddle.w / 2; b.y = state.paddle.y - b.r - 1; continue; }
@@ -392,12 +511,72 @@
         if (Math.abs(nvy) < sp * 0.35) { nvy = -sp * 0.35; nvx = (nvx < 0 ? -1 : 1) * Math.sqrt(Math.max(0.01, sp * sp - nvy * nvy)); }
         b.vx = nvx; b.vy = nvy;
         sfx.paddle();
+        state.paddleHitTime = Date.now();  // trigger paddle hit animation (tier 5/6)
       }
       for (let i = 0; i < state.bricks.length; i++) {
         const br = state.bricks[i]; if (!br.alive) continue;
         if (b.x + b.r > br.x && b.x - b.r < br.x + br.w && b.y + b.r > br.y && b.y - b.r < br.y + br.h) {
-          br.alive = false; state.score += br.points; sfx.brick(br.row);
+          // ── Combo system ──
+          // Se o último tijolo foi destruído há menos de COMBO_WINDOW_MS, incrementa combo.
+          // Caso contrário, reset a 1. Multiplicador cap em x5 mas combo continua infinito.
+          const now = Date.now();
+          if (now - state.lastBrickTime < COMBO_WINDOW_MS) state.combo++;
+          else state.combo = 1;
+          state.lastBrickTime = now;
+          state.comboMult = Math.min(COMBO_MAX_MULT, state.combo);
+          state.comboPunch = 1; // trigger animação de "murro" no texto do combo
+          if (state.combo > 1) state.comboFade = 1;  // só mostra texto em combo real (≥2)
+          // Pontos = points × multiplicador (x5 fica ativo sempre que combo >= 5)
+          const pts = br.points * state.comboMult;
+          br.alive = false; state.score += pts;
+          sfx.brick(br.row);
+          // Combo sound (escala com multiplicador)
+          if (state.comboMult > 1) sfx.combo(state.comboMult);
+          // Partículas de explosão — cor = cor do bloco batido (via BBSkins.getBrickColor)
+          const numParticles = 3 + state.comboMult * 2;
+          const skins = window.BBSkins;
+          const pcol = skins ? skins.getBrickColor(br.row, state.equippedSkins.bricks) : "#ff4040";
+          for (let p = 0; p < numParticles; p++) {
+            const ang = (p / numParticles) * Math.PI * 2;
+            const spd = 2 + Math.random() * 3 + state.comboMult * 0.5;
+            state.particles.push({
+              x: br.x + br.w / 2, y: br.y + br.h / 2,
+              vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+              life: 1, color: pcol, size: 2 + Math.random() * 2
+            });
+          }
+          // Screen shake aumenta com o combo (mais intenso em combos altas)
+          state.shake = Math.min(12, state.shake + 1 + state.comboMult * 0.8);
           if (Math.random() < POWERUP_DROP_CHANCE) spawnPowerup(state, br.x + br.w / 2, br.y + br.h / 2);
+          // ── Grenade: se a bola tem grenade, explode 4 tijolos próximos (5 total) ──
+          if (b.grenade) {
+            // Encontra os 4 tijolos vivos mais próximos do tijolo atingido
+            const nearby = [];
+            for (let j = 0; j < state.bricks.length; j++) {
+              const ob = state.bricks[j]; if (!ob.alive || ob === br) continue;
+              const dx = ob.x - br.x, dy = ob.y - br.y;
+              nearby.push({ brick: ob, dist: dx * dx + dy * dy });
+            }
+            nearby.sort(function (a, c) { return a.dist - c.dist; });
+            for (let g = 0; g < 4 && g < nearby.length; g++) {
+              nearby[g].brick.alive = false;
+              state.score += nearby[g].brick.points * state.comboMult;
+              // Partículas para cada tijolo da explosão
+              for (let p = 0; p < 4; p++) {
+                const ang = Math.random() * Math.PI * 2;
+                const spd = 3 + Math.random() * 4;
+                state.particles.push({
+                  x: nearby[g].brick.x + nearby[g].brick.w / 2,
+                  y: nearby[g].brick.y + nearby[g].brick.h / 2,
+                  vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+                  life: 1, color: "#ffaa00", size: 2 + Math.random() * 3
+                });
+              }
+            }
+            sfx.explosion();
+            state.shake = Math.min(20, state.shake + 8); // shake extra da explosão
+            b.grenade = false; // consome o grenade (uma explosão por bola)
+          }
           if (state.effects.through) { /* pierce: no bounce */ }
           else {
             const oL = (b.x + b.r) - br.x, oR = (br.x + br.w) - (b.x - b.r), oT = (b.y + b.r) - br.y, oB = (br.y + br.h) - (b.y - b.r);
@@ -415,9 +594,8 @@
       state.level++;
       state.speed = Math.min(BALL_SPEED_MAX, state.speed + BALL_SPEED_INC);
       sfx.clear();
-      state.layoutIdx = pickNextLayout(state.layoutIdx); // Etapa fix: sempre diferente do atual
-      buildBricks(state, LAYOUTS[state.layoutIdx]);
-      resetBalls(state); state.capsules = []; state.lasers = []; updateHud(state);
+      buildBricks(state, generateLayout); // Layout procedural — sempre diferente
+      resetBalls(state); state.capsules = []; state.lasers = []; state.particles = []; updateHud(state);
     }
   }
 
@@ -426,9 +604,61 @@
   // ─────────────────────────────────────────────
   function draw(ctx, state) {
     const skins = window.BBSkins;
+    // Screen shake: offset aleatório baseado em state.shake (decai no loop)
+    const shakeX = state.shake > 0 ? (Math.random() - 0.5) * state.shake : 0;
+    const shakeY = state.shake > 0 ? (Math.random() - 0.5) * state.shake : 0;
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+
     // Fundo (com animação)
     if (skins) skins.drawBackground(ctx, W, H, state.equippedSkins.bg, state.bgTime);
     else { ctx.fillStyle = "#000010"; ctx.fillRect(0, 0, W, H); }
+
+    // ── Combo display (BACKGROUND — atrás dos tijolos e bola) ──
+    // Texto grande e centralizado, sem fundo/glow. Cada bloco acertado faz
+    // o texto "levar um murro": encolhe, volta, vibra e roda.
+    // Mostra o contador total do combo (não o multiplicador). Tem fade-out
+    // quando o combo expira (comboFade decai lentamente).
+    if (state.combo > 1 || state.comboFade > 0) {
+      const cx = W / 2, cy = H / 2;
+      const mult = state.comboMult;
+      const punch = state.comboPunch;
+      const fade = state.comboFade > 0 ? state.comboFade : 0;
+      // Cor por multiplicador
+      const colors = ["#fff", "#4dd964", "#3fb8d4", "#b06be0", "#ffd23f", "#ff5e7a"];
+      const col = colors[Math.min(mult, 5)];
+      // Animação de "murro" — mais intensa:
+      //   scale: encolhe (1 - punch*0.3) quando leva murro
+      //   jitter: vibração muito mais intensa (punch * 12 em vez de 6)
+      //   rotation: rotação aleatória (punch * 0.08 radianos)
+      const scale = 1 - punch * 0.3;
+      const jitterX = punch > 0 ? (Math.random() - 0.5) * punch * 12 : 0;
+      const jitterY = punch > 0 ? (Math.random() - 0.5) * punch * 12 : 0;
+      const rotation = punch > 0 ? (Math.random() - 0.5) * punch * 0.08 : 0;
+      // Tamanho grande (escala com o combo total, não só com o multiplicador)
+      const comboScale = Math.min(1.5, 1 + state.combo * 0.02);
+      const fontSize = Math.floor((52 + mult * 6) * scale * comboScale);
+      // Alpha: fade-out quando combo expira + semi-transparente para não obstruir
+      const baseAlpha = 0.30 + (1 - punch) * 0.15;
+      const alpha = baseAlpha * fade;
+      ctx.save();
+      ctx.translate(cx + jitterX, cy + jitterY);
+      ctx.rotate(rotation);
+      ctx.font = fontSize + "px 'VT323', 'Courier New', monospace";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = col;
+      // Texto principal: "COMBO" + contador total (ex: "COMBO 12")
+      ctx.fillText("COMBO " + state.combo, 0, 0);
+      // Sub-texto: multiplicador (ex: "x5") — pequeno, abaixo
+      if (mult > 1) {
+        ctx.globalAlpha = (0.20 + (1 - punch) * 0.10) * fade;
+        ctx.font = Math.floor(fontSize * 0.5) + "px 'VT323', 'Courier New', monospace";
+        ctx.fillText("x" + mult, 0, fontSize * 0.65);
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
 
     // Tijolos
     const brickSkin = state.equippedSkins.bricks;
@@ -436,6 +666,15 @@
       const br = state.bricks[i]; if (!br.alive) continue;
       if (skins) skins.drawBrick(ctx, br.x, br.y, br.w, br.h, br.row, brickSkin);
     }
+
+    // Partículas (combo + grenade explosions)
+    for (let i = 0; i < state.particles.length; i++) {
+      const p = state.particles[i];
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
 
     // Cápsulas
     for (let i = 0; i < state.capsules.length; i++) {
@@ -455,7 +694,7 @@
 
     // Paddle
     const p = state.paddle;
-    if (skins) skins.drawPaddle(ctx, p.x, p.y, p.w, p.h, state.equippedSkins.paddle, !!state.effects.laser);
+    if (skins) skins.drawPaddle(ctx, p.x, p.y, p.w, p.h, state.equippedSkins.paddle, !!state.effects.laser, state.paddleHitTime);
     // Canhões laser (independente da skin)
     if (state.effects.laser) { ctx.fillStyle = "#ff4040"; ctx.fillRect(p.x + 3, p.y - 3, 5, 3); ctx.fillRect(p.x + p.w - 8, p.y - 3, 5, 3); }
 
@@ -485,6 +724,8 @@
       ctx.fillStyle = "rgba(255,255,255," + (0.6 * flicker).toFixed(2) + ")";
       ctx.fillRect(0, SHIELD_Y, W, 1);
     }
+
+    ctx.restore(); // Fecha o ctx.save() do screen shake
   }
 
   // ─────────────────────────────────────────────
@@ -498,7 +739,7 @@
     if (state.extraLives > 0) {
       state.extraLives--; sfx.powerup(); flashHud(state);
       // Não decrementa state.lives — apenas reset da bola e efeitos
-      resetBalls(state); state.capsules = []; state.lasers = [];
+      resetBalls(state); state.capsules = []; state.lasers = []; state.particles = [];
       state.effects = { wide: 0, slow: 0, shield: 0, laser: 0, through: 0 };
       state.speedMul = 1.0; state.paddle.w = PADDLE_W; updateHud(state);
       return;
@@ -506,7 +747,7 @@
     state.lives--; sfx.lose(); flashHud(state);
     if (state.lives <= 0) gameOver(state);
     else {
-      resetBalls(state); state.capsules = []; state.lasers = [];
+      resetBalls(state); state.capsules = []; state.lasers = []; state.particles = [];
       state.effects = { wide: 0, slow: 0, shield: 0, laser: 0, through: 0 };
       state.speedMul = 1.0; state.paddle.w = PADDLE_W; updateHud(state);
     }
@@ -634,6 +875,21 @@
     if (!state.running) return;
     state.raf = requestAnimationFrame(function (t) { loop(t, state, ui); });
     let dt = (ts - state.lastTs) / 1000; state.lastTs = ts; if (dt > 0.05) dt = 0.05;
+    // Combo: se passou o tempo limite, inicia fade-out (não reseta imediatamente)
+    if (state.combo > 0 && Date.now() - state.lastBrickTime > COMBO_WINDOW_MS) {
+      // Inicia fade-out do combo (comboFade decai de 1 para 0)
+      if (state.comboFade > 0) {
+        state.comboFade = Math.max(0, state.comboFade - dt * 1.5); // fade lento (~666ms)
+        if (state.comboFade <= 0) {
+          // Fade completo — reseta o combo
+          state.combo = 0; state.comboMult = 1;
+        }
+      }
+    }
+    // Combo punch: decai rapidamente (animação de "murro" no texto do combo)
+    if (state.comboPunch > 0) state.comboPunch = Math.max(0, state.comboPunch - dt * 6);
+    // Screen shake: decai ao longo do tempo
+    if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 40);
     try { step(state, dt); } catch (e) { console.error("[bb] step:", e); }
     try { draw(ui.ctx, state); } catch (e) { console.error("[bb] draw:", e); }
     updateEffectsHud(state);
@@ -658,14 +914,20 @@
     // Re-sincroniza do BBData se disponível (sobre-escreve com dados authoritative)
     // MAS só se NÃO estiver em modo debug unlock (session-only prevalece)
     if (!prevDebugUnlocked && window.BBData && window.BBData.isReady()) { state.coins = window.BBData.getCoins(); state.coinsReady = true; state.ownedSkins = window.BBData.getOwnedSkins(); state.equippedSkins = window.BBData.getEquippedSkins(); }
-    // startGame: jogo novo — qualquer layout é válido (não há "anterior" para evitar)
-    state.layoutIdx = Math.floor(Math.random() * LAYOUTS.length);
-    buildBricks(state, LAYOUTS[state.layoutIdx]); resetBalls(state); updateHud(state); updateCoinsHud(state);
+    // startGame: jogo novo — layout procedural (sempre diferente)
+    buildBricks(state, generateLayout); resetBalls(state); updateHud(state); updateCoinsHud(state);
     showScreen(state, "game"); draw(ui.ctx, state); if (ui.wrap) ui.wrap.focus(); startLoop(state, ui);
     // Etapa fix: hint bar (controlos) aparece ao início e faz fade out após 5s.
-    // A lógica está em create() (startHintFade) porque precisa de aceder ao
-    // hintFadeTimer e ui.hint que são scoped a create(). Exposta via state.
-    if (state.startHintFade) state.startHintFade();
+    // Chama diretamente ui.hint (não depende de state.startHintFade que pode
+    // ser perdido no Object.assign do startGame).
+    if (ui.hint) {
+      ui.hint.classList.remove("bb-hint-hidden");
+      if (ui._hintFadeTimer) { clearTimeout(ui._hintFadeTimer); ui._hintFadeTimer = null; }
+      ui._hintFadeTimer = setTimeout(function () {
+        if (ui.hint) ui.hint.classList.add("bb-hint-hidden");
+        ui._hintFadeTimer = null;
+      }, 5000);
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -682,6 +944,8 @@
       case "through": state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "through", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
       case "multi":   state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "multi", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
       case "extra":   state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "extra", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
+      case "grenade": state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "grenade", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
+      case "nuke":    state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "nuke", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
       case "score":   state.score += 500; updateHud(state); break;
       case "level":   state.bricks.forEach(function (b) { b.alive = false; }); break;
       case "kill":    state.lives = 1; state.balls.forEach(function (b) { b.attached = false; b.y = H + 20; b.vy = 8; }); break;
@@ -714,6 +978,18 @@
   // ─────────────────────────────────────────────
   //  LOJA (Etapa 4)
   // ─────────────────────────────────────────────
+  // Tier requirement helper: verifica se o utilizador possui pelo menos uma skin
+  // de tier-1 na mesma categoria (necessário para comprar tier N). tier === 1
+  // → sempre unlocked (sem requisito).
+  function isTierUnlocked(category, tier, owned) {
+    if (tier <= 1) return true;
+    const skins = window.BBSkins;
+    if (!skins) return true;
+    const catList = skins.CATALOG[category] || [];
+    const prevTier = tier - 1;
+    return catList.some(function (s) { return s.tier === prevTier && owned.indexOf(s.id) >= 0; });
+  }
+
   function renderShop(state) {
     const ui = state._ui; if (!ui || !ui.shopGrid) return;
     const skins = window.BBSkins; if (!skins) return;
@@ -771,15 +1047,23 @@
       const btn = document.createElement("button");
       btn.className = "bb-btn bb-shop-btn";
       btn.type = "button";
-      if (isEquipped) { btn.textContent = t("DESEQUIPAR"); btn.dataset.skin = skin.id; btn.dataset.act2 = "unequip"; }
-      else if (isOwned) { btn.textContent = t("EQUIPAR"); btn.dataset.skin = skin.id; btn.dataset.act2 = "equip"; }
-      else {
-        btn.textContent = price + " $";
-        btn.dataset.skin = skin.id;
-        btn.dataset.act2 = "buy";
-        if (coins < price) { btn.classList.add("bb-shop-btn-locked"); btn.disabled = true; btn.textContent = price + " $"; }
-      }
+      btn.dataset.skin = skin.id;
       btn.dataset.cat = cat;
+      if (isEquipped) { btn.textContent = t("DESEQUIPAR"); btn.dataset.act2 = "unequip"; }
+      else if (isOwned) { btn.textContent = t("EQUIPAR"); btn.dataset.act2 = "equip"; }
+      else {
+        btn.dataset.act2 = "buy";
+        // Tier requirement: must own at least one skin of tier-1 in same category.
+        // Se não, bloqueia o botão e mostra "🔒 TIER N-1".
+        if (!isTierUnlocked(cat, skin.tier, owned)) {
+          btn.classList.add("bb-shop-btn-locked");
+          btn.disabled = true;
+          btn.textContent = "🔒 TIER " + (skin.tier - 1);
+        } else {
+          btn.textContent = price + " $";
+          if (coins < price) { btn.classList.add("bb-shop-btn-locked"); btn.disabled = true; btn.textContent = price + " $"; }
+        }
+      }
       card.appendChild(btn);
 
       ui.shopGrid.appendChild(card);
@@ -811,6 +1095,9 @@
     if (action === "buy") {
       if (!window.BBData || !window.BBData.isReady()) { sfx.deny(); return; }
       if (state.coins < price) { sfx.deny(); return; }
+      // Tier requirement: must own at least one skin of tier-1 in same category.
+      // Bloqueia a compra se o utilizador ainda não desbloqueou o tier anterior.
+      if (!isTierUnlocked(category, skin.tier, state.ownedSkins)) { sfx.deny(); return; }
       const res = await window.BBData.purchaseSkin(window.BBData.getUserId(), category, skinId, price);
       if (res.success) {
         sfx.buy();
@@ -930,11 +1217,13 @@
             '<li><b>' + t("Vidas:") + '</b> 3 — ' + t("Não deixes todas as bolas cair!") + '</li>' +
             '<li><b>' + t("Power-ups:") + '</b> ' + t("Apanha cápsulas que caem — drops raros dos tijolos") + '</li>' +
             '<li><b>W</b> ' + t("Alargar · Lento · Escudo · Laser · Atravessar · Multi") + '</li>' +
-            '<li><b>+</b> ' + t("Vida Extra (raro, 3%) — acumula e é consumida na próxima morte") + '</li>' +
-            '<li><b>' + t("Velocidade:") + '</b> ' + t("Aumenta a cada nível, cap no nível 5") + '</li>' +
+            '<li><b>+</b> ' + t("Vida Extra (10%) — acumula e é consumida na próxima morte") + '</li>' +
+            '<li><b>G</b> ' + t("Granada (10%) — explode 5 tijolos (por bola, não por tempo)") + '</li>' +
+            '<li><b>N</b> ' + t("Nuke (5%) — limpa o nível completo instantaneamente") + '</li>' +
+            '<li><b>' + t("Velocidade:") + '</b> ' + t("Aumenta a cada nível, cap no nível 7") + '</li>' +
             '<li><b>' + t("Moedas:") + '</b> ' + t("Ganhas com a pontuação (50 pts = 1 moeda) — gasta na LOJA") + '</li>' +
             '<li><b>' + t("Loja:") + '</b> ' + t("Compra e equipa skins para tijolos, bola, plataforma e fundo") + '</li>' +
-            '<li><b>' + t("Limpa todos os tijolos") + '</b> ' + t("para avançar — 11 padrões") + '</li>' +
+            '<li><b>' + t("Limpa todos os tijolos") + '</b> ' + t("para avançar — padrões infinitos") + '</li>' +
           '</ul>' +
           '<button class="bb-btn bb-btn-primary" type="button" data-act="back">' + t("VOLTAR") + '</button>' +
         '</div>' +
@@ -1023,6 +1312,8 @@
           '<button class="bb-btn" type="button" data-dbg="through">' + t("PIERCE") + '</button>' +
           '<button class="bb-btn" type="button" data-dbg="multi">MULTI</button>' +
           '<button class="bb-btn" type="button" data-dbg="extra">+VIDA</button>' +
+          '<button class="bb-btn" type="button" data-dbg="grenade">GRANADA</button>' +
+          '<button class="bb-btn" type="button" data-dbg="nuke">NUKE</button>' +
           '<button class="bb-btn" type="button" data-dbg="score">+500 PTS</button>' +
           '<button class="bb-btn" type="button" data-dbg="level">' + t("SALTAR NÍVEL") + '</button>' +
           '<button class="bb-btn" type="button" data-dbg="kill">' + t("MORRER") + '</button>' +
@@ -1391,7 +1682,8 @@
       stopLoop(state);
       stopMenuBg(); // Etapa 2: para o RAF do background do menu
       if (bbdataSetupTimer) { clearTimeout(bbdataSetupTimer); bbdataSetupTimer = null; }
-      if (hintFadeTimer) { clearTimeout(hintFadeTimer); hintFadeTimer = null; } // Etapa fix: hint fade timer
+      if (ui._hintFadeTimer) { clearTimeout(ui._hintFadeTimer); ui._hintFadeTimer = null; } // Etapa fix: hint fade timer
+      if (hintFadeTimer) { clearTimeout(hintFadeTimer); hintFadeTimer = null; } // legacy
       document.removeEventListener("visibilitychange", onVis);
       document.removeEventListener("keydown", docTestHandler, true);
       document.removeEventListener("keydown", docEscHandler, true); // Etapa 3: ESC nos sub-ecrãs
