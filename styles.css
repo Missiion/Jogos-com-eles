@@ -6641,6 +6641,19 @@ textarea:focus-visible,
 }
 .bb-screen.bb-hidden { display: none; }
 
+/* Etapa fix: How to Play cortado em cima e em baixo.
+   O .bb-screen usa justify-content: center que corta o conteúdo quando é
+   maior que o ecrã. O howto-screen faz override: alinha no topo + scroll. */
+.bb-howto-screen {
+  justify-content: flex-start;
+  overflow-y: auto;
+  padding: 10px 0;
+  -webkit-overflow-scrolling: touch;
+}
+.bb-howto-screen::-webkit-scrollbar { width: 6px; }
+.bb-howto-screen::-webkit-scrollbar-track { background: #0a0a14; }
+.bb-howto-screen::-webkit-scrollbar-thumb { background: #3a3a52; border-radius: 3px; }
+
 /* ── Menu principal ── */
 .bb-menu-screen {
   background:
@@ -6802,32 +6815,33 @@ textarea:focus-visible,
   background: linear-gradient(180deg, #181828 0%, #10101c 100%);
   border: 1px solid #3a3a52;
   box-shadow: inset 1px 1px 0 #4a4a68, inset -1px -1px 0 #1a1a28;
-  padding: 18px 20px;
-  width: min(86%, 420px);
+  padding: 10px 14px;
+  width: min(92%, 460px);
+  max-height: calc(100% - 16px);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
 }
 .bb-panel-title {
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(18px, 2.8vh, 24px);
+  font-size: clamp(16px, 2.4vh, 22px);
   letter-spacing: 2px;
   color: #fff;
   text-align: center;
   border-bottom: 1px solid #3a3a52;
-  padding-bottom: 8px;
+  padding-bottom: 6px;
 }
 .bb-howto-list {
   list-style: none;
   margin: 0;
   padding: 0;
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(14px, 2.1vh, 18px);
-  line-height: 1.35;
+  font-size: clamp(12px, 1.7vh, 16px);
+  line-height: 1.15;
   color: #c8c8e0;
 }
 .bb-howto-list li {
-  padding: 2px 0;
+  padding: 1px 0;
   border-bottom: 1px dotted #2a2a40;
 }
 .bb-howto-list li:last-child { border-bottom: none; }
@@ -6895,6 +6909,14 @@ textarea:focus-visible,
   color: #6a6f90;
   pointer-events: none;
   z-index: 2;
+  /* Etapa fix: fade out após 5s (controlado por JS via .bb-hint-hidden).
+     Transição suave de 1s para o fade. */
+  opacity: 1;
+  transition: opacity 1s ease-out;
+}
+/* Classe adicionada por JS após 5s de jogo para esconder a hint com fade */
+.bb-hint.bb-hint-hidden {
+  opacity: 0;
 }
 
 /* ── Pause overlay ── */
@@ -7231,6 +7253,7 @@ textarea:focus-visible,
   color: #9aa0c0;
   letter-spacing: 1px;
   font-family: 'VT323', 'Courier New', monospace;
+  white-space: nowrap;  /* Etapa fix: impede que "MELHOR: 1022 (LV 1)" quebre de linha */
 }
 .bb-lb-mybest {
   color: #ffd23f;
