@@ -997,6 +997,16 @@
       state.equippedSkins = window.BBData.getEquippedSkins();
       updateCoinsHud(state);
       window.BBData.subscribe(userId, function (data) {
+        // Modo debug (session-only): NÃO sobre-escrever com dados do Firestore.
+        // O state.ownedSkins/equippedSkins em memória contém as skins de debug
+        // (UNLOCK ALL) que não devem ser clobbered por updates do Firestore.
+        if (state.debugAllUnlocked) {
+          // Apenas atualiza as moedas (que o debug não mexe — o RESET $ é em memória)
+          state.coins = data.coins; state.coinsReady = true;
+          updateCoinsHud(state);
+          if (state.screen === "shop") renderShop(state);
+          return;
+        }
         state.coins = data.coins; state.coinsReady = true;
         state.ownedSkins = data.ownedSkins; state.equippedSkins = data.equippedSkins;
         updateCoinsHud(state);
@@ -1181,10 +1191,19 @@
     // Funciona em qualquer ecrã (menu, jogo, pausa, loja, etc.) desde que a janela
     // do Brick Breaker esteja aberta e visível. Isto resolve o problema de o wrap
     // não ter foco e o "test" não disparar.
+    //
+    // SEGURANÇA (Etapa fix): o comando "test" só abre o painel de debug se o modo
+    // admin estiver ativo (body.editor-mode, ativado pelo comando "qdmin" no app.js).
+    // Antes, qualquer utilizador podia abrir o debug e injetar moedas/skins.
     let testBuffer = "";
     function docTestHandler(e) {
       // Só processa se a app do brickbreaker estiver no DOM e visível
       if (!wrap.parentNode) return; // app foi removida (janela fechada)
+      // Só permite o comando "test" se o modo admin estiver ativo
+      if (!document.body.classList.contains("editor-mode")) {
+        testBuffer = "";
+        return;
+      }
       const k = e.key;
       if (k.length === 1 && /[a-zA-Z]/.test(k)) {
         testBuffer = (testBuffer + k.toLowerCase()).slice(-4);
