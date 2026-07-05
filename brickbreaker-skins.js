@@ -17,7 +17,7 @@
 //    • DEFAULT_OWNED / DEFAULT_EQUIPPED
 //    • drawBrick(ctx, x, y, w, h, row, skinId)
 //    • drawBall(ctx, x, y, r, skinId)
-//    • drawPaddle(ctx, x, y, w, h, skinId, laserActive)
+//    • drawPaddle(ctx, x, y, w, h, skinId, laserActive, hitTime)
 //    • drawBackground(ctx, w, h, skinId, t)
 //    • renderPreview(canvas, category, skinId) — preview pequeno para a loja
 // ═══════════════════════════════════════════════════════════════
@@ -39,10 +39,10 @@
     ],
     ball: [
       { id: "ball-comet",    name: "Comet",      tier: 1, desc: "Icy trail" },
-      { id: "ball-fire",     name: "Fireball",   tier: 2, desc: "Living flames" },
+      { id: "ball-fire",     name: "Fireball",   tier: 5, desc: "Living flames" },
       { id: "ball-frost",    name: "Ice Sphere", tier: 3, desc: "Frozen crystal" },
       { id: "ball-plasma",   name: "Plasma Core",tier: 4, desc: "Purple energy" },
-      { id: "ball-blackhole",name: "Black Hole", tier: 5, desc: "Event horizon" },
+      { id: "ball-blackhole",name: "Black Hole", tier: 2, desc: "Event horizon" },
       { id: "ball-prism",    name: "Prism",      tier: 6, desc: "Refracting crystal" },
     ],
     paddle: [
@@ -59,7 +59,7 @@
       { id: "bg-aurora",    name: "Aurora",       tier: 3, desc: "Boreal lights" },
       { id: "bg-ocean",     name: "Deep Ocean",   tier: 4, desc: "Underwater abyss" },
       { id: "bg-matrix",    name: "Matrix Rain",  tier: 5, desc: "Digital rain" },
-      { id: "bg-nebula",    name: "Nebula",       tier: 6, desc: "Cosmic clouds" },
+      { id: "bg-nebula",    name: "Sunset Drive", tier: 6, desc: "Synthwave horizon" },
     ],
   };
 
@@ -68,7 +68,7 @@
   // compradas (nenhuma é auto-owned), mas tier 1 continua acessível cedo.
   // Tier 6 (Etapa 4 fix): as segundas skins de cada categoria (antes duplicadas
   // como tier 5) passam a tier 6 — preço premium, cor distinta (coral/rosa).
-  const TIER_PRICES = { 1: 10, 2: 30, 3: 80, 4: 200, 5: 500, 6: 1000 };
+  const TIER_PRICES = { 1: 20, 2: 60, 3: 80, 4: 200, 5: 500, 6: 1000 };
   const TIER_COLORS = { 1: "#888", 2: "#4dd964", 3: "#3fb8d4", 4: "#b06be0", 5: "#ffd23f", 6: "#ff5e7a" };
 
   // Defaults NÃO aparecem na loja — são skins internas usadas quando o
@@ -81,6 +81,25 @@
   const DEFAULT_EQUIPPED = { bricks: "brick-default", ball: "ball-default", paddle: "pad-default", bg: "bg-void" };
 
   const ROW_COLORS = ["#ff4040", "#ff8c1a", "#ffd23f", "#4dd964", "#3fb8d4", "#5a78e8", "#b06be0"];
+
+  // Helper: retorna a cor dominante de um tijolo para uma dada row/skin.
+  // Usado para as partículas de explosão (cor das partículas = cor do bloco).
+  // Para skins de uma só cor (stone, ice, lava, circuit, gold), retorna essa cor.
+  // Para skins multi-cor (default, neon), retorna ROW_COLORS[row].
+  function getBrickColor(row, skinId) {
+    const r = row % ROW_COLORS.length;
+    switch (skinId) {
+      case "brick-default":
+      case "brick-neon":
+        return ROW_COLORS[r];
+      case "brick-stone": return "#707078";
+      case "brick-ice":   return "#b0dcf0";
+      case "brick-lava":  return "#ff6a1a";
+      case "brick-circuit": return "#3fd96a";
+      case "brick-gold":  return "#ffd23f";
+      default:            return ROW_COLORS[r];
+    }
+  }
 
   // Helper: gradiente vertical
   function vgrad(ctx, x, y, w, h, c1, c2) {
@@ -106,16 +125,25 @@
       ctx.fillRect(x + w - 2, y, 2, h);
     },
     "brick-stone": function (ctx, x, y, w, h, row) {
-      // Tijolo de pedra talhada — cinza com textura
+      // Tijolo de pedra talhada — cinza com textura.
+      // 7 variações de fissuras por row (row % 7 como seed) — mesma cor base.
       ctx.fillStyle = vgrad(ctx, x, y, w, h, "#707078", "#48484e");
       ctx.fillRect(x, y, w, h);
-      // fissuras subtis
+      const v = row % 7;
+      // 7 padrões de fissuras (offsets variados por row)
+      const vx = [0.30, 0.50, 0.20, 0.70, 0.40, 0.60, 0.35][v];
+      const vy = [0.40, 0.45, 0.55, 0.35, 0.50, 0.40, 0.60][v];
+      const dx = [0.80, 0.20, 0.60, 0.30, 0.75, 0.15, 0.50][v];
+      const dy = [0.70, 0.20, 0.80, 0.50, 0.30, 0.75, 0.15][v];
       ctx.strokeStyle = "rgba(40,40,45,0.4)";
       ctx.lineWidth = 0.6;
       ctx.beginPath();
-      ctx.moveTo(x + w * 0.3, y); ctx.lineTo(x + w * 0.35, y + h);
-      ctx.moveTo(x, y + h * 0.4); ctx.lineTo(x + w, y + h * 0.45);
+      ctx.moveTo(x + w * vx, y); ctx.lineTo(x + w * (vx + 0.05), y + h);
+      ctx.moveTo(x, y + h * vy); ctx.lineTo(x + w, y + h * (vy + 0.05));
       ctx.stroke();
+      // pequena marca de pedra (varia por row) — detalhe discreto
+      ctx.fillStyle = "rgba(30,30,35,0.5)";
+      ctx.fillRect(x + w * dx, y + h * dy, 1.5, 1.5);
       // highlight
       ctx.fillStyle = "rgba(160,160,170,0.4)";
       ctx.fillRect(x, y, w, 1.5);
@@ -141,16 +169,26 @@
       ctx.fillRect(x, y + h - 3, w, 1);
     },
     "brick-ice": function (ctx, x, y, w, h, row) {
-      // frosted blue-white
+      // frosted blue-white — 7 ângulos de facetas por row (mesma cor base)
       ctx.fillStyle = vgrad(ctx, x, y, w, h, "#d4ecf7", "#8ec5db");
       ctx.fillRect(x, y, w, h);
+      const v = row % 7;
+      // 7 ângulos de facetas (varia a inclinação das linhas de cristal)
+      const f1x = [0.30, 0.40, 0.50, 0.20, 0.60, 0.35, 0.45][v];
+      const f1y = [0.60, 0.50, 0.70, 0.40, 0.50, 0.65, 0.45][v];
+      const f2x = [0.70, 0.60, 0.50, 0.80, 0.40, 0.65, 0.55][v];
+      const f2y = [0.50, 0.60, 0.40, 0.50, 0.70, 0.35, 0.55][v];
       // crystal facets (diagonal lines)
       ctx.strokeStyle = "rgba(255,255,255,0.5)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(x + w * 0.3, y); ctx.lineTo(x, y + h * 0.6);
-      ctx.moveTo(x + w * 0.7, y); ctx.lineTo(x + w, y + h * 0.5);
+      ctx.moveTo(x + w * f1x, y); ctx.lineTo(x, y + h * f1y);
+      ctx.moveTo(x + w * f2x, y); ctx.lineTo(x + w, y + h * f2y);
       ctx.stroke();
+      // spark per variation (pequeno brilho que varia por row)
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.fillRect(x + w * [0.55, 0.25, 0.75, 0.45, 0.65, 0.30, 0.50][v] - 0.5,
+                   y + h * [0.75, 0.30, 0.55, 0.80, 0.25, 0.70, 0.40][v] - 0.5, 1.5, 1.5);
       // edge highlight
       ctx.fillStyle = "rgba(255,255,255,0.6)";
       ctx.fillRect(x, y, w, 1.5);
@@ -159,47 +197,63 @@
       ctx.fillRect(x, y + h - 1.5, w, 1.5);
     },
     "brick-lava": function (ctx, x, y, w, h, row) {
-      // dark rock base
+      // dark rock base — 7 padrões de fissuras de lava por row (mesma cor base)
       ctx.fillStyle = vgrad(ctx, x, y, w, h, "#3a1010", "#1a0505");
       ctx.fillRect(x, y, w, h);
+      const v = row % 7;
+      // 7 padrões de fissuras (varia as posições dos pontos médios)
+      const c1 = [[0.20, 0.35, 0.15], [0.30, 0.45, 0.25], [0.40, 0.55, 0.35],
+                  [0.15, 0.30, 0.10], [0.50, 0.65, 0.45], [0.25, 0.40, 0.20],
+                  [0.35, 0.50, 0.30]][v];
+      const c2 = [[0.60, 0.75, 0.55], [0.70, 0.85, 0.65], [0.50, 0.65, 0.45],
+                  [0.65, 0.80, 0.60], [0.55, 0.70, 0.50], [0.75, 0.90, 0.70],
+                  [0.60, 0.75, 0.55]][v];
       // molten cracks (glow orange)
       ctx.strokeStyle = "#ff6a1a";
       ctx.shadowColor = "#ff6a1a";
       ctx.shadowBlur = 6;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(x + w * 0.2, y); ctx.lineTo(x + w * 0.35, y + h * 0.5); ctx.lineTo(x + w * 0.15, y + h);
-      ctx.moveTo(x + w * 0.6, y); ctx.lineTo(x + w * 0.75, y + h * 0.4); ctx.lineTo(x + w * 0.55, y + h);
+      ctx.moveTo(x + w * c1[0], y); ctx.lineTo(x + w * c1[1], y + h * 0.5); ctx.lineTo(x + w * c1[2], y + h);
+      ctx.moveTo(x + w * c2[0], y); ctx.lineTo(x + w * c2[1], y + h * 0.4); ctx.lineTo(x + w * c2[2], y + h);
       ctx.stroke();
       ctx.shadowBlur = 0;
-      // ember dots
+      // ember dots (varia por row)
       ctx.fillStyle = "#ffaa33";
-      ctx.fillRect(x + w * 0.45, y + h * 0.3, 1.5, 1.5);
-      ctx.fillRect(x + w * 0.8, y + h * 0.7, 1.5, 1.5);
+      ctx.fillRect(x + w * [0.45, 0.55, 0.30, 0.70, 0.40, 0.60, 0.50][v], y + h * [0.30, 0.70, 0.50, 0.40, 0.80, 0.20, 0.60][v], 1.5, 1.5);
+      ctx.fillRect(x + w * [0.80, 0.15, 0.75, 0.25, 0.85, 0.20, 0.80][v], y + h * [0.70, 0.30, 0.80, 0.60, 0.40, 0.75, 0.25][v], 1.5, 1.5);
     },
     "brick-circuit": function (ctx, x, y, w, h, row) {
-      // dark green PCB
+      // dark green PCB — 7 padrões de trilhos por row (mesma cor base)
       ctx.fillStyle = vgrad(ctx, x, y, w, h, "#0a3a18", "#062a12");
       ctx.fillRect(x, y, w, h);
+      const v = row % 7;
+      // 7 padrões de trilhos (varia a posição do bend e da linha vertical)
+      const bx  = [0.40, 0.30, 0.50, 0.35, 0.45, 0.25, 0.55][v];
+      const by1 = [0.30, 0.35, 0.25, 0.40, 0.30, 0.45, 0.20][v];
+      const by2 = [0.70, 0.65, 0.75, 0.60, 0.70, 0.55, 0.80][v];
+      const vx  = [0.60, 0.70, 0.50, 0.55, 0.65, 0.45, 0.75][v];
       // traces (light green lines)
       ctx.strokeStyle = "#3fd96a";
       ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.moveTo(x + 3, y + h * 0.3); ctx.lineTo(x + w * 0.4, y + h * 0.3);
-      ctx.lineTo(x + w * 0.4, y + h * 0.7); ctx.lineTo(x + w - 3, y + h * 0.7);
-      ctx.moveTo(x + w * 0.6, y + 2); ctx.lineTo(x + w * 0.6, y + h * 0.4);
+      ctx.moveTo(x + 3, y + h * by1); ctx.lineTo(x + w * bx, y + h * by1);
+      ctx.lineTo(x + w * bx, y + h * by2); ctx.lineTo(x + w - 3, y + h * by2);
+      ctx.moveTo(x + w * vx, y + 2); ctx.lineTo(x + w * vx, y + h - 2);
       ctx.stroke();
-      // solder pads (bright dots)
+      // solder pads (bright dots) — posições variam com o trilho
       ctx.fillStyle = "#7dfca0";
-      ctx.fillRect(x + 2.5, y + h * 0.3 - 1, 2, 2);
-      ctx.fillRect(x + w - 4, y + h * 0.7 - 1, 2, 2);
-      ctx.fillRect(x + w * 0.6 - 1, y + 1, 2, 2);
+      ctx.fillRect(x + 2.5, y + h * by1 - 1, 2, 2);
+      ctx.fillRect(x + w - 4, y + h * by2 - 1, 2, 2);
+      ctx.fillRect(x + w * vx - 1, y + 1, 2, 2);
       // edge
       ctx.fillStyle = "rgba(63,217,106,0.2)";
       ctx.fillRect(x, y, w, 1);
     },
     "brick-gold": function (ctx, x, y, w, h, row) {
-      // Solid gold brick — rico e detalhado (Tier 5 premium)
+      // Solid gold brick — rico e detalhado (Tier 6 premium)
+      // 7 posições de gema por row (mesma cor base dourada).
+      const v = row % 7;
       // Base: gradiente dourado com profundidade
       ctx.fillStyle = vgrad(ctx, x, y, w, h, "#fff0a0", "#c89010");
       ctx.fillRect(x, y, w, h);
@@ -216,8 +270,17 @@
       ctx.fillStyle = "rgba(80,50,0,0.55)";
       ctx.fillRect(x, y + h - 2, w, 2);
       ctx.fillRect(x + w - 2, y, 2, h);
-      // Gema central (rubi) com brilho
-      const gx = x + w / 2, gy = y + h / 2, gr = Math.min(w, h) * 0.22;
+      // 7 posições da gema (rubi) — varia por row (mesma cor, posição diferente)
+      const gemPos = [
+        { gx: 0.50, gy: 0.50 },  // center
+        { gx: 0.35, gy: 0.50 },  // left
+        { gx: 0.65, gy: 0.50 },  // right
+        { gx: 0.50, gy: 0.35 },  // top
+        { gx: 0.50, gy: 0.65 },  // bottom
+        { gx: 0.38, gy: 0.38 },  // top-left
+        { gx: 0.62, gy: 0.62 },  // bottom-right
+      ][v];
+      const gx = x + w * gemPos.gx, gy = y + h * gemPos.gy, gr = Math.min(w, h) * 0.22;
       // halo da gema
       ctx.fillStyle = "rgba(255,80,120,0.25)";
       ctx.beginPath(); ctx.arc(gx, gy, gr + 2, 0, Math.PI * 2); ctx.fill();
@@ -264,32 +327,36 @@
       ctx.beginPath(); ctx.arc(x - r * 0.2, y - r * 0.2, r * 0.35, 0, Math.PI * 2); ctx.fill();
     },
     "ball-fire": function (ctx, x, y, r, t) {
-      // Fireball — bola de fogo com chamas (Tier 2)
-      // Otimizado: reduzi draw calls (5→3 chamas), removi flicker/pulse
-      // (Math.sin por frame é caro quando há várias bolas em jogo).
-      // t opcional: se undefined (jogo), usa performance.now() (animado).
-      // Se passado (preview da loja), usa esse valor (estático — evita "saltos"
-      // de frame quando a loja re-renderiza ao equipar).
+      // Fireball — bola de fogo com chamas dinâmicas (Tier 5)
+      // Melhorada: 5 chamas maiores com 2 camadas, glow flicker, núcleo pulsante.
       if (t === undefined) t = performance.now() / 1000;
-      // Glow exterior (static)
-      ctx.fillStyle = "rgba(255,100,0,0.3)";
+      // Glow exterior (flicker)
+      const flicker = 0.25 + 0.12 * Math.sin(t * 10);
+      ctx.fillStyle = "rgba(255,80,0," + flicker.toFixed(2) + ")";
+      ctx.beginPath(); ctx.arc(x, y, r + 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,140,20," + (flicker * 0.6).toFixed(2) + ")";
       ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.fill();
-      // Body — gradiente radial amarelo→laranja→vermelho
+      // Body — gradiente radial branco→amarelo→laranja→vermelho
       const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
-      g.addColorStop(0, "#fff8b0"); g.addColorStop(0.4, "#ff8c1a"); g.addColorStop(1, "#c03000");
+      g.addColorStop(0, "#ffffe0"); g.addColorStop(0.3, "#ffd040"); g.addColorStop(0.6, "#ff8c1a"); g.addColorStop(1, "#c03000");
       ctx.fillStyle = g;
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-      // 3 chamas que orbitam (simplificado de 5 para 3 — menos draw calls)
-      ctx.fillStyle = "rgba(255,160,40,0.55)";
-      for (let i = 0; i < 3; i++) {
-        const ang = (i / 3) * Math.PI * 2 + t * 2;
-        const fx = x + Math.cos(ang) * r * 0.85;
-        const fy = y + Math.sin(ang) * r * 0.85;
-        ctx.beginPath(); ctx.arc(fx, fy, r * 0.22, 0, Math.PI * 2); ctx.fill();
+      // 5 chamas que orbitam (maiores, com 2 camadas: laranja + amarela)
+      for (let i = 0; i < 5; i++) {
+        const ang = (i / 5) * Math.PI * 2 + t * 3;
+        const dist = r * (0.9 + 0.15 * Math.sin(t * 6 + i));
+        const fx = x + Math.cos(ang) * dist;
+        const fy = y + Math.sin(ang) * dist;
+        const fsz = r * (0.25 + 0.1 * Math.sin(t * 8 + i * 1.5));
+        ctx.fillStyle = "rgba(255,140,30,0.5)";
+        ctx.beginPath(); ctx.arc(fx, fy, fsz, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,220,80,0.6)";
+        ctx.beginPath(); ctx.arc(fx, fy, fsz * 0.6, 0, Math.PI * 2); ctx.fill();
       }
-      // Núcleo brilhante (static)
-      ctx.fillStyle = "rgba(255,255,200,0.7)";
-      ctx.beginPath(); ctx.arc(x - r * 0.2, y - r * 0.2, r * 0.25, 0, Math.PI * 2); ctx.fill();
+      // Núcleo brilhante pulsante
+      const pulse = 0.6 + 0.3 * Math.sin(t * 5);
+      ctx.fillStyle = "rgba(255,255,220," + pulse.toFixed(2) + ")";
+      ctx.beginPath(); ctx.arc(x - r * 0.2, y - r * 0.2, r * 0.3, 0, Math.PI * 2); ctx.fill();
     },
     "ball-frost": function (ctx, x, y, r) {
       ctx.fillStyle = "rgba(150,220,255,0.3)";
@@ -476,8 +543,12 @@
       ctx.fillStyle = col;
       ctx.fillRect(x + w / 2 - 12, y + 3, 24, h - 6);
     },
-    "pad-royal": function (ctx, x, y, w, h, laserActive) {
+    "pad-royal": function (ctx, x, y, w, h, laserActive, hitTime) {
       // Royal Gold — plataforma real com coroa e gemas (Tier 5 premium)
+      // Hit animation (300ms decay): gems flash/pulse when ball hits paddle.
+      const now = Date.now();
+      const hitAge = hitTime ? (now - hitTime) : 9999;
+      const hit = hitAge < 300 ? (1 - hitAge / 300) : 0;  // 1=just hit, 0=no hit
       // Base: ouro rico com profundidade
       ctx.fillStyle = vgrad(ctx, x, y, w, h, "#ffe890", "#b8860b");
       ctx.fillRect(x, y, w, h);
@@ -528,9 +599,30 @@
       ctx.fillStyle = "rgba(255,255,255,0.6)";
       ctx.beginPath(); ctx.arc(x + 5.3, cy - 0.7, 0.8, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(x + w - 6.7, cy - 0.7, 0.8, 0, Math.PI * 2); ctx.fill();
+      // ── Hit animation (300ms): gems flash/pulse with halos ──
+      if (hit > 0) {
+        const pulse = 0.5 + 0.5 * Math.sin(now / 30);  // 0..1 fast flicker
+        const haloA = hit * (0.45 + 0.30 * pulse);
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";  // additive glow
+        // Central ruby halo
+        ctx.fillStyle = "rgba(255,150,180," + haloA.toFixed(2) + ")";
+        ctx.beginPath(); ctx.arc(cx, cy - 5, 4 + hit * 3, 0, Math.PI * 2); ctx.fill();
+        // Left emerald halo
+        ctx.fillStyle = "rgba(140,255,170," + haloA.toFixed(2) + ")";
+        ctx.beginPath(); ctx.arc(x + 6, cy, 3.5 + hit * 3, 0, Math.PI * 2); ctx.fill();
+        // Right sapphire halo
+        ctx.fillStyle = "rgba(140,180,255," + haloA.toFixed(2) + ")";
+        ctx.beginPath(); ctx.arc(x + w - 6, cy, 3.5 + hit * 3, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
     },
-    "pad-circuit": function (ctx, x, y, w, h, laserActive) {
+    "pad-circuit": function (ctx, x, y, w, h, laserActive, hitTime) {
       // Plataforma tech com PCB verde e trilhos luminosos
+      // Hit animation (300ms decay): traces light up brightly when ball hits paddle.
+      const now = Date.now();
+      const hitAge = hitTime ? (now - hitTime) : 9999;
+      const hit = hitAge < 300 ? (1 - hitAge / 300) : 0;  // 1=just hit, 0=no hit
       ctx.fillStyle = vgrad(ctx, x, y, w, h, "#0a3a18", "#062a12");
       ctx.fillRect(x, y, w, h);
       // trilhos de circuito (linhas verde brilhante)
@@ -552,6 +644,28 @@
       ctx.shadowBlur = 6;
       ctx.fillRect(x, y, w, 1.5);
       ctx.shadowBlur = 0;
+      // ── Hit animation (300ms): traces light up brightly ──
+      if (hit > 0) {
+        ctx.save();
+        ctx.shadowColor = "#a0ffd0";
+        ctx.shadowBlur = 10 * hit;
+        // Bright white-cyan overlay on the traces
+        ctx.strokeStyle = "rgba(220,255,240," + hit.toFixed(2) + ")";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 3, y + h * 0.35); ctx.lineTo(x + w * 0.4, y + h * 0.35);
+        ctx.lineTo(x + w * 0.4, y + h * 0.65); ctx.lineTo(x + w - 3, y + h * 0.65);
+        ctx.moveTo(x + w * 0.6, y + 2); ctx.lineTo(x + w * 0.6, y + h - 2);
+        ctx.stroke();
+        // Flash pads (white burst)
+        ctx.fillStyle = "rgba(255,255,255," + (hit * 0.9).toFixed(2) + ")";
+        ctx.fillRect(x + 2, y + h * 0.35 - 1, 2, 2);
+        ctx.fillRect(x + w - 4, y + h * 0.65 - 1, 2, 2);
+        // Top edge bright flash
+        ctx.fillStyle = "rgba(220,255,240," + (hit * 0.7).toFixed(2) + ")";
+        ctx.fillRect(x, y, w, 1.5);
+        ctx.restore();
+      }
     },
   };
 
@@ -735,40 +849,90 @@
       }
     },
     "bg-nebula": function (ctx, w, h, t) {
-      // Nebulosa cósmica — nuvens de gás vibrantes a rodar (DOMINANTE),
-      // poucas estrelas brilhantes grandes (diferente da Starfield que tem
-      // muitas estrelas pequenas e fundo simples).
-      // Fundo: espaço profundo roxo-escuro
-      const g = ctx.createLinearGradient(0, 0, w, h);
-      g.addColorStop(0, "#080014"); g.addColorStop(1, "#10001a");
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, w, h);
-      // 5 nuvens de gás grandes e vibrantes (mais que Starfield)
-      const clouds = [
-        { x: w * 0.25 + Math.sin(t * 0.08) * 35, y: h * 0.3 + Math.cos(t * 0.06) * 25, r: 140, col1: "rgba(180,40,220,0.25)", col2: "rgba(180,40,220,0)" },
-        { x: w * 0.7 + Math.cos(t * 0.1) * 30, y: h * 0.45 + Math.sin(t * 0.08) * 35, r: 120, col1: "rgba(40,120,255,0.22)", col2: "rgba(40,120,255,0)" },
-        { x: w * 0.45 + Math.sin(t * 0.12) * 45, y: h * 0.65 + Math.cos(t * 0.1) * 20, r: 110, col1: "rgba(255,60,140,0.18)", col2: "rgba(255,60,140,0)" },
-        { x: w * 0.85 + Math.cos(t * 0.07) * 20, y: h * 0.2 + Math.sin(t * 0.11) * 30, r: 80, col1: "rgba(255,180,40,0.15)", col2: "rgba(255,180,40,0)" },
-        { x: w * 0.15 + Math.sin(t * 0.09) * 25, y: h * 0.75 + Math.cos(t * 0.07) * 30, r: 90, col1: "rgba(40,255,180,0.12)", col2: "rgba(40,255,180,0)" },
-      ];
-      clouds.forEach(function (c) {
-        const grad = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, c.r);
-        grad.addColorStop(0, c.col1);
-        grad.addColorStop(0.6, c.col1.replace(/[\d.]+\)$/, "0.08)"));
-        grad.addColorStop(1, c.col2);
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, w, h);
-      });
-      // Poucas estrelas brilhantes grandes (diferente da Starfield)
-      for (let i = 0; i < 12; i++) {
-        const sx = (i * 137 + 50) % w, sy = (i * 211 + 30) % h;
-        const tw = 0.5 + 0.5 * Math.sin(t * 2.5 + i * 0.7);
-        const a = 0.5 + tw * 0.5;
-        // cruz de luz (star burst)
-        ctx.fillStyle = "rgba(255,240,220," + a.toFixed(2) + ")";
-        ctx.fillRect(sx - 2, sy, 5, 1);
-        ctx.fillRect(sx, sy - 2, 1, 5);
-        ctx.fillRect(sx, sy, 1, 1);
+      // Sunset Drive — synthwave horizon (substitui a antiga Nebula).
+      // Distinto das outras bgs baseadas em estrelas (starfield, aurora):
+      // cores quentes de pôr-do-sol, grelha de perspectiva, sol com scanlines.
+      // Paleta quente e relaxante.
+      const horizonY = Math.floor(h * 0.55);  // horizon at 55% down
+
+      // ── Sky gradient: deep purple → magenta → orange → yellow at horizon ──
+      const sky = ctx.createLinearGradient(0, 0, 0, horizonY);
+      sky.addColorStop(0, "#1a0033");     // deep purple (top)
+      sky.addColorStop(0.45, "#660044");   // magenta
+      sky.addColorStop(0.80, "#ff6600");   // orange
+      sky.addColorStop(1, "#ffcc00");      // yellow at horizon
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, w, horizonY);
+
+      // ── Large sun on horizon with horizontal scanline gaps ──
+      const sunR = h * 0.20;
+      const sunX = w / 2;
+      const sunY = horizonY - sunR * 0.4;  // bottom of sun near horizon
+      const sunGrad = ctx.createLinearGradient(0, sunY - sunR, 0, sunY + sunR);
+      sunGrad.addColorStop(0, "#ffeb6a");   // bright yellow (top)
+      sunGrad.addColorStop(0.5, "#ff9933"); // orange (middle)
+      sunGrad.addColorStop(1, "#ff3366");   // pink-red (bottom)
+      ctx.fillStyle = sunGrad;
+      ctx.beginPath();
+      ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2); ctx.fill();
+      // Scanline gaps — fill with sky gradient (perfect color match at each y)
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2); ctx.clip();
+      ctx.fillStyle = sky;
+      for (let i = 0; i < 7; i++) {
+        const f = i / 7;  // 0..1 (top of lower half → bottom of sun)
+        const by = sunY + f * sunR;
+        const bh = 1 + i * 0.9;  // bands get thicker toward bottom (classic synthwave)
+        ctx.fillRect(sunX - sunR - 5, by, sunR * 2 + 10, bh);
+      }
+      ctx.restore();
+
+      // ── Floor: dark gradient (with subtle magenta horizon glow) ──
+      const floor = ctx.createLinearGradient(0, horizonY, 0, h);
+      floor.addColorStop(0, "#3a0044");   // magenta-tinted at horizon (sun reflection)
+      floor.addColorStop(0.3, "#1a0028");
+      floor.addColorStop(1, "#000010");    // near-black at bottom
+      ctx.fillStyle = floor;
+      ctx.fillRect(0, horizonY, w, h - horizonY);
+
+      // ── Perspective grid floor: neon cyan (horizontal) + magenta (vertical) ──
+      const vpX = w / 2;        // vanishing point X (center-horizon)
+      const vpY = horizonY;     // vanishing point Y
+      // Vertical lines (radiating from vanishing point) — neon magenta
+      ctx.strokeStyle = "rgba(255,60,180,0.5)";
+      ctx.lineWidth = 1;
+      const numVLines = 14;
+      for (let i = -numVLines; i <= numVLines; i++) {
+        const nearX = vpX + (i / numVLines) * w * 1.4;  // spread at bottom edge
+        ctx.beginPath();
+        ctx.moveTo(vpX, vpY);
+        ctx.lineTo(nearX, h);
+        ctx.stroke();
+      }
+      // Horizontal lines (scrolling toward viewer) — neon cyan, perspective spacing
+      ctx.strokeStyle = "rgba(60,255,220,0.5)";
+      const numHLines = 12;
+      const scrollPhase = (t * 0.4) % 1;  // 0..1, scrolls toward viewer
+      for (let i = 0; i < numHLines; i++) {
+        const phase = ((i / numHLines) + scrollPhase) % 1;
+        const progress = phase * phase;  // quadratic → closer together near horizon
+        const y = vpY + progress * (h - vpY);
+        if (y >= h || y <= vpY) continue;
+        ctx.beginPath();
+        ctx.moveTo(0, y); ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      // ── Floating particles (dust/embers drifting upward) ──
+      for (let i = 0; i < 18; i++) {
+        const px = (i * 137 + Math.sin(t * 0.3 + i) * 12) % w;
+        // Drift upward (py decreases over time), wrap around at top
+        const py = h - ((i * 70 + t * (15 + (i % 5) * 5)) % (h + 30));
+        const ps = 1 + (i % 3) * 0.5;
+        const a = 0.25 + 0.25 * Math.sin(t * 2 + i);
+        ctx.fillStyle = "rgba(255,180,80," + a.toFixed(2) + ")";
+        ctx.fillRect(px, py, ps, ps);
       }
     },
   };
@@ -797,9 +961,9 @@
     // Se for passado (ex.: 0 no preview da loja), o renderer usa esse valor (estático).
     if (fn) fn(ctx, x, y, r, t);
   }
-  function drawPaddle(ctx, x, y, w, h, skinId, laserActive) {
+  function drawPaddle(ctx, x, y, w, h, skinId, laserActive, hitTime) {
     const fn = paddleRenderers[skinId] || paddleRenderers["pad-default"];
-    if (fn) fn(ctx, x, y, w, h, laserActive);
+    if (fn) fn(ctx, x, y, w, h, laserActive, hitTime);
   }
   function drawBackground(ctx, w, h, skinId, t) {
     const fn = bgRenderers[skinId] || bgRenderers["bg-void"];
@@ -853,5 +1017,6 @@
     renderPreview: renderPreview,
     getSkin: getSkin,
     getCategory: getCategory,
+    getBrickColor: getBrickColor,
   };
 })();
