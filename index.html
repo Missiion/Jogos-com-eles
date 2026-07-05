@@ -8,7 +8,7 @@
   <link rel="shortcut icon" type="image/x-icon" href="favicon.ico" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&family=VT323&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -48,7 +48,7 @@
 
   <!-- Admin Panel — flutua no canto inferior direito; colapsado por defeito,
        descolapsa ao clicar no botão circular (admin-fab) -->
-  <div id="admin-overlay" class="admin-overlay hidden">
+  <div id="admin-overlay" class="admin-overlay hidden" role="region" aria-label="Painel de administrador">
     <div class="admin-panel" id="admin-panel">
 
       <!-- Tests Panel — popup flutuante acima do fab de testes;
@@ -118,7 +118,7 @@
 
   <!-- Key Art Picker — popup de admin para escolher a key-art preferida
        de um jogo (global, gravado no Firestore) -->
-  <div id="keyart-modal" class="keyart-modal hidden">
+  <div id="keyart-modal" class="keyart-modal hidden" role="dialog" aria-modal="true" aria-labelledby="keyart-title">
     <div class="keyart-backdrop" id="keyart-backdrop"></div>
     <div class="keyart-panel">
       <div class="keyart-header">
@@ -132,7 +132,7 @@
   </div>
 
   <!-- Playlist Modal — aparece ao clicar no botão de playlist de um card jogado -->
-  <div id="addtab-modal" class="addtab-modal hidden">
+  <div id="addtab-modal" class="addtab-modal hidden" role="dialog" aria-modal="true" aria-labelledby="addtab-title">
     <div class="addtab-backdrop" id="addtab-backdrop"></div>
     <div class="addtab-panel">
       <div class="addtab-header">
@@ -141,7 +141,7 @@
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
-      <div class="addtab-list" id="addtab-list">
+      <div class="addtab-list">
         <div class="playlist-form">
           <label class="playlist-label" for="playlist-url-input" data-i18n="Link da playlist do YouTube">Link da playlist do YouTube</label>
           <input type="url" class="playlist-url-input" id="playlist-url-input" data-i18n-placeholder="https://www.youtube.com/playlist?list=..." placeholder="https://www.youtube.com/playlist?list=..." autocomplete="off"/>
@@ -155,7 +155,7 @@
   </div>
 
   <!-- Toast — aviso flutuante (ex: "Regista-te primeiro para pesquisar") -->
-  <div id="toast" class="toast">
+  <div id="toast" class="toast" role="status" aria-live="polite">
     <span id="toast-text"></span>
   </div>
 
@@ -270,6 +270,17 @@
           </div>
         </div>
 
+        <!-- Computer — opens the retro CRT computer (between bell and gear) -->
+        <div class="computer-wrap" id="computer-wrap">
+          <button class="computer-trigger" id="computer-trigger" aria-haspopup="dialog" aria-expanded="false" data-i18n-aria-label="Computador" data-i18n-title="Computador" aria-label="Computador" title="Computador">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </button>
+        </div>
+
         <!-- Settings — pill + dropdown (mesmo padrão do tag-filter) -->
         <div class="settings-wrap" id="settings-wrap">
           <button class="settings-trigger" id="settings-trigger" aria-haspopup="true" aria-expanded="false" data-i18n-aria-label="Aspeto" data-i18n-title="Aspeto" aria-label="Aspeto" title="Aspeto">
@@ -329,6 +340,10 @@
                 <label class="option-toggle">
                   <input type="checkbox" id="option-mute-notifications" />
                   <span data-i18n="Mutar notificações">Mutar notificações</span>
+                </label>
+                <label class="option-toggle">
+                  <input type="checkbox" id="option-mute-sounds" />
+                  <span data-i18n="Mutar sons">Mutar sons</span>
                 </label>
               </div>
             </div>
@@ -404,8 +419,109 @@
     </div>
   </main>
 
+  <!-- ═══════════════════════════════════════════
+       COMPUTER OVERLAY — Monitor CRT retro (anos 90)
+       Abre ao clicar no botão do computador na toolbar.
+       • Shell + open/close + sons ambient (ventoinha, hum, HDD)
+       • Boot sequence: BIOS POST → logo → desktop (sem estática inicial)
+       • Desktop Win95 com ícones, taskbar, Start menu + apps
+       ═══════════════════════════════════════════ -->
+  <div id="computer-overlay" class="computer-overlay">
+    <div class="computer-backdrop" id="computer-backdrop"></div>
+    <div class="crt-monitor" id="crt-monitor">
+      <div class="crt-bezel">
+        <div class="crt-screen-housing">
+          <div class="crt-screen" id="crt-screen">
+            <div class="crt-scanlines"></div>
+            <div class="crt-curve"></div>
+            <div class="crt-reflection"></div>
+            <div class="crt-content" id="crt-content">
+              <!-- Estado default: desligado -->
+              <div class="crt-powered-off" id="crt-powered-off"></div>
+              <!-- Boot sequence layers (controladas por JS em computer.js) -->
+              <div class="crt-terminal" id="crt-terminal"></div>
+              <div class="crt-logo" id="crt-logo">
+                <div class="crt-logo-text">CASA•NORTE</div>
+                <div class="crt-logo-sub">SYSTEMS&nbsp;INC.</div>
+                <div class="crt-logo-version">CN-DOS v3.11</div>
+                <div class="crt-logo-copyright">© 1995 CASA•NORTE Systems</div>
+              </div>
+              <div class="crt-desktop" id="crt-desktop">
+                <!-- Desktop icons (atalhos — não funcionais nesta etapa) -->
+                <div class="desktop-icons" id="desktop-icons">
+                  <div class="desktop-icon" tabindex="0" data-app="mycomputer">
+                    <div class="desktop-icon-img">
+                      <svg viewBox="0 0 32 32" width="32" height="32"><rect x="3" y="5" width="26" height="20" rx="1" fill="#c8c8c8" stroke="#000"/><rect x="5" y="7" width="22" height="14" fill="#000080"/><rect x="12" y="25" width="8" height="2" fill="#c8c8c8"/><rect x="10" y="27" width="12" height="2" rx="1" fill="#c8c8c8"/></svg>
+                    </div>
+                    <div class="desktop-icon-label">My Computer</div>
+                  </div>
+                  <div class="desktop-icon" tabindex="0" data-app="dos">
+                    <div class="desktop-icon-img">
+                      <svg viewBox="0 0 32 32" width="32" height="32"><rect x="4" y="6" width="24" height="20" rx="1" fill="#c8c8c8" stroke="#000"/><rect x="6" y="8" width="20" height="3" fill="#000080"/><rect x="6" y="12" width="20" height="12" fill="#000"/><text x="16" y="21" font-size="7" text-anchor="middle" fill="#fff" font-family="monospace">C:\</text></svg>
+                    </div>
+                    <div class="desktop-icon-label">MS-DOS</div>
+                  </div>
+                  <div class="desktop-icon" tabindex="0" data-app="media">
+                    <div class="desktop-icon-img">
+                      <svg viewBox="0 0 32 32" width="32" height="32"><rect x="4" y="6" width="24" height="20" rx="1" fill="#c8c8c8" stroke="#000"/><rect x="6" y="8" width="20" height="3" fill="#000080"/><rect x="8" y="13" width="16" height="10" fill="#fff"/><path d="M11 22V14l8 4z" fill="#ff3030"/></svg>
+                    </div>
+                    <div class="desktop-icon-label">CN Media</div>
+                  </div>
+                  <div class="desktop-icon" tabindex="0" data-app="notepad">
+                    <div class="desktop-icon-img">
+                      <svg viewBox="0 0 32 32" width="32" height="32"><rect x="6" y="8" width="20" height="18" rx="1" fill="#c8c8c8" stroke="#000"/><rect x="6" y="8" width="20" height="3" fill="#000080"/><rect x="8" y="13" width="16" height="11" fill="#fff"/><circle cx="16" cy="18" r="2" fill="#000080"/><rect x="12" y="22" width="8" height="2" fill="#808080"/></svg>
+                    </div>
+                    <div class="desktop-icon-label">Notepad</div>
+                  </div>
+                  <div class="desktop-icon" tabindex="0" data-app="recycle">
+                    <div class="desktop-icon-img">
+                      <svg viewBox="0 0 32 32" width="32" height="32"><path d="M16 4l12 6v12l-12 6L4 22V10z" fill="#c8c8c8" stroke="#000"/><path d="M16 4l12 6-12 6L4 10z" fill="#000080"/><path d="M4 10v12l12 6V16z" fill="#808080"/></svg>
+                    </div>
+                    <div class="desktop-icon-label">Recycle Bin</div>
+                  </div>
+                  <div class="desktop-icon" tabindex="0" data-app="about">
+                    <div class="desktop-icon-img">
+                      <svg viewBox="0 0 32 32" width="32" height="32"><rect x="4" y="4" width="24" height="24" rx="1" fill="#c8c8c8" stroke="#000"/><rect x="6" y="6" width="20" height="20" fill="#008080"/><path d="M16 9l5 4-5 4-5-4z" fill="#fff"/><path d="M16 14l5 4-5 4-5-4z" fill="#ffb347"/></svg>
+                    </div>
+                    <div class="desktop-icon-label">Casa·Norte</div>
+                  </div>
+                  <div class="desktop-icon" tabindex="0" data-app="brickbreaker">
+                    <div class="desktop-icon-img">
+                      <svg viewBox="0 0 16 16" width="32" height="32" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="16" height="16" rx="1" fill="#000080"/><rect x="2" y="3" width="3.2" height="2.2" fill="#ff4040"/><rect x="6" y="3" width="3.2" height="2.2" fill="#ffd23f"/><rect x="10" y="3" width="3.2" height="2.2" fill="#4dd964"/><rect x="2" y="6" width="3.2" height="2.2" fill="#3fb8d4"/><rect x="6" y="6" width="3.2" height="2.2" fill="#b06be0"/><rect x="10" y="6" width="3.2" height="2.2" fill="#ff8c1a"/><rect x="5.5" y="12" width="5" height="1.6" rx="0.3" fill="#c8c8c8"/><circle cx="8" cy="10" r="1.2" fill="#fff"/></svg>
+                    </div>
+                    <div class="desktop-icon-label">Brick Breaker</div>
+                  </div>
+                </div>
+                <!-- Taskbar (bottom) -->
+                <div class="desktop-taskbar">
+                  <button class="taskbar-start-btn" type="button" tabindex="0">
+                    <svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" fill="#ff3030"/><rect x="9" y="1" width="6" height="6" fill="#30c030"/><rect x="1" y="9" width="6" height="6" fill="#3070ff"/><rect x="9" y="9" width="6" height="6" fill="#ffc030"/></svg>
+                    <span>Start</span>
+                  </button>
+                  <div class="taskbar-divider"></div>
+                  <div class="taskbar-tasks">
+                    <div class="taskbar-task active">CN-DOS</div>
+                  </div>
+                  <div class="taskbar-tray">
+                    <span class="taskbar-clock" id="taskbar-clock">12:00</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="crt-glow"></div>
+          </div>
+        </div>
+        <div class="crt-bezel-bottom">
+          <span class="crt-brand">CASA•NORTE</span>
+          <span class="crt-model">ColorMonitor CN-1530</span>
+          <span class="crt-power-led" id="crt-power-led" aria-hidden="true"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Game Detail Modal -->
-  <div id="game-modal" class="game-modal hidden">
+  <div id="game-modal" class="game-modal hidden" role="dialog" aria-modal="true" aria-label="Detalhes do jogo">
     <div class="modal-backdrop" id="modal-backdrop"></div>
 
     <div class="modal-content">
@@ -439,6 +555,24 @@
   <script src="loader.js"></script>
   <!-- i18n — sistema de tradução (deve carregar antes do app.js) -->
   <script src="i18n.js"></script>
+  <!-- sound — SFX via Web Audio API (deve carregar antes do app.js) -->
+  <script src="sound.js"></script>
+  <!-- computer — CRT retro computer overlay (self-contained) -->
+  <script src="computer.js"></script>
+  <!-- window — Win95-style window manager -->
+  <script src="window.js"></script>
+  <!-- visualizers — WMP-style audio visualizers (Canvas + AnalyserNode) -->
+  <script src="visualizers.js"></script>
+  <!-- brickbreaker-skins — skin catalog + procedural render -->
+  <script src="brickbreaker-skins.js"></script>
+  <!-- brickbreaker — CN Arcade game (Brick Breaker) -->
+  <script src="brickbreaker.js"></script>
+  <!-- brickbreaker-data — Firebase coins layer (anti-tamper) -->
+  <script type="module" src="brickbreaker-data.js"></script>
+  <!-- apps — Win95 apps + Start menu (data-driven) -->
+  <script src="apps.js"></script>
+  <!-- screensaver — Win95 screensavers (starfield, flying windows) -->
+  <script src="screensaver.js"></script>
   <!-- Firebase SDKs -->
   <script type="module" src="firebase.js"></script>
   <script type="module" src="app.js"></script>
