@@ -1023,40 +1023,71 @@
     },
     "bg-nebula": function (ctx, w, h, t) {
       // Neon Metropolis — cidade cyberpunk à noite (Tier 6).
-      // Retoques: água a mover na parte inferior, luzes estáticas,
-      // janelas com espaçamento realista, prédios com gaps,
-      // relâmpagos com fade-out.
+      // Retoques v2: estrada + carros, janelas até 90%, estrelas, lua crescente.
+
+      const horizonY = h * 0.62;  // horizonte um pouco mais alto para dar espaço à estrada
+      const roadH = 10;            // altura da estrada
+      const roadY = horizonY;      // estrada começa no horizonte
+      const neonColors = ["#00e5ff", "#ff00aa", "#00ff88", "#ff6600", "#aa00ff"];
 
       // ── Céu ──
-      const sky = ctx.createLinearGradient(0, 0, 0, h * 0.65);
+      const sky = ctx.createLinearGradient(0, 0, 0, horizonY);
       sky.addColorStop(0, "#050518");
       sky.addColorStop(0.5, "#0a0a2a");
       sky.addColorStop(1, "#1a0a2e");
       ctx.fillStyle = sky;
-      ctx.fillRect(0, 0, w, h * 0.65);
+      ctx.fillRect(0, 0, w, horizonY);
+
+      // ── Estrelas no céu (deterministic, cintilam) ──
+      for (let i = 0; i < 40; i++) {
+        const sx = (i * 137 + 13) % w;
+        const sy = (i * 71 + 7) % (horizonY * 0.55);
+        const tw = 0.3 + 0.7 * Math.sin(t * 1.5 + i * 0.5);
+        ctx.fillStyle = "rgba(200,210,255," + (0.2 + tw * 0.3).toFixed(2) + ")";
+        ctx.fillRect(sx, sy, 1, 1);
+      }
+      // Algumas estrelas mais brilhantes
+      for (let i = 0; i < 8; i++) {
+        const sx = (i * 211 + 30) % w;
+        const sy = (i * 97 + 15) % (horizonY * 0.4);
+        const tw = 0.5 + 0.5 * Math.sin(t * 2 + i);
+        ctx.fillStyle = "rgba(220,230,255," + (0.4 + tw * 0.4).toFixed(2) + ")";
+        ctx.fillRect(sx - 0.5, sy - 0.5, 2, 2);
+      }
+
+      // ── Lua crescente (formato de C) ──
+      const moonX = w * 0.82;
+      const moonY = h * 0.14;
+      const moonR = 10;
+      // Halo da lua
+      ctx.fillStyle = "rgba(200,210,255,0.08)";
+      ctx.beginPath(); ctx.arc(moonX, moonY, moonR + 5, 0, Math.PI * 2); ctx.fill();
+      // Lua cheia (branca-amarelada)
+      ctx.fillStyle = "#e8e8d0";
+      ctx.beginPath(); ctx.arc(moonX, moonY, moonR, 0, Math.PI * 2); ctx.fill();
+      // Sombra para criar crescente (C virado para esquerda)
+      ctx.fillStyle = sky;
+      ctx.beginPath(); ctx.arc(moonX + moonR * 0.45, moonY - moonR * 0.1, moonR * 0.9, 0, Math.PI * 2); ctx.fill();
 
       // ── Nuvens ──
       for (let i = 0; i < 4; i++) {
         const cx = ((i * 200 + t * 8) % (w + 100)) - 50;
-        const cy = h * 0.08 + i * 15;
-        const cw = 80 + i * 20;
+        const cy = h * 0.06 + i * 12;
         ctx.fillStyle = "rgba(20,15,40," + (0.3 - i * 0.05).toFixed(2) + ")";
         ctx.beginPath();
-        ctx.ellipse(cx, cy, cw, 12 + i * 3, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx, cy, 80 + i * 20, 10 + i * 2, 0, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // ── Prédios com espaçamento (gaps entre eles) ──
+      // ── Prédios com espaçamento ──
       const buildings = [
         { x: 0.00, w: 0.07, h: 0.35 }, { x: 0.09, w: 0.05, h: 0.28 },
         { x: 0.16, w: 0.08, h: 0.42 }, { x: 0.26, w: 0.06, h: 0.30 },
         { x: 0.34, w: 0.08, h: 0.38 }, { x: 0.44, w: 0.05, h: 0.25 },
-        { x: 0.51, w: 0.09, h: 0.48 }, { x: 0.62, w: 0.06, h: 0.32 },
+        { x: 0.51, w: 0.09, h: 0.46 }, { x: 0.62, w: 0.06, h: 0.32 },
         { x: 0.70, w: 0.08, h: 0.40 }, { x: 0.80, w: 0.06, h: 0.30 },
         { x: 0.88, w: 0.07, h: 0.36 }, { x: 0.97, w: 0.03, h: 0.26 },
       ];
-      const horizonY = h * 0.65;
-      const neonColors = ["#00e5ff", "#ff00aa", "#00ff88", "#ff6600", "#aa00ff"];
       buildings.forEach(function (b, idx) {
         const bx = b.x * w;
         const bw = b.w * w;
@@ -1069,12 +1100,11 @@
         const nc = neonColors[idx % neonColors.length];
         ctx.fillStyle = nc + "40";
         ctx.fillRect(bx, by, bw, 1.5);
-        // Janelas com espaçamento realista (não ocupam todo o prédio)
-        // Margem de 3px nos lados, gap de 5px entre janelas, apenas 60% da altura
+        // Janelas — 90% da altura, com espaço para a estrada em baixo
         const winW = 2, winH = 2;
         const winGapX = 5, winGapY = 5;
         const winStartY = by + 5;
-        const winEndY = by + bh * 0.65; // janelas só nos primeiros 65% do prédio
+        const winEndY = by + bh * 0.90; // 90% da altura do prédio
         for (let wy = winStartY; wy < winEndY; wy += winGapY) {
           for (let wx = bx + 3; wx < bx + bw - 3; wx += winGapX) {
             const seed = idx * 100 + Math.floor(wy) * 7 + Math.floor(wx) * 13;
@@ -1102,63 +1132,77 @@
         }
       });
 
-      // ── Água a mover na parte inferior (ondas + reflexos) ──
-      const waterTop = horizonY;
-      const waterH = h - horizonY;
-      // Base da água (graduação escura com tom azul)
-      const water = ctx.createLinearGradient(0, waterTop, 0, h);
-      water.addColorStop(0, "#0a0a1e");
-      water.addColorStop(0.4, "#050515");
-      water.addColorStop(1, "#020208");
-      ctx.fillStyle = water;
-      ctx.fillRect(0, waterTop, w, waterH);
-      // Ondas — linhas horizontais que ondulam com seno
-      ctx.strokeStyle = "rgba(0,100,150,0.15)";
+      // ── Estrada (substitui a linha azul + água) ──
+      // Asfalto escuro
+      ctx.fillStyle = "#0c0c18";
+      ctx.fillRect(0, roadY, w, roadH);
+      // Linhas da estrada (tracejado amarelo a mover)
+      ctx.fillStyle = "rgba(200,180,60,0.5)";
+      const dashLen = 8, dashGap = 6;
+      const dashOffset = (t * 60) % (dashLen + dashGap);
+      for (let dx = -dashLen; dx < w; dx += dashLen + dashGap) {
+        ctx.fillRect(dx + dashOffset, roadY + roadH / 2 - 0.5, dashLen, 1);
+      }
+      // Bordas da estrada (neon cyan)
+      ctx.fillStyle = "rgba(0,229,255,0.3)";
+      ctx.fillRect(0, roadY, w, 1);
+      ctx.fillRect(0, roadY + roadH - 1, w, 1);
+
+      // ── Carros a passar (faróis à direita, luzes de presença à esquerda) ──
+      // Carros que vão da esquerda para a direita (faróis brancos/azul)
+      for (let i = 0; i < 3; i++) {
+        const carX = ((t * (80 + i * 30) + i * 200) % (w + 40)) - 20;
+        const carY = roadY + 2;
+        // Faróis (brancos, à frente = direita)
+        ctx.fillStyle = "rgba(255,255,220,0.7)";
+        ctx.fillRect(carX + 3, carY, 2, 1);
+        ctx.fillStyle = "rgba(255,255,220,0.3)";
+        ctx.fillRect(carX + 5, carY, 6, 1); // feixe de luz
+        // Luz traseira (vermelha, atrás = esquerda)
+        ctx.fillStyle = "rgba(255,40,40,0.6)";
+        ctx.fillRect(carX, carY, 1.5, 1);
+      }
+      // Carros que vão da direita para a esquerda (faróis à esquerda)
+      for (let i = 0; i < 2; i++) {
+        const carX = w - ((t * (60 + i * 25) + i * 150) % (w + 40)) + 20;
+        const carY = roadY + roadH - 4;
+        // Faróis (brancos, à frente = esquerda)
+        ctx.fillStyle = "rgba(255,255,220,0.7)";
+        ctx.fillRect(carX, carY, 2, 1);
+        ctx.fillStyle = "rgba(255,255,220,0.3)";
+        ctx.fillRect(carX - 6, carY, 6, 1); // feixe de luz
+        // Luz traseira (vermelha, atrás = direita)
+        ctx.fillStyle = "rgba(255,40,40,0.6)";
+        ctx.fillRect(carX + 2.5, carY, 1.5, 1);
+      }
+
+      // ── Chão abaixo da estrada (graduação escura + água) ──
+      const groundTop = roadY + roadH;
+      const groundH = h - groundTop;
+      const ground = ctx.createLinearGradient(0, groundTop, 0, h);
+      ground.addColorStop(0, "#08081a");
+      ground.addColorStop(0.4, "#050515");
+      ground.addColorStop(1, "#020208");
+      ctx.fillStyle = ground;
+      ctx.fillRect(0, groundTop, w, groundH);
+      // Ondas de água (subtis, abaixo da estrada)
+      ctx.strokeStyle = "rgba(0,100,150,0.10)";
       ctx.lineWidth = 1;
-      for (let row = 0; row < 6; row++) {
-        const waveY = waterTop + 4 + row * (waterH / 7);
-        const amp = 2 + row * 0.5;
-        const freq = 0.03 + row * 0.005;
-        const speed = t * (1.5 + row * 0.3);
+      for (let row = 0; row < 4; row++) {
+        const waveY = groundTop + 4 + row * (groundH / 5);
+        const amp = 1.5 + row * 0.4;
         ctx.beginPath();
         for (let wx = 0; wx <= w; wx += 4) {
-          const wy = waveY + Math.sin(wx * freq + speed) * amp;
+          const wy = waveY + Math.sin(wx * 0.03 + t * (1.2 + row * 0.2)) * amp;
           if (wx === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
         }
         ctx.stroke();
       }
-      // Reflexos dos prédios na água (invertido, com ondulação)
-      ctx.save();
-      ctx.globalAlpha = 0.08;
-      buildings.forEach(function (b, idx) {
-        const bx = b.x * w;
-        const bw = b.w * w;
-        const nc = neonColors[idx % neonColors.length];
-        // Reflexo com ondulação (3 faixas a diferentes alturas)
-        for (let band = 0; band < 3; band++) {
-          const refY = waterTop + band * (waterH * 0.15);
-          const wobble = Math.sin(t * 2 + band + idx) * 2;
-          ctx.fillStyle = nc + "15";
-          ctx.fillRect(bx + wobble, refY, bw, 2);
-        }
-      });
-      ctx.restore();
-      // Brilho na linha de água (reflexo do horizonte)
-      ctx.fillStyle = "rgba(0,150,200,0.1)";
-      ctx.fillRect(0, waterTop, w, 2);
-
-      // ── Linha de horizonte (neon cyan) ──
-      const horGlow = ctx.createLinearGradient(0, horizonY - 2, 0, horizonY + 2);
-      horGlow.addColorStop(0, "rgba(0,229,255,0)");
-      horGlow.addColorStop(0.5, "rgba(0,229,255,0.3)");
-      horGlow.addColorStop(1, "rgba(0,229,255,0)");
-      ctx.fillStyle = horGlow;
-      ctx.fillRect(0, horizonY - 2, w, 4);
 
       // ── Chuva neon ──
-      ctx.strokeStyle = "rgba(100,200,255,0.25)";
+      ctx.strokeStyle = "rgba(100,200,255,0.20)";
       ctx.lineWidth = 1;
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 25; i++) {
         const rx = (i * 47 + t * 200) % w;
         const ry = (i * 83 + t * 600) % (h + 20) - 10;
         const rlen = 6 + (i % 3) * 3;
@@ -1168,11 +1212,11 @@
         ctx.stroke();
       }
 
-      // ── Luzes neon estáticas (não se movem, só flicker) ──
+      // ── Luzes neon estáticas (só flicker) ──
       const staticLights = [
-        { x: 0.20, y: 0.15, col: "#00e5ff" },
-        { x: 0.50, y: 0.12, col: "#ff00aa" },
-        { x: 0.80, y: 0.18, col: "#00ff88" },
+        { x: 0.20, y: 0.12, col: "#00e5ff" },
+        { x: 0.50, y: 0.10, col: "#ff00aa" },
+        { x: 0.70, y: 0.15, col: "#00ff88" },
       ];
       staticLights.forEach(function (l, i) {
         const fx = w * l.x;
@@ -1186,15 +1230,13 @@
         ctx.globalAlpha = 1;
       });
 
-      // ── Relâmpagos com fade-out curto (~300ms) ──
-      // O flash atinge intensidade máxima e depois fade-out em ~300ms
-      const lightningCycle = 8; // ciclo de 8 segundos
+      // ── Relâmpagos com fade-out curto ──
+      const lightningCycle = 8;
       const lightningPhase = (t % lightningCycle) / lightningCycle;
       let lightningAlpha = 0;
       if (lightningPhase < 0.04) {
-        // Flash surge nos primeiros 4% do ciclo (~320ms a 60fps), depois fade
         const flashProgress = lightningPhase / 0.04;
-        lightningAlpha = Math.sin(flashProgress * Math.PI) * 0.12; // sobe e desce
+        lightningAlpha = Math.sin(flashProgress * Math.PI) * 0.12;
       }
       if (lightningAlpha > 0) {
         ctx.fillStyle = "rgba(150,180,255," + lightningAlpha.toFixed(3) + ")";
