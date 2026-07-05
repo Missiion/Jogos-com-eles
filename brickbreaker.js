@@ -66,8 +66,8 @@
     through: { color: "#b06be0", label: "T", name: "Pierce",      duration: 5000,  weight: 9 },
     multi:   { color: "#4dd964", label: "M", name: "Multi-Ball",  duration: 0,     weight: 10 },
     extra:   { color: "#ff5e7a", label: "+", name: "Extra Life",  duration: 0,     weight: 10 },  // 10%
-    grenade: { color: "#ffaa00", label: "G", name: "Grenade",     duration: 0,     weight: 10 },  // 10% — explode 5 tijolos por bola
-    nuke:    { color: "#ff0040", label: "N", name: "Nuke",        duration: 0,     weight: 5 },   // 5% — limpa o nível
+    grenade: { color: "#ffdd00", label: "G", name: "Grenade",     duration: 0,     weight: 10 },  // 10% — amarelo brilhante (distinto de shield laranja)
+    nuke:    { color: "#9d00ff", label: "N", name: "Nuke",        duration: 0,     weight: 5 },   // 5% — roxo intenso (distinto de laser vermelho)
   };
   // Posição Y do shield (barra protetora) — logo acima do fundo do ecrã.
   const SHIELD_Y = H - 8;
@@ -86,9 +86,8 @@
   const COMBO_MAX_MULT = 5;      // multiplicador máximo (x5)
 
   // Moedas = Math.floor(score / COIN_DIVISOR).
-  // Aumentado de 25 → 50 (2x mais difícil ganhar moedas).
-  // Antes: 25 pts = 1 moeda. Agora: 50 pts = 1 moeda.
-  const COIN_DIVISOR = 50;
+  // 150 pts = 1 moeda.
+  const COIN_DIVISOR = 150;
 
   // ─────────────────────────────────────────────
   //  ÍCONE SVG
@@ -1233,7 +1232,7 @@
             '<li><b>G</b> ' + t("Granada (10%) — explode 5 tijolos (por bola, não por tempo)") + '</li>' +
             '<li><b>N</b> ' + t("Nuke (5%) — limpa o nível completo instantaneamente") + '</li>' +
             '<li><b>' + t("Velocidade:") + '</b> ' + t("Aumenta a cada nível, cap no nível 10") + '</li>' +
-            '<li><b>' + t("Moedas:") + '</b> ' + t("Ganhas com a pontuação (50 pts = 1 moeda) — gasta na LOJA") + '</li>' +
+            '<li><b>' + t("Moedas:") + '</b> ' + t("Ganhas com a pontuação (150 pts = 1 moeda) — gasta na LOJA") + '</li>' +
             '<li><b>' + t("Loja:") + '</b> ' + t("Compra e equipa skins para tijolos, bola, plataforma e fundo") + '</li>' +
             '<li><b>' + t("Limpa todos os tijolos") + '</b> ' + t("para avançar — padrões infinitos") + '</li>' +
           '</ul>' +
