@@ -11,18 +11,13 @@ import {
 //  (carregado em i18n.js, exposto em window.i18n)
 // ─────────────────────────────────────────────
 const t = (k) => (window.i18n ? window.i18n.t(k) : k);
+const tf = (k, ...args) => (window.i18n ? window.i18n.tf(k, ...args) : k);
 const isPt = () => (window.i18n ? window.i18n.isPt() : true);
 const translateText = (txt, lang) =>
   window.i18n ? window.i18n.translateText(txt, lang) : Promise.resolve(txt);
 const applyTranslations = (root) => {
   if (window.i18n) window.i18n.applyTranslations(root);
 };
-
-// Traduz um termo (género/tema/modo) — usa glossário ou API
-async function translateTag(tag) {
-  if (!tag) return tag;
-  return translateText(tag);
-}
 
 // ─────────────────────────────────────────────
 //  USER STATE — registo + sessão
@@ -263,15 +258,29 @@ let tabGamesMap = {};    // {tabId: Set<firebaseId>}
 // Quando um jogo tem >=2 down-votes, é movido para a tab "Lixo".
 let downvotesMap = {};   // {firebaseId: Set<userId>}
 let upvotesMap = {};     // {firebaseId: Set<userId>}
-let trashTabId = null;   // ID da tab "Lixo" (criada automaticamente)
+let trashTabId = null;   // ID da tab "Reprovados" (criada automaticamente)
 let approvedTabId = null; // ID da tab "Aprovados" (criada automaticamente)
 let playedTabId = null;   // ID da tab "Jogados" (criada automaticamente)
 const DOWNVOTE_THRESHOLD = 2;
 const APPROVED_UPVOTE_COUNT = 3; // exatamente 3 upvotes = aprovado
 
-// Sort: "random" | "name" | "upvotes" | "upvotes-rev" | "rating"
+// ── Helpers para identificar tabs especiais pelo label ──────────
+// As tabs especiais (Reprovados/Aprovados/Jogados) podem ter labels em PT
+// ou EN (dependendo do idioma ativo quando foram criadas). Estes helpers
+// centralizam a verificação para evitar duplicação de conjuntos de labels.
+const TRASH_LABELS    = ["Reprovados", "Lixo", "Trash", "Rejected"];
+const APPROVED_LABELS = ["Aprovados", "Approved"];
+const PLAYED_LABELS   = ["Jogados", "Played"];
+const isTrashLabel    = (label) => TRASH_LABELS.includes(label);
+const isApprovedLabel = (label) => APPROVED_LABELS.includes(label);
+const isPlayedLabel   = (label) => PLAYED_LABELS.includes(label);
+
+// Sort: "random" | "name" | "upvotes" | "downvotes" | "rating"
 const SORT_KEY  = "jce_sort";
 let currentSort = localStorage.getItem(SORT_KEY) || "random";
+// Migração: "upvotes-rev" foi renomeado para "downvotes" (nome mais claro —
+// ordena por downvotes, não por upvotes reversos).
+if (currentSort === "upvotes-rev") { currentSort = "downvotes"; localStorage.setItem(SORT_KEY, "downvotes"); }
 
 // random seed per session — ensures same order within a session but different each load
 let randomSeed  = Math.random();
@@ -439,7 +448,6 @@ const $addtabModal     = document.getElementById("addtab-modal");
 const $addtabBackdrop  = document.getElementById("addtab-backdrop");
 const $addtabClose     = document.getElementById("addtab-close");
 const $addtabTitle     = document.getElementById("addtab-title");
-const $addtabList      = document.getElementById("addtab-list");
 
 // ─────────────────────────────────────────────
 //  IGDB API HELPER
@@ -901,7 +909,7 @@ function steamReviewBadgeHtml(game) {
   // Badge: apenas o descritor traduzido (sem % nem total visíveis).
   // O total fica disponível no tooltip (title) para quem quiser detalhe.
   const total = game.steamReviewTotal > 0 ? abbreviateNumber(game.steamReviewTotal) : null;
-  const reviewsLabel = isPt() ? "análises" : "reviews";
+  const reviewsLabel = t("análises");
   const title = total
     ? `${descTranslated} • ${total} ${reviewsLabel}`
     : descTranslated;
@@ -1409,7 +1417,7 @@ async function registerUser(rawName) {
         currentUser = { id: adminUser.id, name: adminUser.name, isAdmin: true, tabId: adminUser.tabId || null };
         try { localStorage.setItem(USER_ID_KEY, adminUser.id); } catch (_) {}
         updateUserUI();
-        showToast(isPt() ? `Bem-vindo de volta, ${adminUser.name}!` : `Welcome back, ${adminUser.name}!`);
+        showToast(`${t("Bem-vindo de volta,")} ${adminUser.name}!`);
         return true;
       }
       showToast(t("Código admin já utilizado."));
@@ -1420,7 +1428,7 @@ async function registerUser(rawName) {
   } else {
     name = capitalizeName(rawName);
     if (name.length < 2) {
-      showToast(isPt() ? "Nome muito curto (mín 2 caracteres)." : "Name too short (min 2 chars).");
+      showToast(t("Nome muito curto (mín 2 caracteres)."));
       return false;
     }
     if (nameExists(name)) {
@@ -1463,13 +1471,13 @@ async function registerUser(rawName) {
     try { localStorage.setItem(USER_ID_KEY, userRef.id); } catch (_) {}
 
     updateUserUI();
-    showToast(isPt() ? `Bem-vindo, ${name}!` : `Welcome, ${name}!`);
+    showToast(`${t("Bem-vindo,")} ${name}!`);
     return true;
   } catch (err) {
     console.error("[registerUser] erro:", err);
     const msg = err.message === "timeout"
-      ? (isPt() ? "Servidor não responde." : "Server not responding.")
-      : (isPt() ? "Erro ao registar." : "Registration failed.");
+      ? t("Servidor não responde.")
+      : t("Erro ao registar.");
     showToast(msg);
     // Restaura o input para tentar de novo
     if ($input) {
@@ -1489,7 +1497,7 @@ async function editUserName(newRawName) {
   if (!currentUser) return false;
   const newName = capitalizeName(newRawName);
   if (newName.length < 2) {
-    showToast(isPt() ? "Nome muito curto." : "Name too short.");
+    showToast(t("Nome muito curto."));
     return false;
   }
   // Verifica se o nome já existe (excluindo o próprio)
@@ -1512,7 +1520,7 @@ async function editUserName(newRawName) {
     return true;
   } catch (err) {
     console.error("[editUserName] erro:", err);
-    showToast(isPt() ? "Erro ao atualizar nome." : "Failed to update name.");
+    showToast(t("Erro ao atualizar nome."));
     return false;
   }
 }
@@ -1527,7 +1535,7 @@ async function editUserName(newRawName) {
 function createFallbackGame(fsDoc) {
   return {
     igdbId:         fsDoc.igdbId,
-    name:           isPt() ? `Jogo #${fsDoc.igdbId}` : `Game #${fsDoc.igdbId}`,
+    name:           `${t("Jogo #")}${fsDoc.igdbId}`,
     cover:          null,
     screenshots:    [],
     artworks:       [],
@@ -2061,7 +2069,7 @@ function getFilteredSortedGames() {
       if (diff !== 0) return diff;
       return (a.name || "").localeCompare(b.name || "", isPt() ? "pt" : "en");
     });
-  } else if (currentSort === "upvotes-rev") {
+  } else if (currentSort === "downvotes") {
     // ⚠️  Estado reverse = ordenar por DOWNVOTES (mais downvotes primeiro)
     // O ícone mostra uma seta para baixo (downvote), por isso o utilizador
     // espera que ordene por downvotes, não por "menos upvotes".
@@ -2660,7 +2668,8 @@ function renderModalMedia(idx) {
   if (item.type === "img") {
     mediaContent = `<img src="${escHtml(item.src)}" alt="${escHtml(t("Screenshot"))}" onload="this.classList.add('loaded')"/>`;
     // Botão minimalista de fullscreen — só em imagens (vídeos têm o próprio player)
-    fullscreenBtnHtml = `<button class="modal-media-fullscreen-btn" id="modal-media-fullscreen-btn" type="button" aria-label="${escHtml(isPt() ? "Ecrã inteiro" : "Fullscreen")}" title="${escHtml(isPt() ? "Ecrã inteiro" : "Fullscreen")}">
+    const fsLabel = t("Ecrã inteiro");
+    fullscreenBtnHtml = `<button class="modal-media-fullscreen-btn" id="modal-media-fullscreen-btn" type="button" aria-label="${escHtml(fsLabel)}" title="${escHtml(fsLabel)}">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M8 3H5a2 2 0 0 0-2 2v3"/>
         <path d="M21 8V5a2 2 0 0 0-2-2h-3"/>
@@ -2720,10 +2729,8 @@ function renderModalMedia(idx) {
 function renderAgeRestrictedPlaceholder(item) {
   const thumb = item.thumb || youtubeThumbnail(item.videoId);
   const watchUrl = `https://www.youtube.com/watch?v=${escHtml(item.videoId)}`;
-  const label = isPt()
-    ? "Conteúdo com restrição de idade"
-    : "Age-restricted content";
-  const btnLabel = isPt() ? "Ver no YouTube" : "Watch on YouTube";
+  const label = t("Conteúdo com restrição de idade");
+  const btnLabel = t("Ver no YouTube");
   return `
     <div class="modal-media-agegate">
       <img src="${escHtml(thumb)}" alt="" class="modal-media-agegate-thumb" onload="this.classList.add('loaded')"/>
@@ -2759,7 +2766,6 @@ function renderAgeRestrictedPlaceholder(item) {
 function clearModalAutoAdvance() {
   if (modalAutoTimer) { clearTimeout(modalAutoTimer); modalAutoTimer = null; }
   window.removeEventListener("message", onYoutubeStateMessage);
-  window.removeEventListener("message", onYoutubePlaylistStateMessage);
 }
 
 function goToNextModalMedia() {
@@ -2853,20 +2859,9 @@ function scheduleModalAutoAdvance(item) {
     return;
   }
 
-  // Playlist (Gravações): escuta mensagens do YouTube para detetar 'ended'
-  // (avança para o próximo vídeo da playlist automaticamente) mas NÃO
-  // processa onError como age-restriction (playlists podem ter vídeos
-  // individuais com erro sem que a playlist inteira seja age-restricted).
+  // Playlist (Gravações): o player do YouTube avança automaticamente para o
+  // próximo vídeo da playlist — não é necessário auto-advance nem listener.
   if (item.type === "playlist") {
-    window.addEventListener("message", onYoutubePlaylistStateMessage);
-    const iframe = $modalMedia.querySelector("iframe");
-    if (iframe) {
-      iframe.addEventListener("load", () => {
-        try {
-          iframe.contentWindow.postMessage('{"event":"listening","id":1}', "*");
-        } catch(_) {}
-      });
-    }
     return;
   }
 
@@ -2883,16 +2878,6 @@ function scheduleModalAutoAdvance(item) {
       });
     }
   }
-}
-
-// Handler específico para playlists: avança para o próximo vídeo da playlist
-// quando o atual termina (playerState === 0). Não processa onError.
-function onYoutubePlaylistStateMessage(e) {
-  let data;
-  try { data = JSON.parse(e.data); } catch(_) { return; }
-  if (!data) return;
-  // playerState === 0 → vídeo terminou → YouTube avança automaticamente
-  // para o próximo vídeo da playlist (não precisamos de fazer nada)
 }
 
 // ─────────────────────────────────────────────
@@ -3465,30 +3450,28 @@ $adminCreateTrashBtn.addEventListener("click", () => {
 // Pede confirmação antes de executar.
 $adminClearTrashBtn.addEventListener("click", async () => {
   if (!currentUser || !currentUser.isAdmin) {
-    showToast(isPt() ? "Apenas o admin pode limpar Reprovados." : "Only admin can clear Reprovados.");
+    showToast(t("Apenas o admin pode limpar Reprovados."));
     return;
   }
   if (!trashTabId) {
-    showToast(isPt() ? "Não há Reprovados para limpar." : "No Reprovados to clear.");
+    showToast(t("Não há Reprovados para limpar."));
     return;
   }
   const trashSet = tabGamesMap[trashTabId] || new Set();
   if (trashSet.size === 0) {
-    showToast(isPt() ? "Reprovados está vazio." : "Reprovados is empty.");
+    showToast(t("Reprovados está vazio."));
     return;
   }
   // Confirmação
-  const confirmMsg = isPt()
-    ? `${t("Confirmar limpeza do lixo?")} (${trashSet.size} ${isPt() ? "jogos" : "games"})`
-    : `${t("Confirm trash cleanup?")} (${trashSet.size} games)`;
+  const confirmMsg = `${t("Confirmar limpeza do lixo?")} (${trashSet.size} ${t("jogos")})`;
   if (!confirm(confirmMsg)) return;
 
   try {
     await saveTabGames(trashTabId, new Set());
-    showToast(isPt() ? "Reprovados limpo!" : "Reprovados cleared!");
+    showToast(t("Reprovados limpo!"));
   } catch (err) {
     console.error("[clearTrash] erro:", err);
-    showToast(isPt() ? "Erro ao limpar Reprovados." : "Failed to clear Reprovados.");
+    showToast(t("Erro ao limpar Reprovados."));
   }
 });
 
@@ -3723,32 +3706,9 @@ function initHeaderSearch() {
   // ── Scroll containment no dropdown de resultados ──
   // Impede o "scroll chaining": quando o utilizador faz scroll dentro do
   // dropdown e chega ao limite (topo ou fundo), o scroll NÃO propaga para
-  // a página. Isto evita que a página role quando se está a navegar nos
-  // resultados da pesquisa.
+  // a página. Reutiliza trapScroll() (partilhado com notificações e settings).
   if ($results) {
-    $results.addEventListener("wheel", (e) => {
-      // Só contém o scroll se o dropdown tiver conteúdo scrollable
-      const hasScrollableContent = $results.scrollHeight > $results.clientHeight;
-      if (!hasScrollableContent) return;
-
-      const scrollTop = $results.scrollTop;
-      const maxScroll = $results.scrollHeight - $results.clientHeight;
-      const scrollingUp = e.deltaY < 0;
-      const scrollingDown = e.deltaY > 0;
-
-      // No limite superior + scroll para cima → bloqueia
-      if (scrollingUp && scrollTop <= 0) {
-        e.preventDefault();
-        return;
-      }
-      // No limite inferior + scroll para baixo → bloqueia
-      if (scrollingDown && scrollTop >= maxScroll) {
-        e.preventDefault();
-        return;
-      }
-      // Caso contrário: deixa o scroll ocorrer dentro do dropdown
-      // (não precisa de preventDefault — o browser trata)
-    }, { passive: false });
+    trapScroll($results);
   }
 
   // Reabre os resultados ao focar o input — se ainda houver texto escrito,
@@ -4201,7 +4161,7 @@ function renderAdminList(games) {
   $adminGameList.querySelectorAll(".admin-game-remove").forEach(btn => {
     btn.addEventListener("click", () => {
       const name = btn.closest(".admin-game-item").querySelector(".admin-game-name").textContent;
-      const confirmMsg = isPt() ? `Remover "${name}"?` : `Remove "${name}"?`;
+      const confirmMsg = `${t("Remover")} "${name}"?`;
       if (confirm(confirmMsg)) {
         removeGame(btn.dataset.fbid);
       }
@@ -4260,14 +4220,14 @@ function listenToTabGames() {
     snapshot.docs.forEach(d => {
       tabGamesMap[d.id] = new Set(d.data().gameIds || []);
     });
-    // Encontra a tab "Lixo" (se existir)
-    const trashTab = tabsData.find(t => t.label === "Reprovados" || t.label === "Lixo" || t.label === "Trash" || t.label === "Rejected");
+    // Encontra a tab "Reprovados" (se existir)
+    const trashTab = tabsData.find(t => isTrashLabel(t.label));
     trashTabId = trashTab ? trashTab.id : null;
     // Encontra a tab "Aprovados" (se existir)
-    const approvedTab = tabsData.find(t => t.label === "Aprovados" || t.label === "Approved");
+    const approvedTab = tabsData.find(t => isApprovedLabel(t.label));
     approvedTabId = approvedTab ? approvedTab.id : null;
     // Encontra a tab "Jogados" (se existir)
-    const playedTab = tabsData.find(t => t.label === "Jogados" || t.label === "Played");
+    const playedTab = tabsData.find(t => isPlayedLabel(t.label));
     playedTabId = playedTab ? playedTab.id : null;
 
     // ⚠️  Sincroniza hiddenGames com a tab "Jogados" do Firebase.
@@ -4497,14 +4457,14 @@ async function processApprovedThresholds() {
 
   // Garante que approvedTabId está actualizado (procura em tabsData)
   if (!approvedTabId) {
-    const approvedTab = tabsData.find(t => t.label === "Aprovados" || t.label === "Approved");
+    const approvedTab = tabsData.find(t => isApprovedLabel(t.label));
     if (approvedTab) approvedTabId = approvedTab.id;
   }
 
   // Garante que a tab "Aprovados" existe (só cria se realmente não existir)
   if (!approvedTabId) {
     // Verificação dupla em tabsData para evitar criar duplicados
-    const existing = tabsData.find(t => t.label === "Aprovados" || t.label === "Approved");
+    const existing = tabsData.find(t => isApprovedLabel(t.label));
     if (existing) {
       approvedTabId = existing.id;
     } else {
@@ -4716,17 +4676,15 @@ async function processDownvoteThresholds() {
 // ⚠️  Anti-duplicado: verifica tabsData E Firebase antes de criar.
 async function createTrashTab() {
   if (!currentUser || !currentUser.isAdmin) {
-    showToast(isPt() ? "Apenas o admin pode criar Reprovados." : "Only admin can create Reprovados.");
+    showToast(t("Apenas o admin pode criar Reprovados."));
     return;
   }
 
   // 1. Verifica em tabsData (estado local)
-  const existingLocal = tabsData.find(t =>
-    t.label === "Reprovados" || t.label === "Reprovados" || t.label === "Lixo" || t.label === "Trash" || t.label === "Rejected" || t.label === "Rejected"
-  );
+  const existingLocal = tabsData.find(t => isTrashLabel(t.label));
   if (existingLocal) {
     trashTabId = existingLocal.id;
-    showToast(isPt() ? "Reprovados já existe." : "Reprovados already exists.");
+    showToast(t("Reprovados já existe."));
     return;
   }
 
@@ -4735,11 +4693,11 @@ async function createTrashTab() {
     const snap = await getDocs(collection(db, "tabs"));
     const existingFb = snap.docs.find(d => {
       const label = d.data().label;
-      return label === "Reprovados" || label === "Lixo" || label === "Trash" || label === "Rejected";
+      return isTrashLabel(label);
     });
     if (existingFb) {
       trashTabId = existingFb.id;
-      showToast(isPt() ? "Reprovados já existe." : "Reprovados already exists.");
+      showToast(t("Reprovados já existe."));
       return;
     }
   } catch (e) {
@@ -4754,11 +4712,11 @@ async function createTrashTab() {
     });
     await setDoc(doc(db, "tabGames", trashRef.id), { gameIds: [] });
     trashTabId = trashRef.id;
-    showToast(isPt() ? "Reprovados criado!" : "Reprovados created!");
+    showToast(t("Reprovados criado!"));
     processDownvoteThresholds();
   } catch (err) {
     console.error("[createTrashTab] erro:", err);
-    showToast(isPt() ? "Erro ao criar Reprovados." : "Failed to create Reprovados.");
+    showToast(t("Erro ao criar Reprovados."));
   }
 }
 
@@ -4785,9 +4743,7 @@ async function ensurePlayedTab() {
   if (playedTabId) return playedTabId;
 
   // 2. Procura em tabsData (estado local)
-  const existingLocal = tabsData.find(t =>
-    t.label === "Jogados" || t.label === "Played"
-  );
+  const existingLocal = tabsData.find(t => isPlayedLabel(t.label));
   if (existingLocal) {
     playedTabId = existingLocal.id;
     return playedTabId;
@@ -4798,7 +4754,7 @@ async function ensurePlayedTab() {
     const snap = await getDocs(collection(db, "tabs"));
     const existingFb = snap.docs.find(d => {
       const label = d.data().label;
-      return label === "Jogados" || label === "Played";
+      return isPlayedLabel(label);
     });
     if (existingFb) {
       playedTabId = existingFb.id;
@@ -4819,7 +4775,7 @@ async function ensurePlayedTab() {
     return playedTabId;
   } catch (err) {
     console.error("[ensurePlayedTab] erro:", err);
-    showToast(isPt() ? "Erro ao criar Jogados." : "Failed to create Played.");
+    showToast(t("Erro ao criar Jogados."));
     return null;
   }
 }
@@ -4839,7 +4795,7 @@ async function markAsPlayed(firebaseId) {
   hiddenGames.add(firebaseId);
   saveHiddenGames();
 
-  showToast(isPt() ? "Marcado como jogado." : "Marked as played.");
+  showToast(t("Marcado como jogado."));
   renderGameList(gamesData);
 }
 
@@ -4856,7 +4812,7 @@ async function unmarkAsPlayed(firebaseId) {
   hiddenGames.delete(firebaseId);
   saveHiddenGames();
 
-  showToast(isPt() ? "Jogo revertido." : "Game reverted.");
+  showToast(t("Jogo revertido."));
   renderGameList(gamesData);
 }
 
@@ -4904,12 +4860,12 @@ function renderTabs() {
   // Ordenação: "Aprovados" em 2º (sempre abaixo de Todos), "Jogados" acima de
   // "Reprovados", "Reprovados" em último.
   const sortedTabs = [...tabsData].sort((a, b) => {
-    const aIsApproved = (a.label === "Aprovados" || a.label === "Approved") ? 1 : 0;
-    const bIsApproved = (b.label === "Aprovados" || b.label === "Approved") ? 1 : 0;
-    const aIsPlayed = (a.label === "Jogados" || a.label === "Played") ? 1 : 0;
-    const bIsPlayed = (b.label === "Jogados" || b.label === "Played") ? 1 : 0;
-    const aIsTrash = (a.label === "Reprovados" || a.label === "Lixo" || a.label === "Trash" || a.label === "Rejected") ? 1 : 0;
-    const bIsTrash = (b.label === "Reprovados" || b.label === "Lixo" || b.label === "Trash" || b.label === "Rejected") ? 1 : 0;
+    const aIsApproved = isApprovedLabel(a.label) ? 1 : 0;
+    const bIsApproved = isApprovedLabel(b.label) ? 1 : 0;
+    const aIsPlayed = isPlayedLabel(a.label) ? 1 : 0;
+    const bIsPlayed = isPlayedLabel(b.label) ? 1 : 0;
+    const aIsTrash = isTrashLabel(a.label) ? 1 : 0;
+    const bIsTrash = isTrashLabel(b.label) ? 1 : 0;
 
     // Aprovados tem prioridade 0 (vem primeiro entre as tabs)
     // Outras tabs têm prioridade 1
@@ -4925,9 +4881,9 @@ function renderTabs() {
     { id: "all", label: t("Todos"), count: gamesData.filter(g => !isInTrash(g.firebaseId)).length, deletable: false },
     ...sortedTabs.map(tab => {
       const set = tabGamesMap[tab.id] || new Set();
-      const isTrash = (tab.label === "Reprovados" || tab.label === "Lixo" || tab.label === "Trash" || tab.label === "Rejected");
-      const isApproved = (tab.label === "Aprovados" || tab.label === "Approved");
-      const isPlayedTab = (tab.label === "Jogados" || tab.label === "Played");
+      const isTrash = isTrashLabel(tab.label);
+      const isApproved = isApprovedLabel(tab.label);
+      const isPlayedTab = isPlayedLabel(tab.label);
       return {
         id: tab.id,
         label: isTrash ? t("Reprovados") : (isApproved ? t("Aprovados") : (isPlayedTab ? t("Jogados") : tab.label)),
@@ -4976,9 +4932,7 @@ function renderTabs() {
     btn.addEventListener("click", e => {
       e.stopPropagation();
       const tabLabel = tabsData.find(tt => tt.id === btn.dataset.tabid)?.label || "";
-      const confirmMsg = isPt()
-        ? `Apagar a tab "${tabLabel}"?`
-        : `Delete tab "${tabLabel}"?`;
+      const confirmMsg = tf("Apagar a tab \"{0}\"?", tabLabel);
       if (confirm(confirmMsg)) {
         deleteTab(btn.dataset.tabid);
       }
@@ -5034,14 +4988,14 @@ $createTabInput.addEventListener("keydown", e => {
 
 // ─────────────────────────────────────────────
 //  SORT — toolbar buttons
-//  O botão de upvotes tem 3 estados: off → upvotes (mais votados) → upvotes-rev (menos votados) → off
+//  O botão de upvotes tem 3 estados: off → upvotes (mais votados) → downvotes (menos votados) → off
 // ─────────────────────────────────────────────
 function updateSortButtonsUI() {
   document.querySelectorAll(".sort-btn").forEach(b => {
     b.classList.remove("active", "reverse");
     if (b.dataset.sort === currentSort) {
       b.classList.add("active");
-    } else if (b.dataset.sort === "upvotes" && currentSort === "upvotes-rev") {
+    } else if (b.dataset.sort === "upvotes" && currentSort === "downvotes") {
       // Estado reverso: mesmo botão, mas com classe "reverse" (mostra downvote icon)
       b.classList.add("active", "reverse");
     }
@@ -5051,7 +5005,7 @@ function updateSortButtonsUI() {
   if (votesBtn) {
     const upIcon = votesBtn.querySelector(".sort-icon-up");
     const downIcon = votesBtn.querySelector(".sort-icon-down");
-    const isReverse = currentSort === "upvotes-rev";
+    const isReverse = currentSort === "downvotes";
     if (upIcon) upIcon.style.display = isReverse ? "none" : "";
     if (downIcon) downIcon.style.display = isReverse ? "" : "none";
     // Actualiza o title consoante o estado
@@ -5071,10 +5025,10 @@ document.querySelectorAll(".sort-btn").forEach(btn => {
     const sortType = btn.dataset.sort;
 
     if (sortType === "upvotes") {
-      // 3-state cycle: off → upvotes → upvotes-rev → off
+      // 3-state cycle: off → upvotes → downvotes → off
       if (currentSort === "upvotes") {
-        currentSort = "upvotes-rev";
-      } else if (currentSort === "upvotes-rev") {
+        currentSort = "downvotes";
+      } else if (currentSort === "downvotes") {
         currentSort = "random";
       } else {
         currentSort = "upvotes";
@@ -5388,12 +5342,12 @@ async function setPlaylistUrl(game, url) {
       updateModalRecordingsButton(game);
     }
     showToast(url
-      ? (isPt() ? "Gravações guardadas." : "Recordings saved.")
-      : (isPt() ? "Gravações removidas." : "Recordings removed.")
+      ? t("Gravações guardadas.")
+      : t("Gravações removidas.")
     );
   } catch (err) {
     console.error("[setPlaylistUrl] erro:", err);
-    showToast(isPt() ? "Erro ao guardar gravações." : "Failed to save recordings.");
+    showToast(t("Erro ao guardar gravações."));
   }
 }
 
@@ -5444,11 +5398,11 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!addTabTargetGame) return;
       const url = input ? input.value.trim() : "";
       if (!url) {
-        showToast(isPt() ? "Insere um link de playlist." : "Enter a playlist link.");
+        showToast(t("Insere um link de playlist."));
         return;
       }
       if (!isValidYoutubePlaylistUrl(url)) {
-        showToast(isPt() ? "Link de playlist inválido." : "Invalid playlist link.");
+        showToast(t("Link de playlist inválido."));
         return;
       }
       setPlaylistUrl(addTabTargetGame, url);
@@ -5564,7 +5518,13 @@ function renderCarousel() {
 // ─────────────────────────────────────────────
 const NOTIFICATIONS_KEY = "jce_notifications";
 const NOTIFICATIONS_MAX = 50; // máximo de notificações guardadas
-const GAMES_SNAPSHOT_KEY = "jce_games_snapshot";
+const GAMES_SNAPSHOT_KEY = "jce_games_snapshot_v2";
+// Migração one-time: remove o snapshot v1 (raw IGDB status). O v2 usa
+// computeReleaseStatus() (IGDB + Steam), pelo que snapshots v1 são incompatíveis —
+// compará-los geraria falsas notificações na primeira carga pós-update.
+// Ao remover, a primeira carga com o novo código trata tudo como "primeiro load"
+// (snapshot vazio → apenas guarda, sem gerar notificações).
+try { localStorage.removeItem("jce_games_snapshot"); } catch (_) {}
 
 let notifications = [];        // array de {id, type, text, gameId, gameName, timestamp, read}
 let notificationsMuted = false;
@@ -5593,9 +5553,37 @@ function loadNotifications() {
 //   - Release Date + Release status (Etapa 5)
 //   - Last update Steam + IGDB updated_at (Etapa Updates)
 // Os outros campos (estúdio, desenvolvedor, engine, etc.) não geram notificação.
+//
+// ⚠️  CORREÇÃO — Status de lançamento no snapshot:
+//   Usa computeReleaseStatus() (IGDB + Steam combinados) em vez de
+//   game.releaseStatus (raw IGDB). Isto alinha o snapshot com o estado
+//   EXIBIDO ao utilizador, evitando falsas notificações de "lançado" quando:
+//     - O IGDB infere "Lançado" de uma first_release_date no passado, MAS
+//     - A Steam diz coming_soon=true (jogo ainda por lançar), pelo que o
+//       display mostra "Por lançar".
+//   Sem esta correção, o snapshot (raw IGDB "Lançado") diverge do display
+//   ("Por lançar"), e uma re-fetch do IGDB que actualize a data dispara uma
+//   falsa notificação "lançado" — exatamente o bug do "Online 404".
+//
+//   Para jogos COM steamAppId mas NÃO enriched (Steam fetch falhou),
+//   armazena null — o status IGDB-only é impreciso para jogos não lançados
+//   com datas no passado, e compará-lo entre snapshots poderia gerar falsas
+//   notificações devido à instabilidade intermitente do enrichment.
+//   Para jogos SEM steamAppId, IGDB é a fonte única → game.releaseStatus.
 function extractGameSnapshot(game) {
+  let releaseStatus;
+  if (game.steamAppId && game.steamEnriched === true) {
+    // Jogo com Steam enriquecido → status combinado (alinhado com o display)
+    releaseStatus = computeReleaseStatus(game) || null;
+  } else if (!game.steamAppId) {
+    // Jogo sem Steam → IGDB é a fonte única
+    releaseStatus = game.releaseStatus || null;
+  } else {
+    // Tem steamAppId mas enrichment falhou → status não fiável (não comparar)
+    releaseStatus = null;
+  }
   return {
-    releaseStatus: game.releaseStatus || null,
+    releaseStatus,
     firstReleaseTs: game.firstReleaseTs || null,
     // Last update: usa o timestamp do último patch (Steam) ou IGDB updated_at.
     // steamLastUpdate é { date, title, url } — só guardamos o date para comparar.
@@ -5667,9 +5655,7 @@ function detectGameChanges() {
     if (!prev) {
       // Verifica se o snapshot já tinha jogos (se não, é primeiro load — skip)
       if (Object.keys(gamesSnapshot).length > 0) {
-        const text = isPt()
-          ? `"${game.name}" foi adicionado à lista!`
-          : `"${game.name}" was added to the list!`;
+        const text = tf('"{0}" foi adicionado à lista!', game.name);
         addNotification("added", text, game.firebaseId, game.name);
         hasChanges = true;
       }
@@ -5682,9 +5668,7 @@ function detectGameChanges() {
 
     // 1. Acesso Antecipado → Lançado (saiu de early access)
     if (prevStatus === "Acesso Antecipado" && currStatus === "Lançado") {
-      const text = isPt()
-        ? `"${game.name}" saiu de acesso antecipado e foi lançado!`
-        : `"${game.name}" left early access and is now released!`;
+      const text = tf('"{0}" saiu de acesso antecipado e foi lançado!', game.name);
       addNotification("released", text, game.firebaseId, game.name);
       hasChanges = true;
       return;
@@ -5692,9 +5676,8 @@ function detectGameChanges() {
 
     // 2. Por lançar → Acesso Antecipado ou Lançado (jogo foi lançado)
     if (prevStatus === "Por lançar" && (currStatus === "Acesso Antecipado" || currStatus === "Lançado")) {
-      const text = isPt()
-        ? `"${game.name}" foi lançado${currStatus === "Acesso Antecipado" ? " em acesso antecipado" : ""}!`
-        : `"${game.name}" was released${currStatus === "Acesso Antecipado" ? " in early access" : ""}!`;
+      const eaSuffix = currStatus === "Acesso Antecipado" ? t(" em acesso antecipado") : "";
+      const text = tf('"{0}" foi lançado{1}!', game.name, eaSuffix);
       addNotification("early-access", text, game.firebaseId, game.name);
       hasChanges = true;
       return;
@@ -5711,9 +5694,7 @@ function detectGameChanges() {
       // A data do último update mudou — notifica!
       const prevDate = formatLastUpdateDate(prevUpdateTs);
       const currDate = formatLastUpdateDate(currUpdateTs);
-      const text = isPt()
-        ? `"${game.name}" recebeu um update! (${currDate})`
-        : `"${game.name}" received an update! (${currDate})`;
+      const text = tf('"{0}" recebeu um update! ({1})', game.name, currDate);
       addNotification("patch", text, game.firebaseId, game.name);
       hasChanges = true;
       return; // já notificámos o update — não cai na secção 4
@@ -5725,14 +5706,12 @@ function detectGameChanges() {
     // modos, nota, capa) NÃO geram notificação — removido a pedido do user.
     const changedFields = [];
     if (prev.firstReleaseTs !== curr.firstReleaseTs) {
-      changedFields.push(isPt() ? "data de lançamento" : "release date");
+      changedFields.push(t("data de lançamento"));
     }
 
     if (changedFields.length > 0) {
       const fieldsText = changedFields.join(", ");
-      const text = isPt()
-        ? `"${game.name}" teve informações atualizadas: ${fieldsText}.`
-        : `"${game.name}" was updated: ${fieldsText}.`;
+      const text = tf('"{0}" teve informações atualizadas: {1}.', game.name, fieldsText);
       addNotification("updated", text, game.firebaseId, game.name);
       hasChanges = true;
     }
@@ -5779,30 +5758,22 @@ function detectVoteNotifications(newVotes, voteType) {
 
     const count = votes.length;
     const voterNames = votes.map(v => v.userName).filter(Boolean);
-    const gameName = game.name || "Jogo desconhecido";
+    const gameName = game.name || t("Jogo desconhecido");
 
     let text;
     if (voteType === "upvote") {
       if (count === 1) {
-        const voter = voterNames[0] || (isPt() ? "Alguém" : "Someone");
-        text = isPt()
-          ? `${voter} deu um up-vote em "${gameName}".`
-          : `${voter} up-voted "${gameName}".`;
+        const voter = voterNames[0] || t("Alguém");
+        text = tf('{0} deu um up-vote em "{1}".', voter, gameName);
       } else {
-        text = isPt()
-          ? `Recebeste ${count} up-votes em "${gameName}".`
-          : `You received ${count} up-votes on "${gameName}".`;
+        text = tf('Recebeste {0} up-votes em "{1}".', count, gameName);
       }
     } else {
       if (count === 1) {
-        const voter = voterNames[0] || (isPt() ? "Alguém" : "Someone");
-        text = isPt()
-          ? `${voter} deu um down-vote em "${gameName}".`
-          : `${voter} down-voted "${gameName}".`;
+        const voter = voterNames[0] || t("Alguém");
+        text = tf('{0} deu um down-vote em "{1}".', voter, gameName);
       } else {
-        text = isPt()
-          ? `Recebeste ${count} down-votes em "${gameName}".`
-          : `You received ${count} down-votes on "${gameName}".`;
+        text = tf('Recebeste {0} down-votes em "{1}".', count, gameName);
       }
     }
 
@@ -5901,24 +5872,6 @@ function formatNotifTime(ts) {
   }
 }
 
-// Ícone SVG por tipo de notificação
-function notifIconSvg(type) {
-  switch (type) {
-    case "released":
-      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
-    case "early-access":
-      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`;
-    case "updated":
-      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>`;
-    case "upvote":
-      return `<svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" stroke="none"><path d="M10 19a3.966 3.966 0 01-3.96-3.962V10.98H2.838c-.706 0-1.335-.42-1.605-1.073-.27-.652-.122-1.396.377-1.895l7.754-7.759a.925.925 0 011.272 0l7.754 7.76a1.734 1.734 0 01.376 1.894c-.27.652-.9 1.073-1.605 1.073h-3.202v4.058A3.965 3.965 0 0110 19zm-7.01-9.82h4.85v4.73c0 1.13.81 2.163 1.934 2.278a2.163 2.163 0 002.386-2.15V9.18h4.85L10 2.164 2.99 9.18z"/></svg>`;
-    case "downvote":
-      return `<svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" stroke="none"><path d="M10 1a3.966 3.966 0 013.96 3.962V9.02h3.202c.706 0 1.335.42 1.605 1.073.27.652.122 1.396-.377 1.895l-7.754 7.759a.925.925 0 01-1.272 0l-7.754-7.76a1.734 1.734 0 01-.376-1.894c.27-.652.9-1.073 1.605-1.073h3.202V4.962A3.965 3.965 0 0110 1zm7.01 9.82h-4.85V5.09c0-1.13-.81-2.163-1.934-2.278a2.163 2.163 0 00-2.386 2.15v5.859H2.989l7.01 7.016 7.012-7.016z"/></svg>`;
-    default:
-      return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>`;
-  }
-}
-
 // ─────────────────────────────────────────────
 //  Simulação de notificações para teste (Etapa 4b)
 //  Gera notificações falsas com todos os tipos, APENAS em memória
@@ -5939,9 +5892,7 @@ function simulateTestNotifications() {
     {
       id: "test-released-" + Date.now(),
       type: "released",
-      text: isPt()
-        ? `"${game1.name}" saiu de acesso antecipado e foi lançado!`
-        : `"${game1.name}" left early access and is now released!`,
+      text: tf('"{0}" saiu de acesso antecipado e foi lançado!', game1.name),
       gameId: game1.firebaseId,
       gameName: game1.name,
       timestamp: Date.now() - 60000, // 1 min ago
@@ -5951,9 +5902,7 @@ function simulateTestNotifications() {
     {
       id: "test-early-" + Date.now(),
       type: "early-access",
-      text: isPt()
-        ? `"${game2.name}" foi lançado em acesso antecipado!`
-        : `"${game2.name}" was released in early access!`,
+      text: tf('"{0}" foi lançado em acesso antecipado!', game2.name),
       gameId: game2.firebaseId,
       gameName: game2.name,
       timestamp: Date.now() - 3600000, // 1 hour ago
@@ -5963,9 +5912,7 @@ function simulateTestNotifications() {
     {
       id: "test-updated-" + Date.now(),
       type: "updated",
-      text: isPt()
-        ? `"${game3.name}" teve informações atualizadas: estúdio, engine.`
-        : `"${game3.name}" was updated: studio, engine.`,
+      text: tf('"{0}" teve informações atualizadas: {1}.', game3.name, t("estúdio, engine")),
       gameId: game3.firebaseId,
       gameName: game3.name,
       timestamp: Date.now() - 7200000, // 2 hours ago
@@ -5975,9 +5922,7 @@ function simulateTestNotifications() {
     {
       id: "test-upvote-1-" + Date.now(),
       type: "upvote",
-      text: isPt()
-        ? `Leo deu um up-vote em "${game1.name}".`
-        : `Leo up-voted "${game1.name}".`,
+      text: tf('{0} deu um up-vote em "{1}".', "Leo", game1.name),
       gameId: game1.firebaseId,
       gameName: game1.name,
       timestamp: Date.now() - 1800000, // 30 min ago
@@ -5987,9 +5932,7 @@ function simulateTestNotifications() {
     {
       id: "test-upvote-2-" + Date.now(),
       type: "upvote",
-      text: isPt()
-        ? `Recebeste 2 up-votes em "${game2.name}".`
-        : `You received 2 up-votes on "${game2.name}".`,
+      text: tf('Recebeste {0} up-votes em "{1}".', 2, game2.name),
       gameId: game2.firebaseId,
       gameName: game2.name,
       timestamp: Date.now() - 10800000, // 3 hours ago
@@ -5999,9 +5942,7 @@ function simulateTestNotifications() {
     {
       id: "test-downvote-" + Date.now(),
       type: "downvote",
-      text: isPt()
-        ? `M1guel deu um down-vote em "${game3.name}".`
-        : `M1guel down-voted "${game3.name}".`,
+      text: tf('{0} deu um down-vote em "{1}".', "M1guel", game3.name),
       gameId: game3.firebaseId,
       gameName: game3.name,
       timestamp: Date.now() - 86400000, // 1 day ago
@@ -6015,9 +5956,8 @@ function simulateTestNotifications() {
   notifications = [...testNotifs, ...notifications];
   _testNotificationsActive = true;
   renderNotifications();
-
   // Feedback
-  showToast(isPt() ? "Notificações de teste adicionadas." : "Test notifications added.");
+  showToast(t("Notificações de teste adicionadas."));
 }
 
 // Renderiza o dropdown de notificações
@@ -6251,6 +6191,16 @@ function initSettings() {
       try { localStorage.setItem("jce_mute_notifications", notificationsMuted ? "1" : "0"); } catch (_) {}
     });
   }
+
+  // 7. Checkbox mutar sons (SFX)
+  const muteSoundsChk = document.getElementById("option-mute-sounds");
+  if (muteSoundsChk) {
+    muteSoundsChk.checked = window.sfx ? window.sfx.isMuted() : false;
+    muteSoundsChk.addEventListener("change", e => {
+      e.stopPropagation();
+      if (window.sfx) window.sfx.setMuted(muteSoundsChk.checked);
+    });
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -6327,7 +6277,7 @@ function startDiscover() {
   const availableGames = gamesData.filter(g => !hiddenGames.has(g.firebaseId));
 
   if (availableGames.length === 0) {
-    showToast(isPt() ? "Nenhum jogo disponível para descobrir." : "No games available to discover.");
+    showToast(t("Nenhum jogo disponível para descobrir."));
     return;
   }
 
@@ -6952,7 +6902,7 @@ function _fsCreateOverlay() {
     <div class="image-fs-container">
       <img class="image-fs-img" alt=""/>
     </div>
-    <div class="image-fs-hint">${escHtml(isPt() ? "Scroll: zoom · Arrastar: mover · Duplo clique: reset · Esc: fechar" : "Scroll: zoom · Drag: pan · Double-click: reset · Esc: close")}</div>
+    <div class="image-fs-hint">${escHtml(t("Scroll: zoom · Arrastar: mover · Duplo clique: reset · Esc: fechar"))}</div>
   `;
   document.body.appendChild(_fsOverlay);
 
