@@ -273,8 +273,8 @@
           ctx.moveTo(x + w * 0.25, y); ctx.lineTo(x + w * 0.30, y + h);
           ctx.moveTo(x + w * 0.70, y); ctx.lineTo(x + w * 0.65, y + h);
           break;
-        case 5: // Fissura circular (arco)
-          ctx.arc(x + w * 0.5, y + h * 0.5, w * 0.3, 0, Math.PI * 2);
+        case 5: // Fissura circular (arco) — raio baseado na dimensão menor para não sair do bloco
+          ctx.arc(x + w * 0.5, y + h * 0.5, Math.min(w, h) * 0.3, 0, Math.PI * 2);
           break;
         case 6: // Fissura em espiral (4 segmentos)
           ctx.moveTo(x + w * 0.5, y + h * 0.2);
