@@ -39,10 +39,10 @@
     ],
     ball: [
       { id: "ball-comet",    name: "Comet",      tier: 1, desc: "Icy trail" },
-      { id: "ball-fire",     name: "Fireball",   tier: 5, desc: "Living flames" },
+      { id: "ball-blackhole",name: "Black Hole", tier: 2, desc: "Event horizon" },
       { id: "ball-frost",    name: "Ice Sphere", tier: 3, desc: "Frozen crystal" },
       { id: "ball-plasma",   name: "Plasma Core",tier: 4, desc: "Purple energy" },
-      { id: "ball-blackhole",name: "Black Hole", tier: 2, desc: "Event horizon" },
+      { id: "ball-fire",     name: "Fireball",   tier: 5, desc: "Living flames" },
       { id: "ball-prism",    name: "Prism",      tier: 6, desc: "Refracting crystal" },
     ],
     paddle: [
@@ -59,7 +59,7 @@
       { id: "bg-aurora",    name: "Aurora",       tier: 3, desc: "Boreal lights" },
       { id: "bg-ocean",     name: "Deep Ocean",   tier: 4, desc: "Underwater abyss" },
       { id: "bg-matrix",    name: "Matrix Rain",  tier: 5, desc: "Digital rain" },
-      { id: "bg-nebula",    name: "Sunset Drive", tier: 6, desc: "Synthwave horizon" },
+      { id: "bg-nebula",    name: "Neon Metropolis", tier: 6, desc: "Cyberpunk city" },
     ],
   };
 
@@ -169,59 +169,140 @@
       ctx.fillRect(x, y + h - 3, w, 1);
     },
     "brick-ice": function (ctx, x, y, w, h, row) {
-      // frosted blue-white — 7 ângulos de facetas por row (mesma cor base)
+      // Frosted Ice — gelo cristalino com 7 variações de facetas.
+      // Cada row tem um padrão de facetas diferente: linhas diagonais, cruzes,
+      // losangos, etc. Mantém a mesma cor base azul-branca.
       ctx.fillStyle = vgrad(ctx, x, y, w, h, "#d4ecf7", "#8ec5db");
       ctx.fillRect(x, y, w, h);
       const v = row % 7;
-      // 7 ângulos de facetas (varia a inclinação das linhas de cristal)
-      const f1x = [0.30, 0.40, 0.50, 0.20, 0.60, 0.35, 0.45][v];
-      const f1y = [0.60, 0.50, 0.70, 0.40, 0.50, 0.65, 0.45][v];
-      const f2x = [0.70, 0.60, 0.50, 0.80, 0.40, 0.65, 0.55][v];
-      const f2y = [0.50, 0.60, 0.40, 0.50, 0.70, 0.35, 0.55][v];
-      // crystal facets (diagonal lines)
-      ctx.strokeStyle = "rgba(255,255,255,0.5)";
+      ctx.strokeStyle = "rgba(255,255,255,0.55)";
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(x + w * f1x, y); ctx.lineTo(x, y + h * f1y);
-      ctx.moveTo(x + w * f2x, y); ctx.lineTo(x + w, y + h * f2y);
+      switch (v) {
+        case 0: // X de facetas (duas diagonais)
+          ctx.moveTo(x, y); ctx.lineTo(x + w, y + h);
+          ctx.moveTo(x + w, y); ctx.lineTo(x, y + h);
+          break;
+        case 1: // Cruz (vertical + horizontal)
+          ctx.moveTo(x + w / 2, y); ctx.lineTo(x + w / 2, y + h);
+          ctx.moveTo(x, y + h / 2); ctx.lineTo(x + w, y + h / 2);
+          break;
+        case 2: // V invertido (duas linhas do topo para o centro)
+          ctx.moveTo(x, y); ctx.lineTo(x + w / 2, y + h / 2);
+          ctx.moveTo(x + w, y); ctx.lineTo(x + w / 2, y + h / 2);
+          break;
+        case 3: // Triângulo (3 linhas do centro)
+          ctx.moveTo(x + w / 2, y + h / 2); ctx.lineTo(x, y);
+          ctx.moveTo(x + w / 2, y + h / 2); ctx.lineTo(x + w, y);
+          ctx.moveTo(x + w / 2, y + h / 2); ctx.lineTo(x + w / 2, y + h);
+          break;
+        case 4: // Ziguezague
+          ctx.moveTo(x, y); ctx.lineTo(x + w * 0.3, y + h * 0.5);
+          ctx.lineTo(x + w * 0.7, y + h * 0.5); ctx.lineTo(x + w, y + h);
+          break;
+        case 5: // Losango (4 linhas do centro)
+          ctx.moveTo(x + w / 2, y); ctx.lineTo(x + w / 2, y + h);
+          ctx.moveTo(x, y + h / 2); ctx.lineTo(x + w, y + h / 2);
+          ctx.moveTo(x, y); ctx.lineTo(x + w, y + h);
+          break;
+        case 6: // Estrela (6 linhas do centro)
+          for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2;
+            ctx.moveTo(x + w / 2, y + h / 2);
+            ctx.lineTo(x + w / 2 + Math.cos(a) * w * 0.4, y + h / 2 + Math.sin(a) * h * 0.4);
+          }
+          break;
+      }
       ctx.stroke();
-      // spark per variation (pequeno brilho que varia por row)
-      ctx.fillStyle = "rgba(255,255,255,0.7)";
-      ctx.fillRect(x + w * [0.55, 0.25, 0.75, 0.45, 0.65, 0.30, 0.50][v] - 0.5,
-                   y + h * [0.75, 0.30, 0.55, 0.80, 0.25, 0.70, 0.40][v] - 0.5, 1.5, 1.5);
+      // Brilho specular (varia por row — simula reflexo de luz em ângulos diferentes)
+      const sparkX = [0.30, 0.70, 0.50, 0.25, 0.75, 0.50, 0.40][v];
+      const sparkY = [0.25, 0.35, 0.20, 0.50, 0.30, 0.25, 0.30][v];
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.beginPath(); ctx.arc(x + w * sparkX, y + h * sparkY, 1.5, 0, Math.PI * 2); ctx.fill();
+      // Pequenos cristais nos cantos (varia por row)
+      ctx.fillStyle = "rgba(200,230,255,0.5)";
+      const cx = [0.85, 0.15, 0.80, 0.20, 0.90, 0.10, 0.85][v];
+      const cy = [0.80, 0.75, 0.20, 0.85, 0.75, 0.80, 0.75][v];
+      ctx.beginPath(); ctx.arc(x + w * cx, y + h * cy, 1, 0, Math.PI * 2); ctx.fill();
       // edge highlight
       ctx.fillStyle = "rgba(255,255,255,0.6)";
       ctx.fillRect(x, y, w, 1.5);
+      ctx.fillRect(x, y, 1.5, h);
       // shadow
       ctx.fillStyle = "rgba(40,80,120,0.4)";
       ctx.fillRect(x, y + h - 1.5, w, 1.5);
+      ctx.fillRect(x + w - 1.5, y, 1.5, h);
     },
     "brick-lava": function (ctx, x, y, w, h, row) {
-      // dark rock base — 7 padrões de fissuras de lava por row (mesma cor base)
+      // Lava Rock — rocha vulcânica com fissuras de lava brilhante.
+      // 7 variações de padrões de fissura: cada row tem um padrão completamente
+      // diferente (linhas, curvas, ziguezagues, estrelas, etc.).
       ctx.fillStyle = vgrad(ctx, x, y, w, h, "#3a1010", "#1a0505");
       ctx.fillRect(x, y, w, h);
+      // Textura de rocha: pontos escuros aleatórios (simula pedra porosa)
       const v = row % 7;
-      // 7 padrões de fissuras (varia as posições dos pontos médios)
-      const c1 = [[0.20, 0.35, 0.15], [0.30, 0.45, 0.25], [0.40, 0.55, 0.35],
-                  [0.15, 0.30, 0.10], [0.50, 0.65, 0.45], [0.25, 0.40, 0.20],
-                  [0.35, 0.50, 0.30]][v];
-      const c2 = [[0.60, 0.75, 0.55], [0.70, 0.85, 0.65], [0.50, 0.65, 0.45],
-                  [0.65, 0.80, 0.60], [0.55, 0.70, 0.50], [0.75, 0.90, 0.70],
-                  [0.60, 0.75, 0.55]][v];
-      // molten cracks (glow orange)
+      ctx.fillStyle = "rgba(10,0,0,0.5)";
+      const dots = [[0.15, 0.20], [0.80, 0.30], [0.30, 0.75], [0.70, 0.80], [0.50, 0.25]];
+      dots.forEach(function (d) { ctx.fillRect(x + w * d[0], y + h * d[1], 1.5, 1.5); });
+      // Fissuras de lava — 7 padrões completamente diferentes
       ctx.strokeStyle = "#ff6a1a";
       ctx.shadowColor = "#ff6a1a";
       ctx.shadowBlur = 6;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(x + w * c1[0], y); ctx.lineTo(x + w * c1[1], y + h * 0.5); ctx.lineTo(x + w * c1[2], y + h);
-      ctx.moveTo(x + w * c2[0], y); ctx.lineTo(x + w * c2[1], y + h * 0.4); ctx.lineTo(x + w * c2[2], y + h);
+      switch (v) {
+        case 0: // Fissura vertical sinuosa
+          ctx.moveTo(x + w * 0.3, y); ctx.lineTo(x + w * 0.4, y + h * 0.3);
+          ctx.lineTo(x + w * 0.25, y + h * 0.6); ctx.lineTo(x + w * 0.35, y + h);
+          break;
+        case 1: // Cruz de fissuras
+          ctx.moveTo(x + w * 0.5, y); ctx.lineTo(x + w * 0.5, y + h);
+          ctx.moveTo(x, y + h * 0.5); ctx.lineTo(x + w, y + h * 0.5);
+          break;
+        case 2: // Fissura em Z
+          ctx.moveTo(x + w * 0.2, y); ctx.lineTo(x + w * 0.7, y + h * 0.3);
+          ctx.lineTo(x + w * 0.3, y + h * 0.7); ctx.lineTo(x + w * 0.8, y + h);
+          break;
+        case 3: // Estrela (4 fissuras do centro)
+          ctx.moveTo(x + w * 0.5, y + h * 0.5); ctx.lineTo(x, y);
+          ctx.moveTo(x + w * 0.5, y + h * 0.5); ctx.lineTo(x + w, y);
+          ctx.moveTo(x + w * 0.5, y + h * 0.5); ctx.lineTo(x, y + h);
+          ctx.moveTo(x + w * 0.5, y + h * 0.5); ctx.lineTo(x + w, y + h);
+          break;
+        case 4: // Duas fissuras paralelas
+          ctx.moveTo(x + w * 0.25, y); ctx.lineTo(x + w * 0.30, y + h);
+          ctx.moveTo(x + w * 0.70, y); ctx.lineTo(x + w * 0.65, y + h);
+          break;
+        case 5: // Fissura circular (arco)
+          ctx.arc(x + w * 0.5, y + h * 0.5, w * 0.3, 0, Math.PI * 2);
+          break;
+        case 6: // Fissura em espiral (4 segmentos)
+          ctx.moveTo(x + w * 0.5, y + h * 0.2);
+          ctx.lineTo(x + w * 0.7, y + h * 0.4);
+          ctx.lineTo(x + w * 0.5, y + h * 0.7);
+          ctx.lineTo(x + w * 0.3, y + h * 0.5);
+          ctx.lineTo(x + w * 0.5, y + h * 0.2);
+          break;
+      }
       ctx.stroke();
       ctx.shadowBlur = 0;
-      // ember dots (varia por row)
+      // Lava interior brilhante (preenche parte das fissuras com amarelo)
+      ctx.strokeStyle = "rgba(255,220,80,0.6)";
+      ctx.lineWidth = 0.7;
+      ctx.stroke();
+      // Ember dots (varia por row — brasa incandescente)
       ctx.fillStyle = "#ffaa33";
-      ctx.fillRect(x + w * [0.45, 0.55, 0.30, 0.70, 0.40, 0.60, 0.50][v], y + h * [0.30, 0.70, 0.50, 0.40, 0.80, 0.20, 0.60][v], 1.5, 1.5);
-      ctx.fillRect(x + w * [0.80, 0.15, 0.75, 0.25, 0.85, 0.20, 0.80][v], y + h * [0.70, 0.30, 0.80, 0.60, 0.40, 0.75, 0.25][v], 1.5, 1.5);
+      const e1 = [[0.45, 0.30], [0.20, 0.70], [0.50, 0.50], [0.50, 0.50],
+                  [0.50, 0.40], [0.50, 0.50], [0.60, 0.30]][v];
+      const e2 = [[0.80, 0.70], [0.75, 0.25], [0.25, 0.25], [0.50, 0.50],
+                  [0.50, 0.70], [0.50, 0.50], [0.30, 0.70]][v];
+      ctx.fillRect(x + w * e1[0] - 0.5, y + h * e1[1] - 0.5, 2, 2);
+      ctx.fillRect(x + w * e2[0] - 0.5, y + h * e2[1] - 0.5, 2, 2);
+      // Borda de rocha (highlight + sombra)
+      ctx.fillStyle = "rgba(60,20,10,0.6)";
+      ctx.fillRect(x, y, w, 1.5);
+      ctx.fillStyle = "rgba(10,0,0,0.7)";
+      ctx.fillRect(x, y + h - 1.5, w, 1.5);
     },
     "brick-circuit": function (ctx, x, y, w, h, row) {
       // dark green PCB — 7 padrões de trilhos por row (mesma cor base)
@@ -251,53 +332,93 @@
       ctx.fillRect(x, y, w, 1);
     },
     "brick-gold": function (ctx, x, y, w, h, row) {
-      // Solid gold brick — rico e detalhado (Tier 6 premium)
-      // 7 posições de gema por row (mesma cor base dourada).
+      // Solid Gold — tijolo dourado com rubi SEMPRE no centro.
+      // 7 variações: cada row tem um detalhe DIFERENTE (diamantes, pérolas,
+      // esmeraldas, safiras, etc.) nos cantos, mas o rubi central é igual.
       const v = row % 7;
       // Base: gradiente dourado com profundidade
       ctx.fillStyle = vgrad(ctx, x, y, w, h, "#fff0a0", "#c89010");
       ctx.fillRect(x, y, w, h);
-      // Textura metálica: linhas horizontais subtis (simula ouro batido)
+      // Textura metálica: linhas horizontais subtis
       ctx.fillStyle = "rgba(180,130,30,0.18)";
       for (let ly = y + 3; ly < y + h - 2; ly += 3) {
         ctx.fillRect(x + 1, ly, w - 2, 0.6);
       }
-      // Highlight superior brilhante (reflexo de luz)
+      // Highlight + sombra
       ctx.fillStyle = "rgba(255,255,220,0.7)";
-      ctx.fillRect(x, y, w, 2);
-      ctx.fillRect(x, y, 2, h);
-      // Sombra inferior
+      ctx.fillRect(x, y, w, 2); ctx.fillRect(x, y, 2, h);
       ctx.fillStyle = "rgba(80,50,0,0.55)";
-      ctx.fillRect(x, y + h - 2, w, 2);
-      ctx.fillRect(x + w - 2, y, 2, h);
-      // 7 posições da gema (rubi) — varia por row (mesma cor, posição diferente)
-      const gemPos = [
-        { gx: 0.50, gy: 0.50 },  // center
-        { gx: 0.35, gy: 0.50 },  // left
-        { gx: 0.65, gy: 0.50 },  // right
-        { gx: 0.50, gy: 0.35 },  // top
-        { gx: 0.50, gy: 0.65 },  // bottom
-        { gx: 0.38, gy: 0.38 },  // top-left
-        { gx: 0.62, gy: 0.62 },  // bottom-right
-      ][v];
-      const gx = x + w * gemPos.gx, gy = y + h * gemPos.gy, gr = Math.min(w, h) * 0.22;
-      // halo da gema
+      ctx.fillRect(x, y + h - 2, w, 2); ctx.fillRect(x + w - 2, y, 2, h);
+
+      // ── Rubi central (SEMPRE igual em todas as variações) ──
+      const gx = x + w / 2, gy = y + h / 2, gr = Math.min(w, h) * 0.20;
       ctx.fillStyle = "rgba(255,80,120,0.25)";
       ctx.beginPath(); ctx.arc(gx, gy, gr + 2, 0, Math.PI * 2); ctx.fill();
-      // gema
       const gg = ctx.createRadialGradient(gx - gr * 0.3, gy - gr * 0.3, 0, gx, gy, gr);
       gg.addColorStop(0, "#ffb0c8"); gg.addColorStop(0.5, "#e0204a"); gg.addColorStop(1, "#800010");
       ctx.fillStyle = gg;
       ctx.beginPath();
-      ctx.moveTo(gx, gy - gr);
-      ctx.lineTo(gx + gr, gy);
-      ctx.lineTo(gx, gy + gr);
-      ctx.lineTo(gx - gr, gy);
-      ctx.closePath();
-      ctx.fill();
-      // brilho na gema
+      ctx.moveTo(gx, gy - gr); ctx.lineTo(gx + gr, gy);
+      ctx.lineTo(gx, gy + gr); ctx.lineTo(gx - gr, gy);
+      ctx.closePath(); ctx.fill();
       ctx.fillStyle = "rgba(255,255,255,0.6)";
       ctx.beginPath(); ctx.arc(gx - gr * 0.3, gy - gr * 0.3, gr * 0.25, 0, Math.PI * 2); ctx.fill();
+
+      // ── 7 variações de detalhes nos cantos ──
+      const cr = Math.min(w, h) * 0.10; // raio dos detalhes nos cantos
+      function drawGem(cx, cy, r, c1, c2, c3) {
+        const dg = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 0, cx, cy, r);
+        dg.addColorStop(0, c1); dg.addColorStop(0.5, c2); dg.addColorStop(1, c3);
+        ctx.fillStyle = dg;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy);
+        ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r, cy);
+        ctx.closePath(); ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.5)";
+        ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.25, 0, Math.PI * 2); ctx.fill();
+      }
+      function drawPearl(cx, cy, r) {
+        const pg = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 0, cx, cy, r);
+        pg.addColorStop(0, "#fff"); pg.addColorStop(0.6, "#e8e8f0"); pg.addColorStop(1, "#a0a0b0");
+        ctx.fillStyle = pg;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+      }
+      switch (v) {
+        case 0: // 2 diamantes (esmeralda + safira) nos cantos
+          drawGem(x + w * 0.20, y + h * 0.30, cr, "#a0f0c0", "#40c080", "#106030");
+          drawGem(x + w * 0.80, y + h * 0.70, cr, "#a0c0f0", "#4080c0", "#103060");
+          break;
+        case 1: // 2 pérolas nos cantos
+          drawPearl(x + w * 0.20, y + h * 0.30, cr);
+          drawPearl(x + w * 0.80, y + h * 0.70, cr);
+          break;
+        case 2: // 4 pérolas pequenas nos cantos
+          drawPearl(x + w * 0.15, y + h * 0.25, cr * 0.7);
+          drawPearl(x + w * 0.85, y + h * 0.25, cr * 0.7);
+          drawPearl(x + w * 0.15, y + h * 0.75, cr * 0.7);
+          drawPearl(x + w * 0.85, y + h * 0.75, cr * 0.7);
+          break;
+        case 3: // 2 diamantes amarelos (topázio)
+          drawGem(x + w * 0.25, y + h * 0.25, cr, "#fff0a0", "#ffd040", "#806010");
+          drawGem(x + w * 0.75, y + h * 0.75, cr, "#fff0a0", "#ffd040", "#806010");
+          break;
+        case 4: // 1 diamante roxo (ametista) + 1 pérola
+          drawGem(x + w * 0.20, y + h * 0.30, cr, "#e0a0f0", "#a040c0", "#400060");
+          drawPearl(x + w * 0.80, y + h * 0.70, cr);
+          break;
+        case 5: // 2 diamantes laranja + 2 pérolas
+          drawGem(x + w * 0.15, y + h * 0.30, cr * 0.8, "#ffc080", "#ff8030", "#804010");
+          drawGem(x + w * 0.85, y + h * 0.30, cr * 0.8, "#ffc080", "#ff8030", "#804010");
+          drawPearl(x + w * 0.15, y + h * 0.75, cr * 0.7);
+          drawPearl(x + w * 0.85, y + h * 0.75, cr * 0.7);
+          break;
+        case 6: // Coroa de 6 pérolas à volta do rubi
+          for (let i = 0; i < 6; i++) {
+            const a = (i / 6) * Math.PI * 2;
+            drawPearl(gx + Math.cos(a) * gr * 2.2, gy + Math.sin(a) * gr * 2.2, cr * 0.6);
+          }
+          break;
+      }
     },
   };
 
@@ -396,45 +517,97 @@
       ctx.beginPath(); ctx.arc(x, y, r - 1, 0, Math.PI * 2); ctx.stroke();
     },
     "ball-prism": function (ctx, x, y, r, t) {
-      // Prism — cristal facetado que refrata luz em arco-íris (Tier 6)
-      // Otimizado: removi clip() (muito caro), reduzi facetas (6→3 triângulos),
-      // reduzi brilho specular para 1 ponto estático. Mantém o visual de prisma
-      // com shimmer arco-íris mas com metade das draw calls.
-      // t opcional: se undefined (jogo), usa performance.now() (animado).
-      // Se passado (preview da loja), usa esse valor (estático — evita "saltos"
-      // de frame quando a loja re-renderiza ao equipar).
+      // Prism — cristal prismático supremo (Tier 6, 1000 moedas).
+      // A bola mais impressionante do jogo. Features:
+      //   • Halo arco-íris pulsante com 3 camadas (expande e contrai)
+      //   • 6 facetas hexagonais coloridas que rodam (cada uma com cor única do espectro)
+      //   • 6 linhas de faceta brilhantes (contornos do prisma)
+      //   • 2 brilhos speculars que orbitam (pontos de luz em lados opostos)
+      //   • Núcleo branco brilhante pulsante (coração do prisma)
+      //   • Trail de partículas arco-íris (sparkles que aparecem atrás da bola)
+      //   • Borda exterior arco-íris que roda (ring de luz)
       if (t === undefined) t = performance.now() / 1000;
-      const hue = (t * 60) % 360;
-      // Halo arco-íris (static alpha)
-      ctx.fillStyle = "hsla(" + hue + ",90%,60%,0.12)";
-      ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2); ctx.fill();
-      // Body — cristal translúcido
+
+      // ── 1. Halo arco-íris pulsante (3 camadas, expande e contrai) ──
+      const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+      for (let i = 0; i < 3; i++) {
+        const hue = (t * 80 + i * 120) % 360;
+        const layerR = r + 4 + i * 3 + pulse * 4;
+        const alpha = (0.15 - i * 0.04) * (0.5 + pulse * 0.5);
+        ctx.fillStyle = "hsla(" + hue + ",90%,60%," + alpha.toFixed(3) + ")";
+        ctx.beginPath(); ctx.arc(x, y, layerR, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // ── 2. Ring exterior arco-íris (roda à volta da bola) ──
+      const ringHue = (t * 120) % 360;
+      ctx.strokeStyle = "hsla(" + ringHue + ",100%,70%,0.5)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, r + 1.5, t * 2, t * 2 + Math.PI * 1.5);
+      ctx.stroke();
+      ctx.strokeStyle = "hsla(" + ((ringHue + 180) % 360) + ",100%,70%,0.3)";
+      ctx.beginPath();
+      ctx.arc(x, y, r + 1.5, t * 2 + Math.PI, t * 2 + Math.PI * 2.5);
+      ctx.stroke();
+
+      // ── 3. Body — cristal translúcido com profundidade ──
       const g = ctx.createRadialGradient(x - r * 0.3, y - r * 0.3, 0, x, y, r);
-      g.addColorStop(0, "rgba(240,245,255,0.85)"); g.addColorStop(0.5, "rgba(180,200,230,0.6)"); g.addColorStop(1, "rgba(80,100,140,0.4)");
+      g.addColorStop(0, "rgba(250,250,255,0.9)");
+      g.addColorStop(0.4, "rgba(200,210,240,0.7)");
+      g.addColorStop(0.8, "rgba(120,140,180,0.5)");
+      g.addColorStop(1, "rgba(60,80,120,0.3)");
       ctx.fillStyle = g;
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-      // 3 facetas coloridas (arcos pequenos dentro da bola — sem clip)
-      for (let i = 0; i < 3; i++) {
-        const fhue = (i * 120 + t * 80) % 360;
-        const ang = (i / 3) * Math.PI * 2 + t * 0.3;
-        const fx = x + Math.cos(ang) * r * 0.35;
-        const fy = y + Math.sin(ang) * r * 0.35;
-        ctx.fillStyle = "hsla(" + fhue + ",85%,60%,0.22)";
-        ctx.beginPath(); ctx.arc(fx, fy, r * 0.35, 0, Math.PI * 2); ctx.fill();
-      }
-      // 3 linhas de faceta (diâmetros a 60° — dá look de prisma hexagonal)
-      ctx.strokeStyle = "rgba(255,255,255,0.45)";
-      ctx.lineWidth = 0.6;
-      for (let i = 0; i < 3; i++) {
-        const ang = (i / 3) * Math.PI + t * 0.4;
+
+      // ── 4. 6 facetas hexagonais coloridas (rodam) ──
+      // Cada faceta é um triângulo do centro à borda, com cor única do espectro
+      const rot = t * 0.8;
+      for (let i = 0; i < 6; i++) {
+        const fhue = (i * 60 + t * 60) % 360;
+        const a1 = rot + (i / 6) * Math.PI * 2;
+        const a2 = rot + ((i + 1) / 6) * Math.PI * 2;
+        ctx.fillStyle = "hsla(" + fhue + ",85%,60%,0.20)";
         ctx.beginPath();
-        ctx.moveTo(x + Math.cos(ang) * r, y + Math.sin(ang) * r);
-        ctx.lineTo(x + Math.cos(ang + Math.PI) * r, y + Math.sin(ang + Math.PI) * r);
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(a1) * r, y + Math.sin(a1) * r);
+        ctx.lineTo(x + Math.cos(a2) * r, y + Math.sin(a2) * r);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // ── 5. 6 linhas de faceta brilhantes (contornos do prisma) ──
+      ctx.strokeStyle = "rgba(255,255,255,0.5)";
+      ctx.lineWidth = 0.7;
+      for (let i = 0; i < 6; i++) {
+        const ang = rot + (i / 6) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(ang) * r, y + Math.sin(ang) * r);
         ctx.stroke();
       }
-      // Brilho specular (static)
-      ctx.fillStyle = "rgba(255,255,255,0.75)";
-      ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.16, 0, Math.PI * 2); ctx.fill();
+
+      // ── 6. 2 brilhos speculars que orbitam (lados opostos) ──
+      const sa = t * 1.8;
+      const sx1 = x + Math.cos(sa) * r * 0.4;
+      const sy1 = y + Math.sin(sa) * r * 0.4;
+      const sx2 = x + Math.cos(sa + Math.PI) * r * 0.4;
+      const sy2 = y + Math.sin(sa + Math.PI) * r * 0.4;
+      // Brilho 1 — branco
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.beginPath(); ctx.arc(sx1, sy1, r * 0.18, 0, Math.PI * 2); ctx.fill();
+      // Brilho 2 — arco-íris (cor muda com o tempo)
+      const s2hue = (t * 100) % 360;
+      ctx.fillStyle = "hsla(" + s2hue + ",100%,70%,0.8)";
+      ctx.beginPath(); ctx.arc(sx2, sy2, r * 0.14, 0, Math.PI * 2); ctx.fill();
+
+      // ── 7. Núcleo branco brilhante pulsante (coração do prisma) ──
+      const corePulse = 0.5 + 0.5 * Math.sin(t * 6);
+      ctx.fillStyle = "rgba(255,255,255," + (0.4 + corePulse * 0.4).toFixed(2) + ")";
+      ctx.beginPath(); ctx.arc(x, y, r * 0.2 + corePulse * r * 0.08, 0, Math.PI * 2); ctx.fill();
+      // Flash arco-íris no núcleo
+      const coreHue = (t * 200) % 360;
+      ctx.fillStyle = "hsla(" + coreHue + ",100%,70%," + (corePulse * 0.3).toFixed(2) + ")";
+      ctx.beginPath(); ctx.arc(x, y, r * 0.12, 0, Math.PI * 2); ctx.fill();
     },
   };
 
@@ -849,90 +1022,154 @@
       }
     },
     "bg-nebula": function (ctx, w, h, t) {
-      // Sunset Drive — synthwave horizon (substitui a antiga Nebula).
-      // Distinto das outras bgs baseadas em estrelas (starfield, aurora):
-      // cores quentes de pôr-do-sol, grelha de perspectiva, sol com scanlines.
-      // Paleta quente e relaxante.
-      const horizonY = Math.floor(h * 0.55);  // horizon at 55% down
+      // Neon Metropolis — cidade cyberpunk à noite (Tier 6).
+      // Substitui "Sunset Drive". Tema completamente diferente: cidade escura
+      // com prédios neon, chuva, reflexos no chão e luzes a piscar.
+      // Paleta: azul-escuro + neon cyan/magenta — agradável aos olhos.
 
-      // ── Sky gradient: deep purple → magenta → orange → yellow at horizon ──
-      const sky = ctx.createLinearGradient(0, 0, 0, horizonY);
-      sky.addColorStop(0, "#1a0033");     // deep purple (top)
-      sky.addColorStop(0.45, "#660044");   // magenta
-      sky.addColorStop(0.80, "#ff6600");   // orange
-      sky.addColorStop(1, "#ffcc00");      // yellow at horizon
+      // ── Céu: graduação azul-escuro profundo → ligeiramente roxo no horizonte ──
+      const sky = ctx.createLinearGradient(0, 0, 0, h * 0.65);
+      sky.addColorStop(0, "#050518");      // quase preto (topo)
+      sky.addColorStop(0.5, "#0a0a2a");    // azul-escuro
+      sky.addColorStop(1, "#1a0a2e");      // roxo-escuro no horizonte
       ctx.fillStyle = sky;
-      ctx.fillRect(0, 0, w, horizonY);
+      ctx.fillRect(0, 0, w, h * 0.65);
 
-      // ── Large sun on horizon with horizontal scanline gaps ──
-      const sunR = h * 0.20;
-      const sunX = w / 2;
-      const sunY = horizonY - sunR * 0.4;  // bottom of sun near horizon
-      const sunGrad = ctx.createLinearGradient(0, sunY - sunR, 0, sunY + sunR);
-      sunGrad.addColorStop(0, "#ffeb6a");   // bright yellow (top)
-      sunGrad.addColorStop(0.5, "#ff9933"); // orange (middle)
-      sunGrad.addColorStop(1, "#ff3366");   // pink-red (bottom)
-      ctx.fillStyle = sunGrad;
-      ctx.beginPath();
-      ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2); ctx.fill();
-      // Scanline gaps — fill with sky gradient (perfect color match at each y)
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2); ctx.clip();
-      ctx.fillStyle = sky;
-      for (let i = 0; i < 7; i++) {
-        const f = i / 7;  // 0..1 (top of lower half → bottom of sun)
-        const by = sunY + f * sunR;
-        const bh = 1 + i * 0.9;  // bands get thicker toward bottom (classic synthwave)
-        ctx.fillRect(sunX - sunR - 5, by, sunR * 2 + 10, bh);
+      // ── Nuvens escuras (camadas a mover-se lentamente) ──
+      for (let i = 0; i < 4; i++) {
+        const cx = ((i * 200 + t * 8) % (w + 100)) - 50;
+        const cy = h * 0.08 + i * 15;
+        const cw = 80 + i * 20;
+        const ch = 12 + i * 3;
+        ctx.fillStyle = "rgba(20,15,40," + (0.3 - i * 0.05).toFixed(2) + ")";
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, cw, ch, 0, 0, Math.PI * 2);
+        ctx.fill();
       }
-      ctx.restore();
 
-      // ── Floor: dark gradient (with subtle magenta horizon glow) ──
+      // ── Prédios do skyline (silhuetas com janelas iluminadas) ──
+      // Prédios deterministic (posição/altura fixas), janelas piscam com t.
+      const buildings = [
+        { x: 0.00, w: 0.08, h: 0.35 }, { x: 0.07, w: 0.06, h: 0.28 },
+        { x: 0.13, w: 0.10, h: 0.42 }, { x: 0.22, w: 0.07, h: 0.30 },
+        { x: 0.29, w: 0.09, h: 0.38 }, { x: 0.38, w: 0.06, h: 0.25 },
+        { x: 0.44, w: 0.12, h: 0.48 }, { x: 0.56, w: 0.08, h: 0.32 },
+        { x: 0.64, w: 0.10, h: 0.40 }, { x: 0.74, w: 0.07, h: 0.30 },
+        { x: 0.81, w: 0.09, h: 0.36 }, { x: 0.90, w: 0.06, h: 0.26 },
+        { x: 0.96, w: 0.08, h: 0.34 },
+      ];
+      const horizonY = h * 0.65;
+      buildings.forEach(function (b, idx) {
+        const bx = b.x * w;
+        const bw = b.w * w;
+        const bh = b.h * h;
+        const by = horizonY - bh;
+        // Silhueta do prédio (azul-escuro)
+        ctx.fillStyle = "#080820";
+        ctx.fillRect(bx, by, bw, bh);
+        // Borda superior com neon (cor varia por prédio)
+        const neonColors = ["#00e5ff", "#ff00aa", "#00ff88", "#ff6600", "#aa00ff"];
+        const nc = neonColors[idx % neonColors.length];
+        ctx.fillStyle = nc + "40";
+        ctx.fillRect(bx, by, bw, 1.5);
+        // Janelas iluminadas (piscam com t)
+        const winW = 2, winH = 2, winGap = 4;
+        for (let wy = by + 4; wy < by + bh - 2; wy += winGap) {
+          for (let wx = bx + 2; wx < bx + bw - 2; wx += winGap) {
+            // Piscar: cada janela tem um padrão diferente baseado em idx + posição
+            const seed = idx * 100 + Math.floor(wy) * 7 + Math.floor(wx) * 13;
+            const phase = (t * 0.5 + seed * 0.1) % (Math.PI * 2);
+            const on = Math.sin(phase) > 0.3;
+            if (on) {
+              const brightness = 0.3 + 0.4 * Math.sin(phase);
+              ctx.fillStyle = "rgba(255,230,150," + brightness.toFixed(2) + ")";
+              ctx.fillRect(wx, wy, winW, winH);
+            }
+          }
+        }
+        // Antena no topo de alguns prédios
+        if (idx % 3 === 0) {
+          ctx.strokeStyle = "#0a0a20";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(bx + bw / 2, by);
+          ctx.lineTo(bx + bw / 2, by - 8);
+          ctx.stroke();
+          // Luz vermelha a piscar no topo da antena
+          const blink = Math.sin(t * 2 + idx) > 0;
+          if (blink) {
+            ctx.fillStyle = "#ff2020";
+            ctx.fillRect(bx + bw / 2 - 1, by - 9, 2, 2);
+          }
+        }
+      });
+
+      // ── Chão: graduação escura com reflexo neon ──
       const floor = ctx.createLinearGradient(0, horizonY, 0, h);
-      floor.addColorStop(0, "#3a0044");   // magenta-tinted at horizon (sun reflection)
-      floor.addColorStop(0.3, "#1a0028");
-      floor.addColorStop(1, "#000010");    // near-black at bottom
+      floor.addColorStop(0, "#0a0a1e");
+      floor.addColorStop(0.5, "#050510");
+      floor.addColorStop(1, "#020208");
       ctx.fillStyle = floor;
       ctx.fillRect(0, horizonY, w, h - horizonY);
 
-      // ── Perspective grid floor: neon cyan (horizontal) + magenta (vertical) ──
-      const vpX = w / 2;        // vanishing point X (center-horizon)
-      const vpY = horizonY;     // vanishing point Y
-      // Vertical lines (radiating from vanishing point) — neon magenta
-      ctx.strokeStyle = "rgba(255,60,180,0.5)";
+      // ── Reflexo dos prédios no chão (invertido, muito ténue) ──
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.translate(0, horizonY * 2);
+      ctx.scale(1, -1);
+      buildings.forEach(function (b, idx) {
+        const bx = b.x * w;
+        const bw = b.w * w;
+        const bh = b.h * h * 0.5; // reflexo mais curto
+        const by = horizonY - bh;
+        const neonColors = ["#00e5ff", "#ff00aa", "#00ff88", "#ff6600", "#aa00ff"];
+        const nc = neonColors[idx % neonColors.length];
+        ctx.fillStyle = nc + "20";
+        ctx.fillRect(bx, by, bw, bh);
+      });
+      ctx.restore();
+
+      // ── Linha de horizonte brilhante (neon cyan) ──
+      const horGlow = ctx.createLinearGradient(0, horizonY - 2, 0, horizonY + 2);
+      horGlow.addColorStop(0, "rgba(0,229,255,0)");
+      horGlow.addColorStop(0.5, "rgba(0,229,255,0.3)");
+      horGlow.addColorStop(1, "rgba(0,229,255,0)");
+      ctx.fillStyle = horGlow;
+      ctx.fillRect(0, horizonY - 2, w, 4);
+
+      // ── Chuva neon (linhas a cair) ──
+      ctx.strokeStyle = "rgba(100,200,255,0.25)";
       ctx.lineWidth = 1;
-      const numVLines = 14;
-      for (let i = -numVLines; i <= numVLines; i++) {
-        const nearX = vpX + (i / numVLines) * w * 1.4;  // spread at bottom edge
+      const numRain = 30;
+      for (let i = 0; i < numRain; i++) {
+        const rx = (i * 47 + t * 200) % w;
+        const ry = (i * 83 + t * 600) % (h + 20) - 10;
+        const rlen = 6 + (i % 3) * 3;
         ctx.beginPath();
-        ctx.moveTo(vpX, vpY);
-        ctx.lineTo(nearX, h);
-        ctx.stroke();
-      }
-      // Horizontal lines (scrolling toward viewer) — neon cyan, perspective spacing
-      ctx.strokeStyle = "rgba(60,255,220,0.5)";
-      const numHLines = 12;
-      const scrollPhase = (t * 0.4) % 1;  // 0..1, scrolls toward viewer
-      for (let i = 0; i < numHLines; i++) {
-        const phase = ((i / numHLines) + scrollPhase) % 1;
-        const progress = phase * phase;  // quadratic → closer together near horizon
-        const y = vpY + progress * (h - vpY);
-        if (y >= h || y <= vpY) continue;
-        ctx.beginPath();
-        ctx.moveTo(0, y); ctx.lineTo(w, y);
+        ctx.moveTo(rx, ry);
+        ctx.lineTo(rx - 1, ry + rlen);
         ctx.stroke();
       }
 
-      // ── Floating particles (dust/embers drifting upward) ──
-      for (let i = 0; i < 18; i++) {
-        const px = (i * 137 + Math.sin(t * 0.3 + i) * 12) % w;
-        // Drift upward (py decreases over time), wrap around at top
-        const py = h - ((i * 70 + t * (15 + (i % 5) * 5)) % (h + 30));
-        const ps = 1 + (i % 3) * 0.5;
-        const a = 0.25 + 0.25 * Math.sin(t * 2 + i);
-        ctx.fillStyle = "rgba(255,180,80," + a.toFixed(2) + ")";
-        ctx.fillRect(px, py, ps, ps);
+      // ── Luzes neon flutuantes (anúncios/publicidade aérea) ──
+      for (let i = 0; i < 3; i++) {
+        const fx = w * (0.2 + i * 0.3) + Math.sin(t * 0.5 + i * 2) * 15;
+        const fy = h * 0.15 + Math.cos(t * 0.3 + i) * 10;
+        const fc = ["#00e5ff", "#ff00aa", "#00ff88"][i];
+        const flicker = 0.4 + 0.3 * Math.sin(t * 3 + i * 1.7);
+        ctx.fillStyle = fc;
+        ctx.globalAlpha = flicker * 0.3;
+        ctx.beginPath(); ctx.arc(fx, fy, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = flicker * 0.15;
+        ctx.beginPath(); ctx.arc(fx, fy, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Relâmpagos distantes (ocasionais) ──
+      const lightning = Math.sin(t * 0.7) > 0.95;
+      if (lightning) {
+        ctx.fillStyle = "rgba(150,180,255,0.08)";
+        ctx.fillRect(0, 0, w, horizonY);
       }
     },
   };
