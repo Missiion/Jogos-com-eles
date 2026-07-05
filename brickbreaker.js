@@ -469,9 +469,15 @@
     if (!window.BBData || !window.BBData.isReady()) return;
     if (state.score <= 0) return;
     const userId = window.BBData.getUserId();
-    // Lê o nome do utilizador do localStorage (definido pelo app.js no registo)
-    let name = "Anonymous";
-    try { name = localStorage.getItem("jce_user_name") || "Anonymous"; } catch (_) {}
+    // Lê o nome do utilizador da coleção users/{userId} no Firestore.
+    // Antes usava localStorage["jce_user_name"] que NUNCA é definido pelo app.js
+    // (o app.js só guarda jce_user_id), pelo que o nome ficava sempre "Anonymous".
+    let name = null;
+    try {
+      if (window.BBData.getUserName) name = await window.BBData.getUserName();
+    } catch (_) {}
+    // Fallback: se não conseguir obter o nome, usa "Anonymous"
+    if (!name) name = "Anonymous";
     try {
       await window.BBData.submitScore(userId, name, state.score, state.level);
     } catch (e) { /* silencioso — não bloqueia o fluxo */ }
