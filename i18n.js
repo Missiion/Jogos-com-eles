@@ -466,7 +466,7 @@
     "Velocidade:": "Speed:",
     "Aumenta a cada nível, cap no nível 10": "Rises each level, caps at level 10",
     "Moedas:": "Coins:",
-    "Ganhas com a pontuação (50 pts = 1 moeda) — gasta na LOJA": "Earned from score (50 pts = 1 coin) — spend in the SHOP",
+    "Ganhas com a pontuação (150 pts = 1 moeda) — gasta na LOJA": "Earned from score (150 pts = 1 coin) — spend in the SHOP",
     "Loja:": "Shop:",
     "Compra e equipa skins para tijolos, bola, plataforma e fundo": "Buy & equip skins for bricks, ball, paddle, and background",
     "Limpa todos os tijolos": "Clear all bricks",
