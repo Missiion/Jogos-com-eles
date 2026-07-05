@@ -1065,9 +1065,16 @@
       // Lua cheia (branca-amarelada)
       ctx.fillStyle = "#e8e8d0";
       ctx.beginPath(); ctx.arc(moonX, moonY, moonR, 0, Math.PI * 2); ctx.fill();
-      // Sombra para criar crescente (C virado para esquerda)
-      ctx.fillStyle = sky;
-      ctx.beginPath(); ctx.arc(moonX + moonR * 0.45, moonY - moonR * 0.1, moonR * 0.9, 0, Math.PI * 2); ctx.fill();
+      // Sombra para criar crescente — gradiente radial (borda suave, sem corte redondo)
+      const moonShadow = ctx.createRadialGradient(
+        moonX + moonR * 0.45, moonY - moonR * 0.1, 0,
+        moonX + moonR * 0.45, moonY - moonR * 0.1, moonR * 0.95
+      );
+      moonShadow.addColorStop(0, "#1a0a2e");  // centro da sombra = cor do céu no horizonte
+      moonShadow.addColorStop(0.7, "#1a0a2e");
+      moonShadow.addColorStop(1, "rgba(26,10,46,0)");  // fade para transparente na borda
+      ctx.fillStyle = moonShadow;
+      ctx.beginPath(); ctx.arc(moonX + moonR * 0.45, moonY - moonR * 0.1, moonR * 0.95, 0, Math.PI * 2); ctx.fill();
 
       // ── Nuvens ──
       for (let i = 0; i < 4; i++) {
@@ -1136,12 +1143,11 @@
       // Asfalto escuro
       ctx.fillStyle = "#0c0c18";
       ctx.fillRect(0, roadY, w, roadH);
-      // Linhas da estrada (tracejado amarelo a mover)
+      // Linhas da estrada (tracejado amarelo estático — só os carros se movem)
       ctx.fillStyle = "rgba(200,180,60,0.5)";
       const dashLen = 8, dashGap = 6;
-      const dashOffset = (t * 60) % (dashLen + dashGap);
-      for (let dx = -dashLen; dx < w; dx += dashLen + dashGap) {
-        ctx.fillRect(dx + dashOffset, roadY + roadH / 2 - 0.5, dashLen, 1);
+      for (let dx = 0; dx < w; dx += dashLen + dashGap) {
+        ctx.fillRect(dx, roadY + roadH / 2 - 0.5, dashLen, 1);
       }
       // Bordas da estrada (neon cyan)
       ctx.fillStyle = "rgba(0,229,255,0.3)";
