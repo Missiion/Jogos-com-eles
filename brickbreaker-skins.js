@@ -1023,60 +1023,60 @@
     },
     "bg-nebula": function (ctx, w, h, t) {
       // Neon Metropolis — cidade cyberpunk à noite (Tier 6).
-      // Substitui "Sunset Drive". Tema completamente diferente: cidade escura
-      // com prédios neon, chuva, reflexos no chão e luzes a piscar.
-      // Paleta: azul-escuro + neon cyan/magenta — agradável aos olhos.
+      // Retoques: água a mover na parte inferior, luzes estáticas,
+      // janelas com espaçamento realista, prédios com gaps,
+      // relâmpagos com fade-out.
 
-      // ── Céu: graduação azul-escuro profundo → ligeiramente roxo no horizonte ──
+      // ── Céu ──
       const sky = ctx.createLinearGradient(0, 0, 0, h * 0.65);
-      sky.addColorStop(0, "#050518");      // quase preto (topo)
-      sky.addColorStop(0.5, "#0a0a2a");    // azul-escuro
-      sky.addColorStop(1, "#1a0a2e");      // roxo-escuro no horizonte
+      sky.addColorStop(0, "#050518");
+      sky.addColorStop(0.5, "#0a0a2a");
+      sky.addColorStop(1, "#1a0a2e");
       ctx.fillStyle = sky;
       ctx.fillRect(0, 0, w, h * 0.65);
 
-      // ── Nuvens escuras (camadas a mover-se lentamente) ──
+      // ── Nuvens ──
       for (let i = 0; i < 4; i++) {
         const cx = ((i * 200 + t * 8) % (w + 100)) - 50;
         const cy = h * 0.08 + i * 15;
         const cw = 80 + i * 20;
-        const ch = 12 + i * 3;
         ctx.fillStyle = "rgba(20,15,40," + (0.3 - i * 0.05).toFixed(2) + ")";
         ctx.beginPath();
-        ctx.ellipse(cx, cy, cw, ch, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx, cy, cw, 12 + i * 3, 0, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      // ── Prédios do skyline (silhuetas com janelas iluminadas) ──
-      // Prédios deterministic (posição/altura fixas), janelas piscam com t.
+      // ── Prédios com espaçamento (gaps entre eles) ──
       const buildings = [
-        { x: 0.00, w: 0.08, h: 0.35 }, { x: 0.07, w: 0.06, h: 0.28 },
-        { x: 0.13, w: 0.10, h: 0.42 }, { x: 0.22, w: 0.07, h: 0.30 },
-        { x: 0.29, w: 0.09, h: 0.38 }, { x: 0.38, w: 0.06, h: 0.25 },
-        { x: 0.44, w: 0.12, h: 0.48 }, { x: 0.56, w: 0.08, h: 0.32 },
-        { x: 0.64, w: 0.10, h: 0.40 }, { x: 0.74, w: 0.07, h: 0.30 },
-        { x: 0.81, w: 0.09, h: 0.36 }, { x: 0.90, w: 0.06, h: 0.26 },
-        { x: 0.96, w: 0.08, h: 0.34 },
+        { x: 0.00, w: 0.07, h: 0.35 }, { x: 0.09, w: 0.05, h: 0.28 },
+        { x: 0.16, w: 0.08, h: 0.42 }, { x: 0.26, w: 0.06, h: 0.30 },
+        { x: 0.34, w: 0.08, h: 0.38 }, { x: 0.44, w: 0.05, h: 0.25 },
+        { x: 0.51, w: 0.09, h: 0.48 }, { x: 0.62, w: 0.06, h: 0.32 },
+        { x: 0.70, w: 0.08, h: 0.40 }, { x: 0.80, w: 0.06, h: 0.30 },
+        { x: 0.88, w: 0.07, h: 0.36 }, { x: 0.97, w: 0.03, h: 0.26 },
       ];
       const horizonY = h * 0.65;
+      const neonColors = ["#00e5ff", "#ff00aa", "#00ff88", "#ff6600", "#aa00ff"];
       buildings.forEach(function (b, idx) {
         const bx = b.x * w;
         const bw = b.w * w;
         const bh = b.h * h;
         const by = horizonY - bh;
-        // Silhueta do prédio (azul-escuro)
+        // Silhueta
         ctx.fillStyle = "#080820";
         ctx.fillRect(bx, by, bw, bh);
-        // Borda superior com neon (cor varia por prédio)
-        const neonColors = ["#00e5ff", "#ff00aa", "#00ff88", "#ff6600", "#aa00ff"];
+        // Borda superior neon
         const nc = neonColors[idx % neonColors.length];
         ctx.fillStyle = nc + "40";
         ctx.fillRect(bx, by, bw, 1.5);
-        // Janelas iluminadas (piscam com t)
-        const winW = 2, winH = 2, winGap = 4;
-        for (let wy = by + 4; wy < by + bh - 2; wy += winGap) {
-          for (let wx = bx + 2; wx < bx + bw - 2; wx += winGap) {
-            // Piscar: cada janela tem um padrão diferente baseado em idx + posição
+        // Janelas com espaçamento realista (não ocupam todo o prédio)
+        // Margem de 3px nos lados, gap de 5px entre janelas, apenas 60% da altura
+        const winW = 2, winH = 2;
+        const winGapX = 5, winGapY = 5;
+        const winStartY = by + 5;
+        const winEndY = by + bh * 0.65; // janelas só nos primeiros 65% do prédio
+        for (let wy = winStartY; wy < winEndY; wy += winGapY) {
+          for (let wx = bx + 3; wx < bx + bw - 3; wx += winGapX) {
             const seed = idx * 100 + Math.floor(wy) * 7 + Math.floor(wx) * 13;
             const phase = (t * 0.5 + seed * 0.1) % (Math.PI * 2);
             const on = Math.sin(phase) > 0.3;
@@ -1087,7 +1087,7 @@
             }
           }
         }
-        // Antena no topo de alguns prédios
+        // Antena
         if (idx % 3 === 0) {
           ctx.strokeStyle = "#0a0a20";
           ctx.lineWidth = 1;
@@ -1095,41 +1095,59 @@
           ctx.moveTo(bx + bw / 2, by);
           ctx.lineTo(bx + bw / 2, by - 8);
           ctx.stroke();
-          // Luz vermelha a piscar no topo da antena
-          const blink = Math.sin(t * 2 + idx) > 0;
-          if (blink) {
+          if (Math.sin(t * 2 + idx) > 0) {
             ctx.fillStyle = "#ff2020";
             ctx.fillRect(bx + bw / 2 - 1, by - 9, 2, 2);
           }
         }
       });
 
-      // ── Chão: graduação escura com reflexo neon ──
-      const floor = ctx.createLinearGradient(0, horizonY, 0, h);
-      floor.addColorStop(0, "#0a0a1e");
-      floor.addColorStop(0.5, "#050510");
-      floor.addColorStop(1, "#020208");
-      ctx.fillStyle = floor;
-      ctx.fillRect(0, horizonY, w, h - horizonY);
-
-      // ── Reflexo dos prédios no chão (invertido, muito ténue) ──
+      // ── Água a mover na parte inferior (ondas + reflexos) ──
+      const waterTop = horizonY;
+      const waterH = h - horizonY;
+      // Base da água (graduação escura com tom azul)
+      const water = ctx.createLinearGradient(0, waterTop, 0, h);
+      water.addColorStop(0, "#0a0a1e");
+      water.addColorStop(0.4, "#050515");
+      water.addColorStop(1, "#020208");
+      ctx.fillStyle = water;
+      ctx.fillRect(0, waterTop, w, waterH);
+      // Ondas — linhas horizontais que ondulam com seno
+      ctx.strokeStyle = "rgba(0,100,150,0.15)";
+      ctx.lineWidth = 1;
+      for (let row = 0; row < 6; row++) {
+        const waveY = waterTop + 4 + row * (waterH / 7);
+        const amp = 2 + row * 0.5;
+        const freq = 0.03 + row * 0.005;
+        const speed = t * (1.5 + row * 0.3);
+        ctx.beginPath();
+        for (let wx = 0; wx <= w; wx += 4) {
+          const wy = waveY + Math.sin(wx * freq + speed) * amp;
+          if (wx === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+        }
+        ctx.stroke();
+      }
+      // Reflexos dos prédios na água (invertido, com ondulação)
       ctx.save();
-      ctx.globalAlpha = 0.12;
-      ctx.translate(0, horizonY * 2);
-      ctx.scale(1, -1);
+      ctx.globalAlpha = 0.08;
       buildings.forEach(function (b, idx) {
         const bx = b.x * w;
         const bw = b.w * w;
-        const bh = b.h * h * 0.5; // reflexo mais curto
-        const by = horizonY - bh;
-        const neonColors = ["#00e5ff", "#ff00aa", "#00ff88", "#ff6600", "#aa00ff"];
         const nc = neonColors[idx % neonColors.length];
-        ctx.fillStyle = nc + "20";
-        ctx.fillRect(bx, by, bw, bh);
+        // Reflexo com ondulação (3 faixas a diferentes alturas)
+        for (let band = 0; band < 3; band++) {
+          const refY = waterTop + band * (waterH * 0.15);
+          const wobble = Math.sin(t * 2 + band + idx) * 2;
+          ctx.fillStyle = nc + "15";
+          ctx.fillRect(bx + wobble, refY, bw, 2);
+        }
       });
       ctx.restore();
+      // Brilho na linha de água (reflexo do horizonte)
+      ctx.fillStyle = "rgba(0,150,200,0.1)";
+      ctx.fillRect(0, waterTop, w, 2);
 
-      // ── Linha de horizonte brilhante (neon cyan) ──
+      // ── Linha de horizonte (neon cyan) ──
       const horGlow = ctx.createLinearGradient(0, horizonY - 2, 0, horizonY + 2);
       horGlow.addColorStop(0, "rgba(0,229,255,0)");
       horGlow.addColorStop(0.5, "rgba(0,229,255,0.3)");
@@ -1137,11 +1155,10 @@
       ctx.fillStyle = horGlow;
       ctx.fillRect(0, horizonY - 2, w, 4);
 
-      // ── Chuva neon (linhas a cair) ──
+      // ── Chuva neon ──
       ctx.strokeStyle = "rgba(100,200,255,0.25)";
       ctx.lineWidth = 1;
-      const numRain = 30;
-      for (let i = 0; i < numRain; i++) {
+      for (let i = 0; i < 30; i++) {
         const rx = (i * 47 + t * 200) % w;
         const ry = (i * 83 + t * 600) % (h + 20) - 10;
         const rlen = 6 + (i % 3) * 3;
@@ -1151,24 +1168,36 @@
         ctx.stroke();
       }
 
-      // ── Luzes neon flutuantes (anúncios/publicidade aérea) ──
-      for (let i = 0; i < 3; i++) {
-        const fx = w * (0.2 + i * 0.3) + Math.sin(t * 0.5 + i * 2) * 15;
-        const fy = h * 0.15 + Math.cos(t * 0.3 + i) * 10;
-        const fc = ["#00e5ff", "#ff00aa", "#00ff88"][i];
+      // ── Luzes neon estáticas (não se movem, só flicker) ──
+      const staticLights = [
+        { x: 0.20, y: 0.15, col: "#00e5ff" },
+        { x: 0.50, y: 0.12, col: "#ff00aa" },
+        { x: 0.80, y: 0.18, col: "#00ff88" },
+      ];
+      staticLights.forEach(function (l, i) {
+        const fx = w * l.x;
+        const fy = h * l.y;
         const flicker = 0.4 + 0.3 * Math.sin(t * 3 + i * 1.7);
-        ctx.fillStyle = fc;
+        ctx.fillStyle = l.col;
         ctx.globalAlpha = flicker * 0.3;
         ctx.beginPath(); ctx.arc(fx, fy, 3, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = flicker * 0.15;
         ctx.beginPath(); ctx.arc(fx, fy, 8, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1;
-      }
+      });
 
-      // ── Relâmpagos distantes (ocasionais) ──
-      const lightning = Math.sin(t * 0.7) > 0.95;
-      if (lightning) {
-        ctx.fillStyle = "rgba(150,180,255,0.08)";
+      // ── Relâmpagos com fade-out curto (~300ms) ──
+      // O flash atinge intensidade máxima e depois fade-out em ~300ms
+      const lightningCycle = 8; // ciclo de 8 segundos
+      const lightningPhase = (t % lightningCycle) / lightningCycle;
+      let lightningAlpha = 0;
+      if (lightningPhase < 0.04) {
+        // Flash surge nos primeiros 4% do ciclo (~320ms a 60fps), depois fade
+        const flashProgress = lightningPhase / 0.04;
+        lightningAlpha = Math.sin(flashProgress * Math.PI) * 0.12; // sobe e desce
+      }
+      if (lightningAlpha > 0) {
+        ctx.fillStyle = "rgba(150,180,255," + lightningAlpha.toFixed(3) + ")";
         ctx.fillRect(0, 0, w, horizonY);
       }
     },
