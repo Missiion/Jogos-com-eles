@@ -35,13 +35,10 @@
 
   const BALL_R = 7;
   // Velocidade progressiva:
-  //   Nível 1: 8.05 → Nível 2: 8.80 → Nível 3: 9.55 → Nível 4: 10.30 → Nível 5: 11.05
-  //   Nível 6: 11.80 → Nível 7: 12.55 (cap)
-  //   Antes o cap era no nível 5 (11.04). Agora continua até ao nível 7 (12.55)
-  //   para deixar o jogo um pouco mais difícil. As velocidades dos níveis 1-5
-  //   não mudaram — apenas o cap foi aumentado.
+  //   Nível 1: 8.05 → Nível 2: 8.80 → ... → Nível 7: 12.55 → Nível 10: 14.80 (cap)
+  //   Cap no nível 10 (8.05 + 0.75×9 = 14.80).
   const BALL_SPEED_START = 8.05;      // nível 1
-  const BALL_SPEED_MAX = 12.55;        // cap no nível 7 (8.05 + 0.75×6)
+  const BALL_SPEED_MAX = 14.80;        // cap no nível 10 (8.05 + 0.75×9)
   const BALL_SPEED_INC = 0.75;         // por nível
 
   const BRICK_COLS = 11;
@@ -416,13 +413,22 @@
     }
     if (type === "nuke") {
       // Nuke: destrói todos os tijolos do nível instantaneamente.
-      // O step() vai detetar bricksLeft=false e avançar de nível.
-      let count = 0;
+      // Cada tijolo destruído conta para o combo (combo massivo!).
+      const now = Date.now();
       for (let i = 0; i < state.bricks.length; i++) {
-        if (state.bricks[i].alive) { state.bricks[i].alive = false; state.score += state.bricks[i].points; count++; }
+        if (state.bricks[i].alive) {
+          state.bricks[i].alive = false;
+          state.combo++;
+          state.comboMult = Math.min(COMBO_MAX_MULT, state.combo);
+          state.score += state.bricks[i].points * state.comboMult;
+        }
       }
-      state.shake = 25; // shake massivo
+      state.lastBrickTime = now;
+      state.comboPunch = 1;
+      state.comboFade = 1;
+      state.shake = 25;
       sfx.clear();
+      if (state.comboMult > 1) sfx.combo(state.comboMult);
       updateHud(state);
       return;
     }
@@ -459,7 +465,18 @@
       for (let j = 0; j < state.bricks.length; j++) {
         const br = state.bricks[j]; if (!br.alive) continue;
         if (l.x >= br.x && l.x <= br.x + br.w && l.y + LASER_H >= br.y && l.y <= br.y + br.h) {
-          br.alive = false; state.score += br.points; sfx.brick(br.row); state.lasers.splice(i, 1); updateHud(state); break;
+          // Laser mata tijolo — conta para combo
+          const now = Date.now();
+          if (now - state.lastBrickTime < COMBO_WINDOW_MS) state.combo++;
+          else state.combo = 1;
+          state.lastBrickTime = now;
+          state.comboMult = Math.min(COMBO_MAX_MULT, state.combo);
+          state.comboPunch = 1;
+          if (state.combo > 1) state.comboFade = 1;
+          const pts = br.points * state.comboMult;
+          br.alive = false; state.score += pts; sfx.brick(br.row);
+          if (state.comboMult > 1) sfx.combo(state.comboMult);
+          state.lasers.splice(i, 1); updateHud(state); break;
         }
       }
     }
@@ -559,6 +576,11 @@
             }
             nearby.sort(function (a, c) { return a.dist - c.dist; });
             for (let g = 0; g < 4 && g < nearby.length; g++) {
+              // Cada tijolo da explosão conta para o combo
+              state.combo++;
+              state.comboMult = Math.min(COMBO_MAX_MULT, state.combo);
+              state.comboPunch = 1;
+              if (state.combo > 1) state.comboFade = 1;
               nearby[g].brick.alive = false;
               state.score += nearby[g].brick.points * state.comboMult;
               // Partículas para cada tijolo da explosão
@@ -573,6 +595,7 @@
                 });
               }
             }
+            state.lastBrickTime = Date.now();
             sfx.explosion();
             state.shake = Math.min(20, state.shake + 8); // shake extra da explosão
             b.grenade = false; // consome o grenade (uma explosão por bola)
@@ -917,17 +940,6 @@
     // startGame: jogo novo — layout procedural (sempre diferente)
     buildBricks(state, generateLayout); resetBalls(state); updateHud(state); updateCoinsHud(state);
     showScreen(state, "game"); draw(ui.ctx, state); if (ui.wrap) ui.wrap.focus(); startLoop(state, ui);
-    // Etapa fix: hint bar (controlos) aparece ao início e faz fade out após 5s.
-    // Chama diretamente ui.hint (não depende de state.startHintFade que pode
-    // ser perdido no Object.assign do startGame).
-    if (ui.hint) {
-      ui.hint.classList.remove("bb-hint-hidden");
-      if (ui._hintFadeTimer) { clearTimeout(ui._hintFadeTimer); ui._hintFadeTimer = null; }
-      ui._hintFadeTimer = setTimeout(function () {
-        if (ui.hint) ui.hint.classList.add("bb-hint-hidden");
-        ui._hintFadeTimer = null;
-      }, 5000);
-    }
   }
 
   // ─────────────────────────────────────────────
@@ -1220,7 +1232,7 @@
             '<li><b>+</b> ' + t("Vida Extra (10%) — acumula e é consumida na próxima morte") + '</li>' +
             '<li><b>G</b> ' + t("Granada (10%) — explode 5 tijolos (por bola, não por tempo)") + '</li>' +
             '<li><b>N</b> ' + t("Nuke (5%) — limpa o nível completo instantaneamente") + '</li>' +
-            '<li><b>' + t("Velocidade:") + '</b> ' + t("Aumenta a cada nível, cap no nível 7") + '</li>' +
+            '<li><b>' + t("Velocidade:") + '</b> ' + t("Aumenta a cada nível, cap no nível 10") + '</li>' +
             '<li><b>' + t("Moedas:") + '</b> ' + t("Ganhas com a pontuação (50 pts = 1 moeda) — gasta na LOJA") + '</li>' +
             '<li><b>' + t("Loja:") + '</b> ' + t("Compra e equipa skins para tijolos, bola, plataforma e fundo") + '</li>' +
             '<li><b>' + t("Limpa todos os tijolos") + '</b> ' + t("para avançar — padrões infinitos") + '</li>' +
@@ -1267,7 +1279,6 @@
           '<div class="bb-hud-lives" data-hud="lives"></div>' +
         '</div>' +
         '<div class="bb-hud-effects" data-hud="effects"></div>' +
-        '<div class="bb-hint">' + t("RATO / ← → MOVER · ESPAÇO LANÇAR · P PAUSA") + '</div>' +
         '<div class="bb-pause bb-hidden">' +
           '<div class="bb-pause-title">' + t("EM PAUSA") + '</div>' +
           '<button class="bb-btn bb-btn-primary" type="button" data-act="resume">' + t("RETOMAR") + '</button>' +
@@ -1350,27 +1361,12 @@
       lbList: wrap.querySelector('[data-hud="lb-list"]'),
       lbMyBest: wrap.querySelector('[data-hud="lb-mybest"]'),
       soundChk: wrap.querySelector("#bb-opt-sound"),
-      hint: wrap.querySelector(".bb-hint"),  // Etapa fix: hint bar (controlos) — fade out após 5s
     };
     ui.ctx = ui.canvas.getContext("2d");
     ui.ctx.imageSmoothingEnabled = false;
 
     const state = newState();
     state._ui = ui;
-
-    // Etapa fix: timer para o fade out da hint bar (controlos) após 5s de jogo.
-    let hintFadeTimer = null;
-    // Função exposta no state para startGame() poder iniciar o fade (startGame
-    // está no scope do IIFE, não consegue aceder a hintFadeTimer/ui diretamente).
-    state.startHintFade = function () {
-      if (!ui.hint) return;
-      ui.hint.classList.remove("bb-hint-hidden");
-      if (hintFadeTimer) { clearTimeout(hintFadeTimer); hintFadeTimer = null; }
-      hintFadeTimer = setTimeout(function () {
-        if (ui.hint) ui.hint.classList.add("bb-hint-hidden");
-        hintFadeTimer = null;
-      }, 5000);
-    };
 
     if (ui.soundChk) { ui.soundChk.checked = !sfx.isLocalMuted(); ui.soundChk.addEventListener("change", function () { sfx.setLocalMuted(!ui.soundChk.checked); }); }
 
@@ -1680,10 +1676,8 @@
 
     wrap._onClose = function () {
       stopLoop(state);
-      stopMenuBg(); // Etapa 2: para o RAF do background do menu
+      stopMenuBg();
       if (bbdataSetupTimer) { clearTimeout(bbdataSetupTimer); bbdataSetupTimer = null; }
-      if (ui._hintFadeTimer) { clearTimeout(ui._hintFadeTimer); ui._hintFadeTimer = null; } // Etapa fix: hint fade timer
-      if (hintFadeTimer) { clearTimeout(hintFadeTimer); hintFadeTimer = null; } // legacy
       document.removeEventListener("visibilitychange", onVis);
       document.removeEventListener("keydown", docTestHandler, true);
       document.removeEventListener("keydown", docEscHandler, true); // Etapa 3: ESC nos sub-ecrãs
