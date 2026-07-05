@@ -437,11 +437,21 @@ import {
     submitScore: async function (userId, name, score, level) {
       if (!userId || score <= 0) return false;
       try {
-        const colRef = collection(db, SCORES_COLLECTION);
-        // setDoc com doc(colRef, id) gera ID automático via addDoc equivalente.
-        // Usamos addDoc via setDoc para evitar import extra.
-        const newDocRef = doc(colRef);
-        await setDoc(newDocRef, {
+        // Usa userId como ID do documento (1 doc por utilizador).
+        // Antes usava doc(colRef) que gera ID automático → criava um novo
+        // doc a cada submissão, mesmo para o mesmo utilizador. Agora, com
+        // setDoc(ref, data, {merge:true}) só atualiza se o novo score for
+        // melhor (lê o existente primeiro para comparar).
+        const ref = doc(db, SCORES_COLLECTION, userId);
+        const existing = await getDoc(ref);
+        if (existing.exists()) {
+          const prev = existing.data();
+          if ((prev.score || 0) >= score) {
+            // Score existente é melhor ou igual — não atualiza
+            return true;
+          }
+        }
+        await setDoc(ref, {
           userId: userId,
           name: name || "Anonymous",
           score: score,
