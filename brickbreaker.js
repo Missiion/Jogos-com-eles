@@ -53,24 +53,39 @@
   const LIVES = 3;
 
   // ── Power-ups ──
+  // Pesos determinam a probabilidade relativa de cada power-up cair.
+  // POWERUP_WEIGHT_TOTAL = soma de todos os pesos (calculado abaixo).
+  // O power-up "extra" (vida extra) tem peso 3 num total de 103 → ~2.9% ≈ 3%.
+  // Como POWERUP_DROP_CHANCE = 0.10 (10% dos tijolos dropam), a probabilidade
+  // real de um tijolo dar vida extra é 10% × 3% ≈ 0.3% por tijolo.
   const POWERUP_DROP_CHANCE = 0.10;
   const POWERUP_FALL_SPEED = 2.3;
   const POWERUP_RADIUS = 11;
+  // Etapa fix: substituí o power-up "Sticky" (iman, bola cola no paddle) por
+  // "Shield" — barra protetora que aparece na parte inferior do ecrã e rebate
+  // as bolas para cima. Mais divertido e útil que o iman.
   const POWERUPS = {
     wide:   { color: "#3fb8d4", label: "W", name: "Wide Paddle", duration: 12000, weight: 25 },
     slow:   { color: "#5a78e8", label: "S", name: "Slow Ball",   duration: 7000,  weight: 20 },
-    sticky: { color: "#ff8c1a", label: "K", name: "Sticky",      duration: 12000, weight: 18 },
+    shield: { color: "#ff8c1a", label: "D", name: "Shield",      duration: 10000, weight: 18 },  // D = Defesa
     laser:  { color: "#ff4040", label: "L", name: "Laser",       duration: 10000, weight: 15 },
     through:{ color: "#b06be0", label: "T", name: "Pierce",      duration: 5000,  weight: 12 },
     multi:  { color: "#4dd964", label: "M", name: "Multi-Ball",  duration: 0,     weight: 10 },
+    extra:  { color: "#ff5e7a", label: "+", name: "Extra Life",  duration: 0,     weight: 3 },  // ~3% de probabilidade
   };
+  // Posição Y do shield (barra protetora) — logo acima do fundo do ecrã.
+  const SHIELD_Y = H - 8;
+  const SHIELD_H = 3;
   const POWERUP_WEIGHT_TOTAL = (function () { let s = 0; for (const k in POWERUPS) s += POWERUPS[k].weight; return s; })();
 
   const LASER_SPEED = 9;
   const LASER_COOLDOWN_MS = 600;  // auto-fire ritmo balanceado (era 220 manual)
   const LASER_W = 2, LASER_H = 12;
 
-  const COIN_DIVISOR = 25;
+  // Moedas = Math.floor(score / COIN_DIVISOR).
+  // Aumentado de 25 → 50 (2x mais difícil ganhar moedas).
+  // Antes: 25 pts = 1 moeda. Agora: 50 pts = 1 moeda.
+  const COIN_DIVISOR = 50;
 
   // ─────────────────────────────────────────────
   //  ÍCONE SVG
@@ -146,23 +161,49 @@
   })();
 
   // ─────────────────────────────────────────────
-  //  LAYOUTS — 8 organizações
+  //  LAYOUTS — 11 organizações (Etapa fix: +3 novos)
+  //  Garantia: o próximo layout é sempre diferente do atual (ver startGame/level advance).
   // ─────────────────────────────────────────────
   const LAYOUTS = [
+    // 1: Full rectangle (todos os tijolos)
     function () { const g = []; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push(1); g.push(row); } return g; },
+    // 2: Triangle (pirâmide — base larga no topo, ponto no fundo)
     function () { const g = []; const mid = (BRICK_COLS - 1) / 2; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push(Math.abs(c - mid) <= (BRICK_ROWS - 1 - r) ? 1 : 0); g.push(row); } return g; },
+    // 3: Diamond (losango — distância Manhattan ao centro)
     function () { const g = []; const cx = (BRICK_COLS - 1) / 2, cy = (BRICK_ROWS - 1) / 2, rad = Math.max(cx, cy); for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push((Math.abs(c - cx) + Math.abs(r - cy)) <= rad ? 1 : 0); g.push(row); } return g; },
+    // 4: Checkerboard (xadrez)
     function () { const g = []; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push((r + c) % 2 ? 1 : 0); g.push(row); } return g; },
+    // 5: Vertical stripes (colunas alternadas)
     function () { const g = []; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push(c % 2 ? 1 : 0); g.push(row); } return g; },
+    // 6: Hollow border (só a borda)
     function () { const g = []; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push((r === 0 || r === BRICK_ROWS - 1 || c === 0 || c === BRICK_COLS - 1) ? 1 : 0); g.push(row); } return g; },
+    // 7: X (duas diagonais cruzadas)
     function () { const g = []; const mid = (BRICK_COLS - 1) / 2; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push(Math.abs(c - mid) === r ? 1 : 0); g.push(row); } return g; },
+    // 8: Plus / Cross (cruz espessa)
     function () { const g = []; const mid = (BRICK_COLS - 1) / 2, cmid = Math.floor(BRICK_ROWS / 2); for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) row.push((c === Math.floor(mid) || c === Math.ceil(mid) || r === cmid) ? 1 : 0); g.push(row); } return g; },
+    // 9: Arrow down (seta a apontar para baixo — V invertido no topo + base larga)
+    function () { const g = []; const mid = (BRICK_COLS - 1) / 2; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) { const inV = Math.abs(c - mid) <= r; const inBase = r >= BRICK_ROWS - 2; row.push((inV || inBase) ? 1 : 0); } g.push(row); } return g; },
+    // 10: Zigzag (linhas alternadas deslocadas — ondas horizontais)
+    function () { const g = []; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) { const offset = (r % 2) * 2; row.push((c + offset) % 4 < 2 ? 1 : 0); } g.push(row); } return g; },
+    // 11: Double diagonal (duas diagonais paralelas — como // espesso)
+    function () { const g = []; const mid = (BRICK_COLS - 1) / 2; for (let r = 0; r < BRICK_ROWS; r++) { const row = []; for (let c = 0; c < BRICK_COLS; c++) { const d1 = Math.abs((c - mid) - r) <= 1; const d2 = Math.abs((c - mid) - (BRICK_ROWS - 1 - r)) <= 1; row.push((d1 || d2) ? 1 : 0); } g.push(row); } return g; },
   ];
 
   // ─────────────────────────────────────────────
   //  Estado
   // ─────────────────────────────────────────────
   function createBall() { return { x: W / 2, y: PADDLE_Y - BALL_R - 1, vx: 0, vy: 0, attached: true, r: BALL_R }; }
+
+  // Etapa fix: escolhe o próximo layout garantindo que é SEMPRE diferente do atual.
+  // Antes, usava Math.floor(Math.random() * LAYOUTS.length) que podia repetir o
+  // mesmo layout duas vezes seguidas. Agora, se o random escolher o mesmo índice,
+  // avança para o seguinte (wrap-around). Isto garante variedade entre níveis.
+  function pickNextLayout(currentIdx) {
+    if (LAYOUTS.length <= 1) return 0;
+    let next = Math.floor(Math.random() * LAYOUTS.length);
+    if (next === currentIdx) next = (next + 1) % LAYOUTS.length;
+    return next;
+  }
 
   function defaultEquipped() {
     return window.BBSkins ? Object.assign({}, window.BBSkins.DEFAULT_EQUIPPED) : { bricks: "brick-default", ball: "ball-default", paddle: "pad-default", bg: "bg-void" };
@@ -179,10 +220,11 @@
       bricks: [],
       capsules: [],
       lasers: [],
-      effects: { wide: 0, slow: 0, sticky: 0, laser: 0, through: 0 },
+      effects: { wide: 0, slow: 0, shield: 0, laser: 0, through: 0 },
       speedMul: 1.0,
       laserCooldown: 0,
       lives: LIVES,
+      extraLives: 0,  // vidas extra acumuladas (power-up raro "extra"). Consumidas antes das vidas normais.
       score: 0,
       level: 1,
       speed: BALL_SPEED_START,
@@ -266,6 +308,14 @@
       }
       return;
     }
+    if (type === "extra") {
+      // Vida extra: acumula em state.extraLives (não usa o sistema de effects
+      // com timestamp). Quando o utilizador morrer, consome uma vida extra
+      // antes de decrementar state.lives.
+      state.extraLives++;
+      updateHud(state);
+      return;
+    }
     state.effects[type] = Date.now() + pu.duration;
     if (type === "slow") state.speedMul = 0.6;
     if (type === "wide") state.paddle.w = PADDLE_W * 1.7;
@@ -278,9 +328,7 @@
         state.effects[k] = 0; sfx.expire();
         if (k === "slow") state.speedMul = 1.0;
         if (k === "wide") state.paddle.w = PADDLE_W;
-        if (k === "sticky") {
-          state.balls.forEach(function (b) { if (b.attached) { b.attached = false; const sp = state.speed; let vx = (Math.random() - 0.5) * sp * 0.4, vy = -Math.sqrt(Math.max(0.01, sp * sp - vx * vx)); b.vx = vx; b.vy = vy; } });
-        }
+        // shield: não precisa de cleanup especial (apenas deixa de ser desenhada/ativa)
       }
     }
   }
@@ -330,17 +378,19 @@
       if (b.x - b.r < 0) { b.x = b.r; b.vx = -b.vx; sfx.wall(); }
       if (b.x + b.r > W) { b.x = W - b.r; b.vx = -b.vx; sfx.wall(); }
       if (b.y - b.r < 0) { b.y = b.r; b.vy = -b.vy; sfx.wall(); }
+      // Shield: se ativo e a bola está a descer e atinge a linha do shield, rebate para cima.
+      // Isto impede a bola de cair (dá uma "segunda oportunidade" temporária).
+      if (state.effects.shield && b.vy > 0 && b.y + b.r >= SHIELD_Y && b.y + b.r <= SHIELD_Y + SHIELD_H + b.r) {
+        b.y = SHIELD_Y - b.r; b.vy = -Math.abs(b.vy); sfx.wall();
+      }
       if (b.y - b.r > H) { state.balls.splice(bi, 1); continue; }
       const p = state.paddle;
       if (b.vy > 0 && b.x + b.r > p.x && b.x - b.r < p.x + p.w && b.y + b.r > p.y && b.y - b.r < p.y + p.h) {
-        if (state.effects.sticky) { b.attached = true; b.vx = 0; b.vy = 0; b.y = p.y - b.r; }
-        else {
-          b.y = p.y - b.r;
-          const rel = clamp((b.x - (p.x + p.w / 2)) / (p.w / 2), -1, 1), sp = state.speed;
-          let nvx = rel * sp * 0.85, nvy = -Math.sqrt(Math.max(0.01, sp * sp - nvx * nvx));
-          if (Math.abs(nvy) < sp * 0.35) { nvy = -sp * 0.35; nvx = (nvx < 0 ? -1 : 1) * Math.sqrt(Math.max(0.01, sp * sp - nvy * nvy)); }
-          b.vx = nvx; b.vy = nvy;
-        }
+        b.y = p.y - b.r;
+        const rel = clamp((b.x - (p.x + p.w / 2)) / (p.w / 2), -1, 1), sp = state.speed;
+        let nvx = rel * sp * 0.85, nvy = -Math.sqrt(Math.max(0.01, sp * sp - nvx * nvx));
+        if (Math.abs(nvy) < sp * 0.35) { nvy = -sp * 0.35; nvx = (nvx < 0 ? -1 : 1) * Math.sqrt(Math.max(0.01, sp * sp - nvy * nvy)); }
+        b.vx = nvx; b.vy = nvy;
         sfx.paddle();
       }
       for (let i = 0; i < state.bricks.length; i++) {
@@ -365,7 +415,7 @@
       state.level++;
       state.speed = Math.min(BALL_SPEED_MAX, state.speed + BALL_SPEED_INC);
       sfx.clear();
-      state.layoutIdx = Math.floor(Math.random() * LAYOUTS.length);
+      state.layoutIdx = pickNextLayout(state.layoutIdx); // Etapa fix: sempre diferente do atual
       buildBricks(state, LAYOUTS[state.layoutIdx]);
       resetBalls(state); state.capsules = []; state.lasers = []; updateHud(state);
     }
@@ -417,17 +467,47 @@
       if (through) { ctx.fillStyle = "rgba(176,107,224,0.35)"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, 0, Math.PI * 2); ctx.fill(); }
       if (skins) skins.drawBall(ctx, b.x, b.y, b.r, ballSkin);
     }
+
+    // Shield (barra protetora) — power-up que substituiu o Sticky (iman).
+    // Desenha uma barra horizontal laranja brilhante na parte inferior do ecrã.
+    // A bola rebate nela para cima enquanto o efeito está ativo.
+    if (state.effects.shield) {
+      // Pulsação suave baseada no tempo restante (intensifica quando está a acabar)
+      const remaining = state.effects.shield - Date.now();
+      const flicker = remaining < 2000 ? (Math.sin(Date.now() / 80) > 0 ? 0.4 : 1) : 1;
+      // Glow
+      ctx.fillStyle = "rgba(255,140,26," + (0.25 * flicker).toFixed(2) + ")";
+      ctx.fillRect(0, SHIELD_Y - 4, W, SHIELD_H + 8);
+      // Barra principal
+      ctx.fillStyle = "rgba(255,140,26," + (0.85 * flicker).toFixed(2) + ")";
+      ctx.fillRect(0, SHIELD_Y, W, SHIELD_H);
+      // Linha branca brilhante no topo do shield
+      ctx.fillStyle = "rgba(255,255,255," + (0.6 * flicker).toFixed(2) + ")";
+      ctx.fillRect(0, SHIELD_Y, W, 1);
+    }
   }
 
   // ─────────────────────────────────────────────
   //  VIDA / GAME OVER
   // ─────────────────────────────────────────────
   function loseLife(state) {
+    // Se houver vidas extra acumuladas (power-up "extra"), consome uma primeiro.
+    // Isto permite que o utilizador "não perca uma vida" quando tem 3 vidas
+    // (máximo) e apanha uma vida extra — a vida extra é guardada e consumida
+    // na próxima morte, em vez de aumentar state.lives para 4.
+    if (state.extraLives > 0) {
+      state.extraLives--; sfx.powerup(); flashHud(state);
+      // Não decrementa state.lives — apenas reset da bola e efeitos
+      resetBalls(state); state.capsules = []; state.lasers = [];
+      state.effects = { wide: 0, slow: 0, shield: 0, laser: 0, through: 0 };
+      state.speedMul = 1.0; state.paddle.w = PADDLE_W; updateHud(state);
+      return;
+    }
     state.lives--; sfx.lose(); flashHud(state);
     if (state.lives <= 0) gameOver(state);
     else {
       resetBalls(state); state.capsules = []; state.lasers = [];
-      state.effects = { wide: 0, slow: 0, sticky: 0, laser: 0, through: 0 };
+      state.effects = { wide: 0, slow: 0, shield: 0, laser: 0, through: 0 };
       state.speedMul = 1.0; state.paddle.w = PADDLE_W; updateHud(state);
     }
   }
@@ -498,9 +578,16 @@
     if (ui.level) ui.level.textContent = String(state.level);
     if (ui.lives) {
       ui.lives.innerHTML = "";
+      // Vidas normais (bolas brancas)
       for (let i = 0; i < state.lives; i++) {
         const s = document.createElement("span"); s.className = "bb-life";
         s.innerHTML = '<svg width="11" height="11" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="#fff"/><circle cx="6" cy="6" r="1.5" fill="rgba(255,255,255,0.6)"/></svg>';
+        ui.lives.appendChild(s);
+      }
+      // Vidas extra (bolas coral/rosa com "+") — acumuladas via power-up "extra"
+      for (let i = 0; i < state.extraLives; i++) {
+        const s = document.createElement("span"); s.className = "bb-life bb-life-extra";
+        s.innerHTML = '<svg width="11" height="11" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="#ff5e7a" stroke="#fff" stroke-width="0.8"/><text x="8" y="11" font-size="9" font-family="VT323, monospace" font-weight="bold" text-anchor="middle" fill="#fff">+</text></svg>';
         ui.lives.appendChild(s);
       }
     }
@@ -571,6 +658,7 @@
     // Re-sincroniza do BBData se disponível (sobre-escreve com dados authoritative)
     // MAS só se NÃO estiver em modo debug unlock (session-only prevalece)
     if (!prevDebugUnlocked && window.BBData && window.BBData.isReady()) { state.coins = window.BBData.getCoins(); state.coinsReady = true; state.ownedSkins = window.BBData.getOwnedSkins(); state.equippedSkins = window.BBData.getEquippedSkins(); }
+    // startGame: jogo novo — qualquer layout é válido (não há "anterior" para evitar)
     state.layoutIdx = Math.floor(Math.random() * LAYOUTS.length);
     buildBricks(state, LAYOUTS[state.layoutIdx]); resetBalls(state); updateHud(state); updateCoinsHud(state);
     showScreen(state, "game"); draw(ui.ctx, state); if (ui.wrap) ui.wrap.focus(); startLoop(state, ui);
@@ -585,10 +673,11 @@
     switch (action) {
       case "wide":    state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "wide", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
       case "slow":    state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "slow", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
-      case "sticky":  state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "sticky", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
+      case "shield":  state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "shield", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
       case "laser":   state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "laser", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
       case "through": state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "through", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
       case "multi":   state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "multi", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
+      case "extra":   state.capsules.push({ x: p.x + p.w / 2, y: p.y - 14, type: "extra", vy: POWERUP_FALL_SPEED, r: POWERUP_RADIUS }); break;
       case "score":   state.score += 500; updateHud(state); break;
       case "level":   state.bricks.forEach(function (b) { b.alive = false; }); break;
       case "kill":    state.lives = 1; state.balls.forEach(function (b) { b.attached = false; b.y = H + 20; b.vy = 8; }); break;
@@ -836,11 +925,12 @@
             '<li><b>' + t("Pausa:") + '</b> P &nbsp;·&nbsp; <b>' + t("Sair:") + '</b> ' + t("Esc (em pausa)") + '</li>' +
             '<li><b>' + t("Vidas:") + '</b> 3 — ' + t("Não deixes todas as bolas cair!") + '</li>' +
             '<li><b>' + t("Power-ups:") + '</b> ' + t("Apanha cápsulas que caem — drops raros dos tijolos") + '</li>' +
-            '<li><b>W</b> ' + t("Alargar · Lento · Pegajoso · Laser · Atravessar · Multi") + '</li>' +
+            '<li><b>W</b> ' + t("Alargar · Lento · Escudo · Laser · Atravessar · Multi") + '</li>' +
+            '<li><b>+</b> ' + t("Vida Extra (raro, 3%) — acumula e é consumida na próxima morte") + '</li>' +
             '<li><b>' + t("Velocidade:") + '</b> ' + t("Aumenta a cada nível, cap no nível 5") + '</li>' +
-            '<li><b>' + t("Moedas:") + '</b> ' + t("Ganhas com a pontuação (25 pts = 1 moeda) — gasta na LOJA") + '</li>' +
+            '<li><b>' + t("Moedas:") + '</b> ' + t("Ganhas com a pontuação (50 pts = 1 moeda) — gasta na LOJA") + '</li>' +
             '<li><b>' + t("Loja:") + '</b> ' + t("Compra e equipa skins para tijolos, bola, plataforma e fundo") + '</li>' +
-            '<li><b>' + t("Limpa todos os tijolos") + '</b> ' + t("para avançar — 8 padrões") + '</li>' +
+            '<li><b>' + t("Limpa todos os tijolos") + '</b> ' + t("para avançar — 11 padrões") + '</li>' +
           '</ul>' +
           '<button class="bb-btn bb-btn-primary" type="button" data-act="back">' + t("VOLTAR") + '</button>' +
         '</div>' +
@@ -924,10 +1014,11 @@
         '<div class="bb-debug-buttons">' +
           '<button class="bb-btn" type="button" data-dbg="wide">' + t("LARGO") + '</button>' +
           '<button class="bb-btn" type="button" data-dbg="slow">' + t("LENTO") + '</button>' +
-          '<button class="bb-btn" type="button" data-dbg="sticky">' + t("PEGAJOSO") + '</button>' +
+          '<button class="bb-btn" type="button" data-dbg="shield">' + t("ESCUDO") + '</button>' +
           '<button class="bb-btn" type="button" data-dbg="laser">LASER</button>' +
           '<button class="bb-btn" type="button" data-dbg="through">' + t("PIERCE") + '</button>' +
           '<button class="bb-btn" type="button" data-dbg="multi">MULTI</button>' +
+          '<button class="bb-btn" type="button" data-dbg="extra">+VIDA</button>' +
           '<button class="bb-btn" type="button" data-dbg="score">+500 PTS</button>' +
           '<button class="bb-btn" type="button" data-dbg="level">' + t("SALTAR NÍVEL") + '</button>' +
           '<button class="bb-btn" type="button" data-dbg="kill">' + t("MORRER") + '</button>' +
@@ -1154,15 +1245,26 @@
     }
 
     // ── Input: rato no canvas ──
+    // Etapa fix: o rato continua a controlar a paddle mesmo quando sai do canvas
+    // (antes, mouseleave punha mouseX = null e a paddle parava de seguir).
+    // Agora usamos mousemove ao nível do document (enquanto o jogo está ativo),
+    // calculando a posição clamped ao canvas. Isto garante que mover o rato fora
+    // da zona do computador continua a mover a paddle.
     ui.canvas.addEventListener("mousemove", function (e) {
       const rect = ui.canvas.getBoundingClientRect();
       state.mouseX = clamp((e.clientX - rect.left) * (W / rect.width), 0, W);
     });
-    ui.canvas.addEventListener("mouseleave", function () { state.mouseX = null; });
-    ui.canvas.addEventListener("pointerdown", function (e) {
-      e.preventDefault(); wrap.focus();
-      if (state.screen === "game") { launchBalls(state); }
-    });
+    // mouseleave: NÃO desativa o mouseX — o listener do document trata de atualizar.
+    // Mantemos o listener para evitar comportamentos estranhos, mas é no-op.
+    ui.canvas.addEventListener("mouseleave", function () { /* no-op: paddle continua via document listener */ });
+    function docMouseMoveHandler(e) {
+      // Só atualiza se o jogo estiver ativo (não em menu/loja/pausa)
+      if (state.screen !== "game") return;
+      const rect = ui.canvas.getBoundingClientRect();
+      // Se o rato está fora do canvas (horizontalmente), clamp mantém a paddle na borda
+      state.mouseX = clamp((e.clientX - rect.left) * (W / rect.width), 0, W);
+    }
+    document.addEventListener("mousemove", docMouseMoveHandler);
 
     // ── Input: teclado ──
     // Listener no wrap (requer foco) para teclas de jogo (arrows, space, P, Esc)
@@ -1266,6 +1368,7 @@
       document.removeEventListener("visibilitychange", onVis);
       document.removeEventListener("keydown", docTestHandler, true);
       document.removeEventListener("keydown", docEscHandler, true); // Etapa 3: ESC nos sub-ecrãs
+      document.removeEventListener("mousemove", docMouseMoveHandler); // Etapa fix: rato fora do canvas
       if (window.BBData) { try { window.BBData.unsubscribe(window.BBData.getUserId()); } catch (_) {} }
       sfx.prime();
     };
