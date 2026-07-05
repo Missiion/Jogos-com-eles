@@ -121,6 +121,8 @@
     "Sem descrição disponível.": "No description available.",
     "Escolher Key Art": "Choose Key Art",
     "Adicionar a Tab": "Add to Tab",
+    "Ecrã inteiro": "Fullscreen",
+    "Ver no YouTube": "Watch on YouTube",
 
     // ── Playlist / Gravações ────────────────────
     "Gravações": "Recordings",
@@ -157,6 +159,7 @@
     "Nome muito curto (mín 2 caracteres).": "Name too short (min 2 chars).",
     "Nome muito curto.": "Name too short.",
     "Bem-vindo,": "Welcome,",
+    "Bem-vindo de volta,": "Welcome back,",
     "Erro ao atualizar nome.": "Failed to update name.",
     "Erro ao registar.": "Registration failed.",
     "Servidor não responde.": "Server not responding.",
@@ -193,16 +196,16 @@
     "Erro ao votar.": "Failed to vote.",
     "Remover": "Remove",
 
-    // ── Admin / Trash ───────────────────────────
-    "Apenas o admin pode limpar o lixo.": "Only admin can clear trash.",
-    "Não há lixo para limpar.": "No trash to clear.",
-    "O lixo está vazio.": "Trash is empty.",
-    "Lixo limpo!": "Trash cleared!",
-    "Erro ao limpar lixo.": "Failed to clear trash.",
-    "Apenas o admin pode criar o lixo.": "Only admin can create trash.",
-    "O lixo já existe.": "Trash already exists.",
-    "Lixo criado!": "Trash created!",
-    "Erro ao criar lixo.": "Failed to create trash.",
+    // ── Admin / Reprovados (tab de jogos rejeitados) ──
+    "Apenas o admin pode limpar Reprovados.": "Only admin can clear Rejected.",
+    "Não há Reprovados para limpar.": "No Rejected to clear.",
+    "Reprovados está vazio.": "Rejected is empty.",
+    "Reprovados limpo!": "Rejected cleared!",
+    "Erro ao limpar Reprovados.": "Failed to clear Rejected.",
+    "Apenas o admin pode criar Reprovados.": "Only admin can create Rejected.",
+    "Reprovados já existe.": "Rejected already exists.",
+    "Reprovados criado!": "Rejected created!",
+    "Erro ao criar Reprovados.": "Failed to create Rejected.",
 
     // ── Game approval (online play) ─────────────
     "Jogo rejeitado:": "Game rejected:",
@@ -215,7 +218,6 @@
     "Criar Reprovados": "Create Rejected",
     "Limpar Reprovados": "Clear Rejected",
     "Confirmar limpeza do lixo?": "Confirm cleanup?",
-    "Lixo": "Rejected",
     "Votar a favor": "Up-vote",
     "Votar contra": "Down-vote",
 
@@ -230,17 +232,22 @@
     // ── Notificações ───────────────────────────
     "Notificações": "Notifications",
     "Sem notificações.": "No notifications.",
+    "Notificações de teste adicionadas.": "Test notifications added.",
     "Limpar tudo": "Clear all",
     "Mutar notificações": "Mute notifications",
+    "Mutar sons": "Mute sounds",
+    "Computador": "Computer",
+    "Sem sinal": "NO SIGNAL",
     "Testes": "Testing",
     "Simular notificações": "Simulate notifications",
+    "Alguém": "Someone",
+    "data de lançamento": "release date",
 
     "Remover voto": "Remove vote",
     "votos contra": "down-votes",
     "votos a favor": "up-votes",
     "Upvotes": "Upvotes",
     "Downvotes": "Downvotes",
-    "Movido para o lixo.": "Moved to trash.",
     "Grupo completo": "Group full",
     "Mais votados": "Most up-votes",
     "Menos votados": "Most down-votes",
@@ -279,10 +286,241 @@
     "Muito Negativas": "Very Negative",
     "Esmagadoramente Negativas": "Overwhelmingly Negative",
     "Sem análises": "No user reviews",
+    "análises": "reviews",
+
+    // ── Discover ────────────────────────────────
+    "Nenhum jogo disponível para descobrir.": "No games available to discover.",
+
+    // ── Diversos (consistência i18n) ────────────
+    "Jogo #": "Game #",
+    "jogos": "games",
+    "Scroll: zoom · Arrastar: mover · Duplo clique: reset · Esc: fechar":
+      "Scroll: zoom · Drag: pan · Double-click: reset · Esc: close",
+    "Conteúdo com restrição de idade": "Age-restricted content",
+    "Apagar a tab \"{0}\"?": "Delete tab \"{0}\"?",
+    "Jogo desconhecido": "Unknown game",
+    "estúdio, engine": "studio, engine",
+    " em acesso antecipado": " in early access",
+
+    // ── Templates de notificação (placeholders {0}, {1}, ...) ──
+    // Usados via tf(). {0} = nome do jogo, {1} = variável contextual.
+    "\"{0}\" foi adicionado à lista!": "\"{0}\" was added to the list!",
+    "\"{0}\" saiu de acesso antecipado e foi lançado!": "\"{0}\" left early access and is now released!",
+    "\"{0}\" foi lançado{1}!": "\"{0}\" was released{1}!",
+    "\"{0}\" foi lançado em acesso antecipado!": "\"{0}\" was released in early access!",
+    "\"{0}\" recebeu um update! ({1})": "\"{0}\" received an update! ({1})",
+    "\"{0}\" teve informações atualizadas: {1}.": "\"{0}\" was updated: {1}.",
+    "{0} deu um up-vote em \"{1}\".": "{0} up-voted \"{1}\".",
+    "Recebeste {0} up-votes em \"{1}\".": "You received {0} up-votes on \"{1}\".",
+    "{0} deu um down-vote em \"{1}\".": "{0} down-voted \"{1}\".",
+    "Recebeste {0} down-votes em \"{1}\".": "You received {0} down-votes on \"{1}\".",
 
     // ── Confirm dialogs ─────────────────────────
     "Apagar a tab": "Delete tab",
     "?": "?",
+
+    // ═══════════════════════════════════════════════
+    //  COMPUTADOR CRT (computer.js + apps.js + window.js)
+    // ═══════════════════════════════════════════════
+
+    // ── Win95 window manager (window.js) ──
+    "Minimizar": "Minimize",
+    "Fechar": "Close",
+    "Janela": "Window",
+
+    // ── Notepad (apps.js) ──
+    "Bloco de Notas": "Notepad",
+    "Sem título - Bloco de Notas": "Untitled - Notepad",
+    "Ficheiro  Editar  Procurar  Ajuda": "File  Edit  Search  Help",
+
+    // ── MS-DOS (apps.js) ──
+    "Linha de comandos CN-DOS": "CN-DOS Prompt",
+    "Versão CN-DOS 3.11": "CN-DOS Version 3.11",
+    "(c) Copyright CASA•NORTE Systems Inc. 1995": "(c) Copyright CASA•NORTE Systems Inc. 1995",
+    "Comandos disponíveis:": "Available commands:",
+    "  DIR      Listar conteúdo do diretório": "  DIR      List directory contents",
+    "  CLS      Limpar ecrã": "  CLS      Clear screen",
+    "  ECHO     Mostrar mensagem": "  ECHO     Display message",
+    "  VER      Mostrar versão CN-DOS": "  VER      Show CN-DOS version",
+    "  DATE     Mostrar data atual": "  DATE     Show current date",
+    "  TIME     Mostrar hora atual": "  TIME     Show current time",
+    "  HELP     Mostrar esta ajuda": "  HELP     Show this help",
+    "Unidade C é CN-HDD": "Volume in drive C is CN-HDD",
+    "Diretório de C:\\": "Directory of C:\\",
+    "bytes livres": "bytes free",
+    "Comando inválido ou ficheiro não existe": "Bad command or file name",
+
+    // ── My Computer (apps.js) ──
+    "O Meu Computador": "My Computer",
+    "Ficheiro  Editar  Ver  Ajuda": "File  Edit  View  Help",
+    "Disquete 3½ (A:)": "3½ Floppy (A:)",
+    "Disco Local (C:)": "Local Disk (C:)",
+    "CD-ROM (D:)": "CD-ROM (D:)",
+    "Painel de Controlo": "Control Panel",
+
+    // ── About (apps.js) ──
+    "Sobre CASA•NORTE": "About CASA•NORTE",
+    "Sistema CN-DOS CASA•NORTE": "CASA•NORTE CN-DOS System",
+    "Versão 3.11": "Version 3.11",
+    "© 1995 CASA•NORTE Systems Inc.": "© 1995 CASA•NORTE Systems Inc.",
+    "CPU: Pentium-MMX 200MHz": "CPU: Pentium-MMX 200MHz",
+    "Memória: 65.536 KB": "Memory: 65,536 KB",
+    "Ecrã: ColorMonitor CN-1530": "Display: CN-1530 ColorMonitor",
+
+    // ── Recycle Bin (apps.js) ──
+    "Reciclagem": "Recycle Bin",
+    "A Reciclagem está vazia.": "The Recycle Bin is empty.",
+    "0 objeto(s)": "0 object(s)",
+
+    // ── Media Player (apps.js) ──
+    "Reprodutor CN Media": "CN Media Player",
+    "Lista de reprodução": "Playlist",
+    "Sem faixa": "— No track —",
+    "Próxima:": "Next:",
+    "Próxima: — (fim da lista)": "Next: — (end of queue)",
+    "Anterior": "Previous",
+    "Tocar": "Play",
+    "Pausa": "Pause",
+    "Seguinte": "Next",
+    "Aleatório": "Scramble",
+    "Aleatório (fila random)": "Scramble (random queue)",
+    "Repetir": "Repeat",
+    "Volume": "Volume",
+    // ── Media Player: YouTube playlists (apps.js) ──
+    "Adicionar Playlist": "Add Playlist",
+    "Nome da playlist": "Playlist name",
+    "URL do YouTube (playlist ou vídeo)": "YouTube URL (playlist or video)",
+    "Adicionar": "Add",
+    "Remover playlist": "Remove playlist",
+    "Playlist padrão": "Default playlist",
+    "Minhas Playlists": "My Playlists",
+    "URL inválida": "Invalid URL",
+    "Playlist adicionada!": "Playlist added!",
+    "Erro ao adicionar playlist": "Failed to add playlist",
+
+    // ── Display Properties (apps.js) ──
+    "Propriedades de Visualização": "Display Properties",
+    "Fundo de ecrã": "Background",
+    "Padrão:": "Pattern:",
+    "Antevisão": "Preview",
+    "Proteção de ecrã:": "Screen Saver:",
+    "Proteção de ecrã": "Screen Saver",
+    "Esperar:": "Wait:",
+    "minutos": "minutes",
+    "Antevisão": "Preview",
+    "Aparência": "Appearance",
+    "Definições avançadas": "Advanced settings",
+    "Definições de aparência": "Appearance settings",
+    "3D Starfield": "3D Starfield",
+    "Janelas Voadoras": "Flying Windows",
+    "Ecrã vazio": "Blank Screen",
+
+    // ── Sound Properties (apps.js) ──
+    "Propriedades de Som": "Sound Properties",
+    "Volume principal:": "Master Volume:",
+    "Silenciar sons ambiente": "Mute ambient sounds",
+    "Silenciar som de click de fundo": "Mute background click sound",
+    "Sons": "Sounds",
+    "Áudio": "Audio",
+
+    // ── Start Menu (apps.js) ──
+    "Programas": "Programs",
+    "Definições": "Settings",
+    "Executar...": "Run...",
+    "Desligar...": "Shut Down...",
+    "Ajuda": "Help",
+
+    // ── Botões OK/Cancel/Apply ──
+    "OK": "OK",
+    "Cancelar": "Cancel",
+    "Aplicar": "Apply",
+
+    // ═══════════════════════════════════════════════
+    //  BRICK BREAKER (brickbreaker.js)
+    // ═══════════════════════════════════════════════
+
+    // ── Menu principal ──
+    "JOGAR": "PLAY",
+    "LOJA": "SHOP",
+    "TABELA DE PONTUAÇÕES": "LEADERBOARD",
+    "COMO JOGAR": "HOW TO PLAY",
+    "OPÇÕES": "OPTIONS",
+
+    // ── How to Play ──
+    "Mover plataforma:": "Move paddle:",
+    "Rato ou setas ← →": "Mouse or ← → arrows",
+    "Lançar bola:": "Launch ball:",
+    "Espaço ou Clique": "Space or Click",
+    "Pausa:": "Pause:",
+    "Sair:": "Quit:",
+    "Esc (em pausa)": "Esc (from pause)",
+    "Vidas:": "Lives:",
+    "Não deixes todas as bolas cair!": "Don't let all balls fall!",
+    "Power-ups:": "Power-ups:",
+    "Apanha cápsulas que caem — drops raros dos tijolos": "Catch falling capsules — rare drops from bricks",
+    "Alargar · Lento · Pegajoso · Laser · Atravessar · Multi": "Wide · Slow · Sticky · Laser · Pierce · Multi",
+    "Velocidade:": "Speed:",
+    "Aumenta a cada nível, cap no nível 5": "Rises each level, caps at level 5",
+    "Moedas:": "Coins:",
+    "Ganhas com a pontuação (25 pts = 1 moeda) — gasta na LOJA": "Earned from score (25 pts = 1 coin) — spend in the SHOP",
+    "Loja:": "Shop:",
+    "Compra e equipa skins para tijolos, bola, plataforma e fundo": "Buy & equip skins for bricks, ball, paddle, and background",
+    "Limpa todos os tijolos": "Clear all bricks",
+    "para avançar — 8 padrões": "to advance — 8 layouts",
+
+    // ── Options ──
+    "Efeitos sonoros": "Sound effects",
+
+    // ── Shop ──
+    "TIJOLOS": "BRICKS",
+    "BOLA": "BALL",
+    "PLATAFORMA": "PADDLE",
+    "FUNDO": "BACKGROUND",
+    "EQUIPADO": "EQUIPPED",
+    "DESEQUIPAR": "UNEQUIP",
+    "EQUIPAR": "EQUIP",
+    "VOLTAR": "BACK",
+
+    // ── Leaderboard ──
+    "MELHOR:": "MY BEST:",
+    "#": "#",
+    "NOME": "NAME",
+    "NÍVEL": "LV",
+    "PONTUAÇÃO": "SCORE",
+    "A carregar...": "Loading...",
+    "Sem pontuações ainda. Sê o primeiro!": "No scores yet. Be the first!",
+
+    // ── HUD / jogo ──
+    "PONTOS": "SCORE",
+    "NÍVEL": "LV",
+    "RATO / ← → MOVER · ESPAÇO LANÇAR · P PAUSA": "MOUSE / ← → MOVE · SPACE LAUNCH · P PAUSE",
+
+    // ── Pausa ──
+    "EM PAUSA": "PAUSED",
+    "RETOMAR": "RESUME",
+    "SAIR PARA O MENU": "QUIT TO MENU",
+
+    // ── Game over ──
+    "FIM DE JOGO": "GAME OVER",
+    "PONTUAÇÃO FINAL": "FINAL SCORE",
+    "MOEDAS GANHAS": "COINS EARNED",
+    "JOGAR DE NOVO": "PLAY AGAIN",
+    "MENU PRINCIPAL": "MAIN MENU",
+
+    // ── Debug ──
+    "DEBUG · escreve \"test\" para alternar": "DEBUG · type \"test\" to toggle",
+    "LARGO": "WIDE",
+    "LENTO": "SLOW",
+    "PEGAJOSO": "STICKY",
+    "PIERCE": "PIERCE",
+    "SALTAR NÍVEL": "SKIP LV",
+    "MORRER": "DIE",
+    "DESBLOQUEAR TUDO": "UNLOCK ALL",
+    "RESET $": "RESET $",
+    "FECHAR": "CLOSE",
+
+    // ── Game over coins ──
+    "(regista-te para guardar)": "(register to save)",
   };
 
   // ─────────────────────────────────────────────
@@ -390,6 +628,19 @@
     const k = String(key);
     if (isPt()) return k;
     return DICT[k] != null ? DICT[k] : k;
+  }
+
+  // Traduz um template com placeholders {0}, {1}, ...
+  // Ex: tf('"{0}" foi adicionado à lista!', 'Mario')
+  //   PT → '"Mario" foi adicionado à lista!'
+  //   EN → '"Mario" was added to the list!'
+  // Os placeholders são substituídos na ordem dos argumentos.
+  function tf(key, ...args) {
+    let s = t(key);
+    for (let i = 0; i < args.length; i++) {
+      s = s.replace(new RegExp("\\{" + i + "\\}", "g"), String(args[i]));
+    }
+    return s;
   }
 
   // Traduz um termo do glossário; devolve null se não estiver no glossário
@@ -828,6 +1079,7 @@
   // Expõe API global
   window.i18n = {
     t,
+    tf,
     translateText,
     translateBatch,
     setLang,
