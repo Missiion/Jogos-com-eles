@@ -9,6 +9,18 @@
 img, iframe { display: block; }
 button, a { font-family: inherit; cursor: pointer; text-decoration: none; }
 
+/* ── Acessibilidade: screen-reader-only ──
+   Esconde visualmente mas mantém disponível para leitores de ecrã. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 :root {
   --base:       #111118;
   --surface:    #1a1a24;
@@ -18,7 +30,7 @@ button, a { font-family: inherit; cursor: pointer; text-decoration: none; }
   --border2:    rgba(255,255,255,0.13);
   --text:       #eeeef8;
   --muted:      #7878a0;
-  --muted2:     #4a4a6a;
+  --muted2:     #6a6a8e;  /* mais claro que #4a4a6a para melhor contraste (WCAG) */
   --amber:      #ffb347;
   --amber-dim:  rgba(255,179,71,0.15);
   --orange:     #ff9466;
@@ -2417,6 +2429,12 @@ body.editor-mode .tabs-dropdown-item .tab-delete { display: flex; }
   color: var(--text);
 }
 
+/* Hover consistente entre os 3 botões de ícone da toolbar (sino, computador, engrenagem) */
+.notifications-trigger:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.18);
+}
+
 /* Ponte invisível entre o trigger e o menu */
 .notifications-wrap::after {
   content: "";
@@ -2664,6 +2682,12 @@ body.editor-mode .tabs-dropdown-item .tab-delete { display: flex; }
 .settings-trigger svg {
   flex-shrink: 0;
   color: var(--text);
+}
+
+/* Hover consistente entre os 3 botões de ícone da toolbar (sino, computador, engrenagem) */
+.settings-trigger:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.18);
 }
 
 /* Ponte invisível entre o trigger e o menu (igual ao tag-filter) */
@@ -3773,6 +3797,14 @@ body.editor-mode .editor-only { display: flex !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Reduz todas as animações/transições a instantâneo para utilizadores
+     sensíveis a movimento (WCAG 2.3.3). Mantém o estado final. */
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
   .card-bg, .card-expand, .game-card { transition: none !important; }
 }
 
@@ -4918,4 +4950,2366 @@ body.editor-mode .card-release-status {
     max-width: 100vw;
     max-height: 100vh;
   }
+}
+
+/* ═══════════════════════════════════════════════
+   ACESSIBILIDADE — focus-visible global (WCAG 2.4.7)
+   Outline visível em TODOS os elementos interativos quando focados
+   via teclado. Colocado no fim do ficheiro para vencer empates de
+   especificidade com regras `outline: none` anteriores.
+   Elementos com :focus-visible próprio (.game-card, .modal-media-
+   fullscreen-btn) têm especificidade maior e não são afectados.
+   ═══════════════════════════════════════════════ */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   COMPUTER OVERLAY — Monitor CRT retro (anos 90)
+   Etapa 1: shell 3D bege + vidro curvado + scanlines + base
+   + efeito de fundo posterizado (não blur) + sons ambient
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Botão na toolbar ── */
+.computer-wrap {
+  display: flex;
+  align-items: center;
+}
+/* ── Trigger — botão circular (mesmo tema do notifications-trigger e
+   settings-trigger: glassy circle com border subtil e ícone brilhante) ── */
+.computer-trigger {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: var(--tr);
+}
+.computer-trigger svg {
+  flex-shrink: 0;
+  color: var(--text);
+}
+.computer-trigger:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.18);
+}
+.computer-trigger:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+/* ── Overlay (fixed, full screen) ──
+   Usa opacity + visibility (não display:none) para permitir
+   transições suaves de open/close. */
+.computer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.35s ease, visibility 0.35s ease;
+}
+.computer-overlay.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ── Backdrop com efeito posterizado ──
+   Em vez de blur (já muito usado no site), usa contrast + saturate
+   para quantizar as cores do website visível atrás — look "256 cores"
+   retro. Adicionado scanline pattern subtis para reforçar o tema CRT. */
+.computer-backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0,0,0,0.07) 0px,
+      rgba(0,0,0,0.07) 1px,
+      transparent 1px,
+      transparent 3px
+    ),
+    rgba(8, 8, 16, 0.55);
+  backdrop-filter: contrast(1.5) saturate(0.4) brightness(0.55);
+  -webkit-backdrop-filter: contrast(1.5) saturate(0.4) brightness(0.55);
+}
+
+/* ── Monitor CRT (body) ──
+   Plano (sem perspective/tilt). Sem traseira nem stand — só o bezel.
+   Bege autêntico dos anos 90.
+   --screen-w dimensionado para dar espaçamento igual acima/abaixo.
+   O .crt-screen tem aspect 4:3, pelo que a altura = screen-w × 0.75.
+   Somando padding bezel + bezel-bottom, o monitor total ~ screen-w × 0.95.
+   Para espaçamento vertical igual e monitor grande, screen-w limitado
+   por 95vh (monitor ocupa ~82vh, deixando ~9vh de margem igual cada lado). */
+.crt-monitor {
+  position: relative;
+  z-index: 1;
+  --screen-w: min(95vw, 95vh);
+  transform: scale(0.92) translateY(24px);
+  transition: transform 0.45s cubic-bezier(.34,1.56,.64,1);
+}
+.computer-overlay.open .crt-monitor {
+  transform: scale(1) translateY(0);
+}
+
+/* ── Bezel (plástico externo) ──
+   Cor creme/bege com gradient para simular profundidade.
+   Cantos ligeiramente arredondados. Sombra de queda realista. */
+.crt-bezel {
+  position: relative;
+  background:
+    linear-gradient(145deg,
+      #e0d9c4 0%,
+      #cec7b2 30%,
+      #b8b09a 70%,
+      #a8a08a 100%
+    );
+  border-radius: 16px;
+  padding: 38px 38px 0;
+  box-shadow:
+    /* edges (highlights + shadows para 3D) */
+    inset 0 2px 0 rgba(255,250,235,0.5),
+    inset 0 -2px 0 rgba(120,110,85,0.4),
+    inset 2px 0 0 rgba(200,192,170,0.3),
+    inset -2px 0 0 rgba(140,130,105,0.3),
+    /* drop shadows (profundidade do monitor) */
+    0 4px 8px rgba(0,0,0,0.3),
+    0 20px 50px -8px rgba(0,0,0,0.6),
+    0 40px 80px -20px rgba(0,0,0,0.4);
+}
+
+/* ── Screen housing (recessed área do ecrã) ──
+   Mais escura que o bezel — simula o recess do tubo. */
+.crt-screen-housing {
+  background: linear-gradient(180deg, #8a8474 0%, #969080 100%);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow:
+    inset 0 4px 8px rgba(0,0,0,0.5),
+    inset 0 -2px 4px rgba(255,250,235,0.15),
+    inset 4px 0 8px rgba(0,0,0,0.35),
+    inset -4px 0 8px rgba(0,0,0,0.35);
+}
+
+/* ── Screen (o ecrã CRT em si) ──
+   Escuro quando "desligado". Aspect 4:3.
+   border-radius elíptico para simular a curvatura do tubo. */
+.crt-screen {
+  position: relative;
+  width: var(--screen-w);
+  aspect-ratio: 4 / 3;
+  background: radial-gradient(
+    ellipse at center,
+    #0e0e18 0%,
+    #07070d 70%,
+    #020205 100%
+  );
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 50px rgba(0,0,0,0.9),
+    inset 0 0 100px rgba(20,30,80,0.12);
+}
+
+/* ── Scanlines (linhas horizontais subtis) ──
+   CRT autêntico tinha linhas visíveis. Muito subtil quando "off". */
+.crt-scanlines {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0,0,0,0.15) 0px,
+    rgba(0,0,0,0.15) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+  z-index: 3;
+  border-radius: 0;
+}
+
+/* ── Curvature overlay (a "bóveda" do CRT) ──
+   Escurece as bordas para simular o vidro curvo. */
+.crt-curve {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    rgba(0,0,0,0.3) 85%,
+    rgba(0,0,0,0.6) 100%
+  );
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* ── Glass reflection (reflexo de vidro diagonal) ──
+   streak de luz no canto superior-esquerdo, como reflexo de janela. */
+.crt-reflection {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255,255,255,0.07) 0%,
+    rgba(255,255,255,0.03) 15%,
+    transparent 35%,
+    transparent 75%,
+    rgba(255,255,255,0.02) 100%
+  );
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* ── Content (área onde aparece o boot / desktop) ──
+   Todas as layers de boot são overlays absolutas dentro do content.
+   O JS em computer.js controla qual está visível em cada fase. */
+.crt-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: 0;
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  color: #c8d8c8;
+}
+
+/* ── Estado default: desligado (preto) ── */
+.crt-powered-off {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  border-radius: 0;
+  opacity: 1;
+  transition: opacity 0.15s ease;
+  z-index: 10;
+}
+.crt-content.booting .crt-powered-off,
+.crt-content.on .crt-powered-off {
+  opacity: 0;
+}
+
+/* ── Boot sequence (sem estática inicial) ──
+   A animação de power-line + flash branco (estática CRT) foi removida.
+   O boot arranca diretamente no BIOS POST com fade-in suave. */
+
+/* ── Fase 1: Terminal Log ──
+   Texto verde-tubo (fósforo) monospaced, estilo systemd/dmesg.
+   Surge linha a linha via JS, cada uma com a tag [ OK ] destacada.
+   Fundo preto, glow verde. Linhas empilhadas verticalmente (display: block). */
+.crt-terminal {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  padding: 4% 5%;
+  color: #5fff8a;
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: clamp(0.55rem, 1.4vmin, 0.85rem);
+  line-height: 1.55;
+  text-shadow: 0 0 4px rgba(95,255,138,0.7), 0 0 8px rgba(95,255,138,0.3);
+  white-space: pre-wrap;
+  opacity: 0;
+  z-index: 13;
+  border-radius: 0;
+  overflow: hidden;
+  text-align: left;
+  display: none;
+}
+.crt-content.booting .crt-terminal {
+  display: block;
+  animation: crt-terminal-show 0.30s ease 0.15s forwards;
+}
+@keyframes crt-terminal-show {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.crt-terminal-line {
+  display: block;
+  opacity: 0;
+  animation: crt-terminal-line-in 0.1s ease forwards;
+}
+@keyframes crt-terminal-line-in {
+  to { opacity: 1; }
+}
+/* Tag [ OK ] — verde mais brilhante, bold, glow extra */
+.crt-terminal-ok {
+  color: #b8ffd0;
+  font-weight: bold;
+  text-shadow: 0 0 5px rgba(184,255,208,0.9), 0 0 10px rgba(95,255,138,0.5);
+}
+.crt-terminal-cursor {
+  display: inline-block;
+  background: #5fff8a;
+  width: 0.6em;
+  height: 1em;
+  vertical-align: text-bottom;
+  animation: crt-cursor-blink 0.6s steps(2) infinite;
+  box-shadow: 0 0 4px rgba(95,255,138,0.7);
+}
+@keyframes crt-cursor-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+/* ── Fase 4: Logo CASA·NORTE ──
+   Splash screen retro com efeito de scanlines intensificado. */
+/* Classe .crt-dot centraliza o middot (·) verticalmente entre as letras
+   maiúsculas — por defeito o · fica demasiado baixo (na baseline do x-height). */
+.crt-dot {
+  display: inline-block;
+  vertical-align: middle;
+  position: relative;
+  top: -0.08em;
+}
+.crt-logo {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  opacity: 0;
+  z-index: 14;
+  border-radius: 0;
+  text-align: center;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(0,0,0,0.3) 0px,
+      rgba(0,0,0,0.3) 2px,
+      transparent 2px,
+      transparent 4px
+    );
+}
+/* O logo só aparece quando o JS adiciona .logo-active (após o BIOS),
+   criando uma transição limpa BIOS → logo → desktop. */
+.crt-logo.logo-active {
+  animation: crt-logo-show 1.20s ease forwards;
+}
+@keyframes crt-logo-show {
+  0%   { opacity: 0; transform: scale(1.08); filter: blur(4px); }
+  50%  { opacity: 0.6; transform: scale(1.02); filter: blur(1px); }
+  100% { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+.crt-logo-text {
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: clamp(1.4rem, 4.5vmin, 2.8rem);
+  font-weight: bold;
+  color: #ffb347;
+  letter-spacing: 0.15em;
+  text-shadow:
+    0 0 8px rgba(255,179,71,0.8),
+    0 0 16px rgba(255,179,71,0.4);
+}
+.crt-logo-sub {
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: clamp(0.7rem, 2vmin, 1.1rem);
+  color: #c8d8c8;
+  letter-spacing: 0.3em;
+  margin-bottom: 12px;
+  text-shadow: 0 0 4px rgba(200,216,200,0.5);
+}
+.crt-logo-version {
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: clamp(0.65rem, 1.8vmin, 0.95rem);
+  color: #5fff8a;
+  text-shadow: 0 0 4px rgba(95,255,138,0.6);
+  margin-top: 16px;
+}
+.crt-logo-copyright {
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: clamp(0.5rem, 1.3vmin, 0.7rem);
+  color: #7878a0;
+  margin-top: 4px;
+}
+
+/* ── Fase 5: Desktop Win95-style ──
+   Ambiente de trabalho dentro do CRT. Fundo teal clássico (#008080),
+   ícones à esquerda, taskbar em baixo com Start button + relógio.
+   Atalhos são placeholders (não funcionais nesta etapa). */
+.crt-desktop {
+  position: absolute;
+  inset: 0;
+  background: #008080;
+  opacity: 0;
+  z-index: 15;
+  border-radius: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.crt-content.on .crt-desktop {
+  opacity: 1;
+}
+
+/* ── Desktop icons ──
+   Grid vertical à esquerda, estilo Win95. Ícones com label branco
+   com sombra preta para legibilidade sobre o teal. */
+.desktop-icons {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+  padding: 12px 8px;
+  overflow: hidden;
+}
+.desktop-icon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 72px;
+  padding: 6px 4px;
+  border-radius: 2px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.08s;
+}
+.desktop-icon:hover {
+  background: rgba(0, 0, 128, 0.2);
+}
+.desktop-icon:focus-visible,
+.desktop-icon.selected {
+  background: rgba(0, 0, 128, 0.5);
+  outline: 1px dotted #fff;
+  outline-offset: -1px;
+}
+.desktop-icon-img {
+  width: 32px;
+  height: 32px;
+  margin-bottom: 4px;
+  image-rendering: pixelated;
+  filter: drop-shadow(1px 1px 0 rgba(0,0,0,0.4));
+}
+.desktop-icon-img svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.desktop-icon-label {
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  color: #fff;
+  text-align: center;
+  text-shadow: 1px 1px 0 #000, 1px 0 0 #000, 0 1px 0 #000;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+/* ── Marquee selection rectangle (Win95 classic) ──
+   Linha pontilhada azul com fundo azul translúcido. */
+.desktop-marquee {
+  position: absolute;
+  border: 1px dotted #fff;
+  background: rgba(0, 0, 128, 0.25);
+  pointer-events: none;
+  z-index: 50;
+  box-sizing: border-box;
+}
+
+/* ── Taskbar (bottom bar) ──
+   Cinza Win95 com bordas 3D (outset). Start button à esquerda,
+   tasks no centro, tray com relógio à direita. */
+.desktop-taskbar {
+  height: 30px;
+  background: #c0c0c0;
+  display: flex;
+  align-items: center;
+  padding: 2px 3px;
+  gap: 3px;
+  border-top: 2px solid #fff;
+  box-shadow:
+    inset 0 1px 0 #dfdfdf,
+    inset 0 -1px 0 #808080;
+  flex-shrink: 0;
+}
+.taskbar-start-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #fff #808080 #808080 #fff;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  color: #000;
+  cursor: pointer;
+}
+.taskbar-start-btn:active,
+.taskbar-start-btn.active {
+  border-color: #808080 #fff #fff #808080;
+}
+.taskbar-start-btn svg {
+  flex-shrink: 0;
+}
+.taskbar-divider {
+  width: 2px;
+  height: 22px;
+  background: #808080;
+  border-right: 1px solid #fff;
+  margin: 0 1px;
+  flex-shrink: 0;
+}
+.taskbar-tasks {
+  flex: 1;
+  display: flex;
+  gap: 3px;
+  overflow: hidden;
+}
+.taskbar-task {
+  height: 24px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  color: #000;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #fff #808080 #808080 #fff;
+  max-width: 140px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.taskbar-task.active {
+  border-color: #808080 #fff #fff #808080;
+  background: #b0b0b0;
+  font-weight: bold;
+}
+.taskbar-tray {
+  height: 24px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #808080 #fff #fff #808080;
+  flex-shrink: 0;
+}
+.taskbar-clock {
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  color: #000;
+}
+
+/* ── CRT glow (brilho do fósforo, muito subtil) ── */
+.crt-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: 0;
+  box-shadow: inset 0 0 120px rgba(40,60,120,0.06);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   WINDOWS Win95 (window.js)
+   Janelas arrastáveis com title bar + botões minimize/close.
+   Bordas 3D Win95 autênticas (outset).
+   ═══════════════════════════════════════════════════════════════ */
+.crt-window {
+  position: absolute;
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  box-shadow:
+    inset -1px -1px 0 #000,
+    inset 1px 1px 0 #fff;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  min-height: 100px;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  color: #000;
+}
+.crt-window-titlebar {
+  height: 20px;
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  padding: 2px 2px 2px 4px;
+  gap: 4px;
+  cursor: move;
+  user-select: none;
+  flex-shrink: 0;
+}
+.crt-window-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.crt-window-title {
+  flex: 1;
+  font-weight: bold;
+  font-size: 11px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.crt-window-buttons {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.crt-window-btn {
+  width: 16px;
+  height: 14px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  box-shadow: inset 1px 1px 0 #fff;
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.crt-window-btn:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  box-shadow: none;
+}
+/* Minimize button — underscore */
+.crt-window-minimize::after {
+  content: "";
+  position: absolute;
+  bottom: 2px;
+  left: 3px;
+  width: 6px;
+  height: 2px;
+  background: #000;
+}
+/* Close button — X */
+.crt-window-close::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background:
+    linear-gradient(45deg, transparent 45%, #000 45%, #000 55%, transparent 55%),
+    linear-gradient(-45deg, transparent 45%, #000 45%, #000 55%, transparent 55%);
+}
+.crt-window-body {
+  flex: 1;
+  overflow: auto;
+  background: #fff;
+  position: relative;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   APPS — estilos individuais
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Notepad */
+.app-notepad {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+}
+.app-notepad-menu {
+  height: 18px;
+  background: #c0c0c0;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: #000;
+  border-bottom: 1px solid #808080;
+  flex-shrink: 0;
+}
+.app-notepad-textarea {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 4px;
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: 12px;
+  color: #000;
+  background: #fff;
+}
+
+/* MS-DOS Prompt */
+.app-dos {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #000;
+  color: #c0c0c0;
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: 12px;
+  padding: 4px;
+}
+.app-dos-output {
+  flex: 1;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.3;
+}
+.app-dos-inputline {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.app-dos-prompt {
+  color: #c0c0c0;
+}
+.app-dos-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #c0c0c0;
+  font-family: 'Courier New', 'Lucida Console', monospace;
+  font-size: 12px;
+  padding: 0 0 0 4px;
+}
+.app-dos-output::-webkit-scrollbar { width: 12px; }
+.app-dos-output::-webkit-scrollbar-track { background: #c0c0c0; }
+.app-dos-output::-webkit-scrollbar-thumb { background: #808080; }
+
+/* My Computer / Explorer */
+.app-mycomputer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+}
+.app-explorer-toolbar {
+  height: 18px;
+  background: #c0c0c0;
+  padding: 2px 4px;
+  font-size: 11px;
+  color: #000;
+  border-bottom: 1px solid #808080;
+  flex-shrink: 0;
+}
+.app-explorer-body {
+  flex: 1;
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-content: flex-start;
+  background: #fff;
+}
+.explorer-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 70px;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.explorer-item:hover {
+  background: rgba(0, 0, 128, 0.1);
+}
+.explorer-item-label {
+  font-size: 11px;
+  color: #000;
+  text-align: center;
+  margin-top: 4px;
+}
+
+/* About */
+.app-about {
+  display: flex;
+  height: 100%;
+  padding: 16px;
+  gap: 16px;
+  background: #c0c0c0;
+  align-items: flex-start;
+}
+.app-about-logo {
+  flex-shrink: 0;
+}
+.app-about-info {
+  flex: 1;
+  font-size: 11px;
+  color: #000;
+  line-height: 1.6;
+}
+.app-about-title {
+  font-weight: bold;
+  font-size: 13px;
+  margin-bottom: 2px;
+}
+.app-about-version {
+  margin-bottom: 2px;
+}
+.app-about-copyright {
+  margin-bottom: 8px;
+}
+.app-about-spacer {
+  height: 6px;
+}
+.app-about-row {
+  color: #000;
+}
+
+/* Recycle Bin */
+.app-recycle {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+}
+.app-recycle-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #808080;
+  font-size: 12px;
+}
+.app-recycle-status {
+  height: 20px;
+  background: #c0c0c0;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #000;
+  border-top: 1px solid #808080;
+}
+
+/* Settings (Display / Sound Properties) */
+.app-settings {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #c0c0c0;
+  font-size: 11px;
+  color: #000;
+}
+.app-settings-tabs {
+  display: flex;
+  gap: 1px;
+  padding: 4px 4px 0;
+  flex-shrink: 0;
+}
+.app-settings-tab {
+  padding: 3px 10px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  border-bottom: none;
+  border-radius: 2px 2px 0 0;
+  cursor: pointer;
+  font-size: 10px;
+}
+.app-settings-tab.active {
+  background: #fff;
+  position: relative;
+  z-index: 1;
+  font-weight: bold;
+}
+.app-settings-body {
+  flex: 1;
+  background: #fff;
+  border: 1px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.app-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.app-settings-row label {
+  white-space: nowrap;
+}
+.app-settings-select {
+  flex: 1;
+  font-size: 11px;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+}
+.app-settings-slider {
+  flex: 1;
+}
+.app-settings-vol-label {
+  min-width: 34px;
+  text-align: right;
+  font-size: 10px;
+  color: #000;
+}
+.app-settings-preview {
+  flex: 1;
+  background: #008080;
+  border: 1px solid #808080;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+}
+.app-settings-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px;
+  flex-shrink: 0;
+}
+.app-settings-btn {
+  min-width: 60px;
+  height: 22px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  box-shadow: inset 1px 1px 0 #fff;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  color: #000;
+  cursor: pointer;
+}
+.app-settings-btn:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  box-shadow: none;
+}
+.app-settings-placeholder {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #808080;
+  font-size: 11px;
+  font-style: italic;
+}
+.app-settings-preview-btn {
+  min-width: 80px;
+}
+.app-settings-wait {
+  width: 50px;
+  font-size: 11px;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  text-align: center;
+}
+.app-settings-saver-select {
+  flex: 1;
+  font-size: 11px;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MEDIA PLAYER (apps.js) — Win95-style consistente com as outras apps
+   Layout: visualizer canvas (topo) + info row (capa+track+next) +
+   progress bar + controls (transport + modes + volume + viz-select).
+   Mantém todas as features (visualizadores, queue, shuffle, repeat,
+   playlist) com o visual Win95 original do computador.
+   ═══════════════════════════════════════════════════════════════ */
+
+.app-media {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #c0c0c0;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  color: #000;
+  overflow: hidden;
+}
+
+/* ── Pseudo-titlebar interna (faixa navy com o nome da app) ── */
+.app-media > .mp-viz-wrap { /* sem titlebar separada; o canvas é o topo */ }
+
+/* ── Visualizer area (ecrã preto) ── */
+.mp-viz-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 120px;
+  background: #000;
+  overflow: hidden;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  margin: 4px;
+}
+.mp-viz {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+/* Quando a playlist abre, o canvas encolhe para dar espaço ao painel.
+   O ResizeObserver no apps.js detecta a mudança de tamanho e chama
+   resizeCanvas() → o visualizer reinicia com as novas dimensões. */
+.mp-viz-wrap.playlist-open .mp-viz {
+  width: calc(100% - 170px);
+}
+.mp-viz-badge {
+  position: absolute;
+  top: 6px; left: 8px;
+  font-size: 10px;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  color: #5fff8a;
+  text-shadow: 0 0 4px rgba(95,255,138,0.7);
+  pointer-events: none;
+  text-transform: uppercase;
+  font-family: 'Courier New', monospace;
+}
+
+/* ── Playlist panel (Win95 window inside, slides from right) ── */
+.mp-playlist {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 170px;
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  box-shadow: -4px 0 8px rgba(0,0,0,0.4);
+  transform: translateX(100%);
+  transition: transform 0.22s ease;
+  display: flex;
+  flex-direction: column;
+  z-index: 5;
+}
+.mp-playlist.open { transform: translateX(0); }
+.mp-playlist-header {
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: bold;
+  color: #fff;
+  background: #000080;
+  border-bottom: 1px solid #808080;
+}
+.mp-playlist-items {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 0;
+  background: #fff;
+}
+.mp-playlist-items::-webkit-scrollbar { width: 12px; }
+.mp-playlist-items::-webkit-scrollbar-track { background: #c0c0c0; }
+.mp-playlist-items::-webkit-scrollbar-thumb { background: #808080; border: 1px solid #404040; }
+.mp-playlist-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #000;
+  cursor: pointer;
+}
+.mp-playlist-item:hover { background: #000080; color: #fff; }
+.mp-playlist-item:hover .mp-pl-num { color: #fff; }
+.mp-playlist-item.current {
+  background: #000080;
+  color: #fff;
+  font-weight: bold;
+}
+.mp-playlist-item.current .mp-pl-num { color: #fff; }
+.mp-pl-num { color: #404040; font-size: 10px; min-width: 14px; font-family: 'Courier New', monospace; }
+.mp-pl-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ── Info row: cover + track + next-up ── */
+.mp-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  flex-shrink: 0;
+}
+.mp-cover-wrap {
+  width: 56px; height: 56px;
+  flex-shrink: 0;
+  background: #404040;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  box-shadow: inset 1px 1px 0 #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.mp-cover { width: 100%; height: 100%; object-fit: cover; }
+.mp-cover-placeholder {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+.mp-cover-placeholder svg { display: block; opacity: 0.5; }
+.mp-titles { flex: 1; min-width: 0; }
+.mp-track {
+  font-size: 12px;
+  font-weight: bold;
+  color: #000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mp-next {
+  font-size: 10px;
+  color: #404040;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Progress row ── */
+.mp-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px 6px;
+  flex-shrink: 0;
+}
+.mp-progress-bar {
+  flex: 1;
+  height: 14px;
+  background: #fff;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  padding: 1px;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.mp-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: #000080;
+  transition: width 0.1s linear;
+}
+.mp-time {
+  font-size: 10px;
+  color: #000;
+  font-family: 'Courier New', monospace;
+  min-width: 78px;
+  text-align: right;
+}
+
+/* ── Controls row ── */
+.mp-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.mp-transport, .mp-modes {
+  display: flex;
+  gap: 3px;
+}
+/* Win95 button style (igual ao .app-settings-btn) */
+.mp-btn {
+  min-width: 36px;
+  height: 26px;
+  padding: 0 6px;
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  box-shadow: inset 1px 1px 0 #fff;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 12px;
+  color: #000;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mp-btn svg { display: block; pointer-events: none; }
+.mp-btn:active svg { transform: translate(1px, 1px); }
+.mp-btn:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  box-shadow: none;
+}
+.mp-btn.active {
+  border-color: #404040 #dfdfdf #dfdfdf #404040;
+  box-shadow: inset 1px 1px 0 #808080;
+  background: #b0b0b0;
+}
+.mp-play {
+  min-width: 44px;
+  height: 28px;
+}
+.mp-play svg { width: 16px; height: 16px; }
+
+/* ── Volume control (Win95 slider) ── */
+.mp-volume {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  background: #fff;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  height: 22px;
+}
+.mp-volume-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  user-select: none;
+  line-height: 0;
+}
+.mp-volume-icon svg { display: block; }
+.mp-volume-slider {
+  width: 80px;
+  height: 14px;
+  cursor: pointer;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  outline: none;
+}
+/* Track: linha fina cinza com borda sunken (Win95 clássico) */
+.mp-volume-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #fff;
+  border: 1px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+}
+.mp-volume-slider::-moz-range-track {
+  height: 4px;
+  background: #fff;
+  border: 1px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+}
+/* Thumb: pequeno quadrado Win95 (não bola) */
+.mp-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 8px;
+  height: 14px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  box-shadow: inset 1px 1px 0 #fff;
+  margin-top: -6px;
+  cursor: pointer;
+}
+.mp-volume-slider::-moz-range-thumb {
+  width: 8px;
+  height: 14px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  box-shadow: inset 1px 1px 0 #fff;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+/* ── Visualizer select (Win95 dropdown) ── */
+.mp-viz-select {
+  margin-left: auto;
+  height: 22px;
+  background: #fff;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  color: #000;
+  padding: 0 4px;
+  cursor: pointer;
+  outline: none;
+}
+.mp-viz-select:focus { border-color: #000080; }
+
+.mp-audio { display: none; }
+
+/* ── YouTube IFrame Player (hidden off-screen, audio-only) ──
+   O YouTube IFrame API precisa que o div tenha dimensões para tocar.
+   Posicionamos fora do viewport (left: -9999px) em vez de display:none
+   para garantir que o áudio continua a tocar mesmo em background. */
+.mp-yt-player {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 0.01;
+  z-index: 0;
+  overflow: hidden;
+}
+.mp-yt-player iframe { width: 100% !important; height: 100% !important; border: 0; }
+
+/* ── Playlist switcher (adicionar / trocar / remover playlists) ──
+   Cabe entre o header navy e a lista de faixas (.mp-playlist-items). */
+.mp-pl-switcher {
+  flex-shrink: 0;
+  background: #c0c0c0;
+  border-bottom: 1px solid #808080;
+  padding: 3px 4px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 50%;
+  overflow-y: auto;
+}
+.mp-pl-switcher::-webkit-scrollbar { width: 10px; }
+.mp-pl-switcher::-webkit-scrollbar-track { background: #c0c0c0; }
+.mp-pl-switcher::-webkit-scrollbar-thumb { background: #808080; border: 1px solid #404040; }
+
+.mp-pl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mp-pl-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  font-size: 11px;
+  color: #000;
+  cursor: pointer;
+  user-select: none;
+}
+.mp-pl-tab:hover { background: #d0d0d8; }
+.mp-pl-tab.active {
+  background: #000080;
+  color: #fff;
+  border-color: #404040 #dfdfdf #dfdfdf #404040;
+  font-weight: bold;
+}
+.mp-pl-tab-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mp-pl-tab-badge {
+  font-size: 9px;
+  font-weight: bold;
+  font-family: 'Courier New', monospace;
+  background: #808080;
+  color: #fff;
+  padding: 0 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.mp-pl-tab.active .mp-pl-tab-badge { background: #fff; color: #000080; }
+.mp-pl-tab-rm {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  font-size: 11px;
+  font-weight: bold;
+  color: #800;
+  cursor: pointer;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.mp-pl-tab-rm:hover { background: #c33; color: #fff; border-color: #800; }
+
+.mp-pl-add-btn {
+  height: 20px;
+  padding: 0 6px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  box-shadow: inset 1px 1px 0 #fff;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  color: #000;
+  cursor: pointer;
+  text-align: left;
+}
+.mp-pl-add-btn:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  box-shadow: none;
+}
+
+/* Form inline de adicionar playlist */
+.mp-pl-form {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+}
+.mp-pl-form.hidden { display: none; }
+.mp-pl-form input[type="text"] {
+  height: 20px;
+  padding: 0 3px;
+  background: #fff;
+  border: 1px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  color: #000;
+  outline: none;
+  min-width: 0;
+}
+.mp-pl-form input[type="text"]:focus { border-color: #000080; }
+.mp-pl-form-buttons {
+  display: flex;
+  gap: 3px;
+}
+.mp-pl-form-buttons button {
+  flex: 1;
+  height: 20px;
+  padding: 0 6px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  box-shadow: inset 1px 1px 0 #fff;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  color: #000;
+  cursor: pointer;
+}
+.mp-pl-form-buttons button:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  box-shadow: none;
+}
+.mp-pl-form-cancel { flex: 0 0 24px !important; font-weight: bold; color: #800; }
+.mp-pl-form-cancel:hover { background: #c33; color: #fff; }
+
+/* Placeholder informativo para youtube-playlist (queue gerida pelo YouTube) */
+.mp-playlist-info {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: #404040;
+  font-style: italic;
+  text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   START MENU (apps.js)
+   Menu data-driven com sidebar vertical "CASA·NORTE".
+   ═══════════════════════════════════════════════════════════════ */
+.start-menu {
+  position: absolute;
+  bottom: 30px;
+  left: 2px;
+  z-index: 10000;
+  display: flex;
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  box-shadow:
+    inset -1px -1px 0 #000,
+    inset 1px 1px 0 #fff,
+    2px 2px 8px rgba(0,0,0,0.4);
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 11px;
+  color: #000;
+  min-width: 180px;
+}
+.start-menu-sidebar {
+  width: 24px;
+  background: linear-gradient(180deg, #000080, #1084d0);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 6px 2px;
+  flex-shrink: 0;
+}
+.start-menu-sidebar-text {
+  color: #fff;
+  font-weight: bold;
+  font-size: 14px;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.start-menu-sidebar-dot {
+  color: #ffb347;
+  display: inline-block;
+  vertical-align: middle;
+  position: relative;
+  top: -0.08em;
+}
+.start-menu-items {
+  flex: 1;
+  padding: 2px;
+}
+.start-menu-list {
+  display: flex;
+  flex-direction: column;
+}
+.start-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 16px 5px 4px;
+  cursor: pointer;
+  position: relative;
+  user-select: none;
+}
+.start-menu-item:hover {
+  background: #000080;
+  color: #fff;
+}
+.start-menu-item:hover .start-menu-item-label {
+  color: #fff;
+}
+.start-menu-item-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.start-menu-item-label {
+  flex: 1;
+  color: #000;
+}
+.start-menu-arrow {
+  color: #000;
+  font-size: 8px;
+}
+.start-menu-item:hover .start-menu-arrow {
+  color: #fff;
+}
+.start-menu-separator {
+  height: 1px;
+  background: #808080;
+  border-bottom: 1px solid #fff;
+  margin: 3px 2px;
+}
+/* Submenu (nested) */
+.start-menu-submenu-nested {
+  display: none;
+  position: absolute;
+  left: 100%;
+  top: 0;
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  box-shadow:
+    inset -1px -1px 0 #000,
+    inset 1px 1px 0 #fff,
+    2px 2px 8px rgba(0,0,0,0.4);
+  min-width: 160px;
+  padding: 2px;
+  z-index: 10001;
+}
+.start-menu-item.has-submenu:hover .start-menu-submenu-nested {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Bezel bottom (área da marca + LED) ── */
+.crt-bezel-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 6px 16px;
+  gap: 12px;
+}
+.crt-brand {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #5a5440;
+  text-transform: uppercase;
+}
+.crt-model {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  color: #7a7460;
+  flex: 1;
+  text-align: center;
+}
+
+/* ── Power LED ──
+   Verde brilhante quando ligado. Apagado quando desligado. */
+.crt-power-led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #2a2820;
+  box-shadow:
+    inset 0 1px 2px rgba(0,0,0,0.6),
+    inset 0 -1px 1px rgba(100,90,60,0.2);
+  transition: all 0.35s ease;
+  flex-shrink: 0;
+}
+.crt-power-led.on {
+  background: #5dff9a;
+  box-shadow:
+    0 0 10px #5dff9a,
+    0 0 5px #5dff9a,
+    0 0 2px rgba(93,255,154,0.8),
+    inset 0 0 2px rgba(255,255,255,0.6);
+}
+
+/* ── Responsive ── */
+@media (max-width: 700px) {
+  .crt-monitor {
+    --screen-w: min(90vw, 70vh);
+  }
+  .crt-bezel {
+    padding: 24px 24px 0;
+    border-radius: 12px;
+  }
+  .crt-bezel-bottom {
+    padding: 10px 4px 12px;
+  }
+  .crt-brand { font-size: 0.65rem; }
+  .crt-model { font-size: 0.55rem; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BRICK BREAKER — CN Arcade (Etapa 1)
+   Estilo Win95/arcade retro. A app preenche a janela responsiva
+   (mantém 4:3 via window.js). Canvas em resolução lógica 640×480,
+   escalado com image-rendering: pixelated para look arcade autêntico.
+   HUD e menus são HTML overlay (crisp), só o playfield é canvas.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* O body da janela tem overflow:auto + bg #fff por defeito; para o jogo
+   forçamos overflow hidden e a app a preencher 100% sem scrollbars. */
+.crt-window-body > .app-brickbreaker {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #000;
+  overflow: hidden;
+  font-family: 'VT323', 'Courier New', 'Consolas', monospace;
+  color: #e8e8f0;
+  outline: none;
+  display: block;
+}
+/* Quando a janela do brickbreaker abre, o body não deve fazer scroll */
+.crt-window:has(.app-brickbreaker) > .crt-window-body {
+  overflow: hidden;
+  background: #000;
+}
+
+/* ── Screens (uma visível de cada vez) ── */
+.bb-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.bb-screen.bb-hidden { display: none; }
+
+/* ── Menu principal ── */
+.bb-menu-screen {
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(60, 90, 160, 0.18), transparent 60%),
+    #000010;
+  gap: 18px;
+  padding: 16px;
+}
+/* Canvas de fundo animado (tijolos a mover) — Etapa 6 */
+.bb-menu-bg-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+  z-index: 0;
+  pointer-events: none;
+}
+/* Conteúdo do menu fica acima do canvas */
+.bb-menu-screen > .bb-title,
+.bb-menu-screen > .bb-menu-buttons,
+.bb-menu-screen > .bb-menu-footer {
+  position: relative;
+  z-index: 1;
+}
+/* Overlay escuro atrás do título e botões para garantir contraste
+   sobre o fundo animado de tijolos. Sem isto, o texto branco do título
+   e os botões ficavam ilegíveis quando um tijolo passava por trás. */
+.bb-menu-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 72% 52% at 50% 38%, rgba(0, 0, 16, 0.85) 0%, rgba(0, 0, 16, 0.55) 55%, transparent 82%),
+    linear-gradient(180deg, rgba(0, 0, 16, 0.45) 0%, transparent 28%, transparent 72%, rgba(0, 0, 16, 0.45) 100%);
+  z-index: 0;
+  pointer-events: none;
+}
+.bb-title { text-align: center; }
+.bb-title-main {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(30px, 6.8vh, 58px);
+  font-weight: 400; /* VT323 só tem weight 400 */
+  letter-spacing: 3px;
+  color: #fff;
+  text-shadow:
+    0 0 10px rgba(80, 150, 255, 0.7),
+    0 0 24px rgba(80, 150, 255, 0.35),
+    3px 3px 0 #000,
+    -1px -1px 0 #000;
+  line-height: 1;
+}
+.bb-title-accent { color: #ff8c1a; display: inline-block; vertical-align: middle; position: relative; top: -0.08em; }
+.bb-title-sub {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(14px, 2.2vh, 20px);
+  letter-spacing: 5px;
+  color: #9aa0c0;
+  margin-top: 8px;
+}
+.bb-menu-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(64%, 240px);
+}
+.bb-menu-buttons .bb-btn {
+  margin: 0;
+  width: 100%;
+}
+.bb-menu-footer {
+  position: absolute;
+  bottom: 8px;
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: #5a5f80;
+}
+
+/* ── Botões retro arcade (estilo CRT phosphor) ──
+   Redesenhados para combinar com a fonte VT323:
+   • Gradiente azul-escuro a preto (vibe arcade)
+   • Borda cyan que brilha no hover (CRT phosphor)
+   • Texto em maiúsculas com letter-spacing largo
+   • Primary = amber/laranja (cor de destaque do site) */
+.bb-btn {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(16px, 2.4vh, 20px);
+  letter-spacing: 2px;
+  padding: 5px 16px;
+  color: #c8e8ff;
+  background: linear-gradient(180deg, #0e1430 0%, #060818 100%);
+  border: 1px solid #1f3060;
+  border-top-color: #2a4a90;
+  border-left-color: #2a4a90;
+  border-bottom-color: #0a1028;
+  border-right-color: #0a1028;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, transform 0.05s ease;
+  text-transform: uppercase;
+  text-shadow: 0 0 6px rgba(60, 140, 255, 0.45);
+  box-shadow: 0 0 0 rgba(60, 140, 255, 0);
+  line-height: 1.15;
+}
+.bb-btn:hover {
+  background: linear-gradient(180deg, #182050 0%, #0a1030 100%);
+  color: #fff;
+  box-shadow: 0 0 12px rgba(60, 140, 255, 0.5), inset 0 0 8px rgba(60, 140, 255, 0.2);
+  text-shadow: 0 0 8px rgba(120, 180, 255, 0.85);
+}
+.bb-btn:active {
+  transform: translate(1px, 1px);
+  border-top-color: #0a1028;
+  border-left-color: #0a1028;
+  border-bottom-color: #2a4a90;
+  border-right-color: #2a4a90;
+  box-shadow: 0 0 6px rgba(60, 140, 255, 0.35);
+}
+.bb-btn:focus-visible {
+  outline: 2px solid #60a8ff;
+  outline-offset: 1px;
+}
+.bb-btn:disabled,
+.bb-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+  text-shadow: none;
+  box-shadow: none;
+}
+.bb-btn:disabled:hover {
+  background: linear-gradient(180deg, #0e1430 0%, #060818 100%);
+  color: #c8e8ff;
+  box-shadow: none;
+}
+.bb-btn-primary {
+  color: #fff;
+  background: linear-gradient(180deg, #ff9444 0%, #cc5a10 100%);
+  border-color: #ffb070;
+  border-top-color: #ffc890;
+  border-left-color: #ffc890;
+  border-bottom-color: #8a3e08;
+  border-right-color: #8a3e08;
+  text-shadow: 0 0 8px rgba(255, 180, 100, 0.85), 1px 1px 0 #6a2a04;
+}
+.bb-btn-primary:hover {
+  background: linear-gradient(180deg, #ffa860 0%, #e06a18 100%);
+  color: #fff;
+  box-shadow: 0 0 16px rgba(255, 150, 60, 0.6), inset 0 0 10px rgba(255, 200, 120, 0.3);
+  text-shadow: 0 0 10px rgba(255, 220, 160, 0.95);
+}
+.bb-btn-primary:active {
+  box-shadow: 0 0 8px rgba(255, 150, 60, 0.4);
+}
+
+/* ── Painel genérico (How to / Options) ── */
+.bb-panel {
+  background: linear-gradient(180deg, #181828 0%, #10101c 100%);
+  border: 1px solid #3a3a52;
+  box-shadow: inset 1px 1px 0 #4a4a68, inset -1px -1px 0 #1a1a28;
+  padding: 18px 20px;
+  width: min(86%, 420px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.bb-panel-title {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(18px, 2.8vh, 24px);
+  letter-spacing: 2px;
+  color: #fff;
+  text-align: center;
+  border-bottom: 1px solid #3a3a52;
+  padding-bottom: 8px;
+}
+.bb-howto-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(14px, 2.1vh, 18px);
+  line-height: 1.35;
+  color: #c8c8e0;
+}
+.bb-howto-list li {
+  padding: 2px 0;
+  border-bottom: 1px dotted #2a2a40;
+}
+.bb-howto-list li:last-child { border-bottom: none; }
+.bb-howto-list b { color: #ffd23f; }
+.bb-option-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(15px, 2.2vh, 19px);
+  color: #c8c8e0;
+  cursor: pointer;
+}
+.bb-option-row input { accent-color: #2a5fd0; width: 16px; height: 16px; cursor: pointer; }
+.bb-options-note {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 14px;
+  color: #5a5f80;
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+/* ── Game screen ── */
+.bb-game-screen { background: #000; }
+.bb-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  display: block;
+}
+
+/* ── HUD overlay ── */
+.bb-hud {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(15px, 2.4vh, 20px);
+  letter-spacing: 1px;
+  color: #fff;
+  text-shadow: 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.8);
+  pointer-events: none;
+  z-index: 2;
+}
+.bb-hud-score { color: #4dd964; }
+.bb-hud-level { color: #ffd23f; }
+.bb-hud-lives { display: flex; gap: 3px; }
+.bb-life { display: inline-flex; filter: drop-shadow(1px 1px 0 #000); }
+.bb-hud-num { font-variant-numeric: tabular-nums; }
+
+/* ── Hint bar ── */
+.bb-hint {
+  position: absolute;
+  bottom: 4px; left: 0; right: 0;
+  text-align: center;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(12px, 1.8vh, 16px);
+  letter-spacing: 1px;
+  color: #6a6f90;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ── Pause overlay ── */
+.bb-pause {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 16, 0.78);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 5;
+}
+.bb-pause.bb-hidden { display: none; }
+.bb-pause-title {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(28px, 5.5vh, 44px);
+  letter-spacing: 4px;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(80,150,255,0.6);
+}
+
+/* ── Flash vermelho ao perder vida ── */
+.bb-game-screen.bb-flash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 40, 40, 0.28);
+  pointer-events: none;
+  z-index: 4;
+  animation: bb-flash 0.22s ease-out;
+}
+@keyframes bb-flash {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* ── Game over screen ── */
+.bb-gameover-screen {
+  background: rgba(0, 0, 16, 0.92);
+  gap: 16px;
+}
+.bb-go-title {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(32px, 6.5vh, 52px);
+  letter-spacing: 4px;
+  color: #ff4040;
+  text-shadow: 0 0 12px rgba(255,60,60,0.6), 2px 2px 0 #000;
+}
+.bb-go-score {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(16px, 2.8vh, 22px);
+  letter-spacing: 2px;
+  color: #fff;
+}
+.bb-go-score .bb-hud-num { color: #4dd964; }
+.bb-go-buttons { display: flex; flex-direction: column; gap: 8px; width: min(60%, 200px); }
+
+/* ── Small screens: hint encolhe ── */
+@media (max-height: 380px) {
+  .bb-hint { display: none; }
+}
+
+/* ── Power-up effect pills (Etapa 2) ── */
+/* Row de pills ativas no topo-centro do game screen.
+   Cada pill mostra a letra do power-up + uma barra de tempo
+   que encolhe conforme o efeito expira. */
+.bb-hud-effects {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  z-index: 3;
+  pointer-events: none;
+  min-height: 1px;
+}
+.bb-effect-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: rgba(0, 0, 16, 0.7);
+  border: 1px solid var(--c, #3fb8d4);
+  border-radius: 3px;
+  padding: 2px 5px 3px;
+  min-width: 20px;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+}
+.bb-effect-letter {
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--c, #3fb8d4);
+  line-height: 1;
+  text-shadow: 0 0 4px var(--c, #3fb8d4);
+  font-family: 'VT323', 'Courier New', monospace;
+}
+.bb-effect-bar {
+  width: 20px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 1px;
+  overflow: hidden;
+}
+.bb-effect-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--c, #3fb8d4);
+}
+
+/* ── Moedas no HUD (Etapa 3) ── */
+.bb-hud-coins {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #ffd23f;
+  text-shadow: 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.8);
+}
+.bb-coin-icon { display: inline-block; filter: drop-shadow(1px 1px 0 #000); }
+.bb-hud-coins-num { color: #ffd23f; }
+
+/* ── Game over: coins earned (Etapa 3) ── */
+.bb-go-coins {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(15px, 2.6vh, 20px);
+  letter-spacing: 2px;
+  color: #ffd23f;
+}
+.bb-go-coins-num { color: #fff; }
+
+/* ── Debug panel (comando "test") (Etapa 2.5) ── */
+/* Painel flutuante no canto inferior direito do app.
+   Visível apenas após digitar "test". Está fora de qualquer
+   .bb-screen para poder aparecer sobre qualquer ecrã. */
+.bb-debug {
+  position: absolute;
+  bottom: 24px;
+  right: 8px;
+  background: rgba(0, 0, 16, 0.94);
+  border: 1px solid #4dd964;
+  border-radius: 4px;
+  padding: 8px;
+  z-index: 100;
+  max-width: 180px;
+  box-shadow: 0 0 12px rgba(77, 217, 100, 0.3);
+}
+.bb-debug.bb-hidden { display: none; }
+.bb-debug-title {
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: #4dd964;
+  margin-bottom: 6px;
+  font-family: 'VT323', 'Courier New', monospace;
+  border-bottom: 1px dotted #2a5a30;
+  padding-bottom: 4px;
+}
+.bb-debug-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+}
+.bb-debug-buttons .bb-btn {
+  font-size: 14px;
+  padding: 3px 6px;
+  letter-spacing: 0.5px;
+}
+
+/* ── Loja de skins (Etapa 4) ── */
+.bb-shop-screen {
+  background: radial-gradient(ellipse at 50% 30%, rgba(60, 90, 160, 0.18), transparent 60%), #000010;
+  padding: 10px;
+  gap: 8px;
+}
+.bb-shop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 460px;
+  padding: 0 4px;
+}
+.bb-shop-title {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(20px, 3.4vh, 28px);
+  letter-spacing: 3px;
+  color: #fff;
+  font-weight: 400;
+  text-shadow: 0 0 8px rgba(80,150,255,0.5);
+}
+.bb-shop-coins {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #ffd23f;
+  font-size: clamp(16px, 2.6vh, 22px);
+  font-weight: 400;
+  font-family: 'VT323', 'Courier New', monospace;
+}
+.bb-shop-tabs {
+  display: flex;
+  gap: 3px;
+  width: 100%;
+  max-width: 460px;
+}
+.bb-shop-tab {
+  flex: 1;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(13px, 2vh, 16px);
+  letter-spacing: 1px;
+  padding: 4px 4px;
+  color: #9aa0c0;
+  background: linear-gradient(180deg, #1c1c28 0%, #14141e 100%);
+  border: 1px solid #3a3a52;
+  border-top-color: #4a4a68;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.12s;
+}
+.bb-shop-tab:hover { color: #e8e8f0; background: linear-gradient(180deg, #28283a 0%, #1c1c28 100%); }
+.bb-shop-tab.active {
+  color: #fff;
+  background: linear-gradient(180deg, #2a5fd0 0%, #1a3fa0 100%);
+  border-color: #4a7fe0;
+}
+.bb-shop-grid {
+  flex: 1;
+  width: 100%;
+  max-width: 460px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px;
+  align-content: start;
+}
+.bb-shop-grid::-webkit-scrollbar { width: 8px; }
+.bb-shop-grid::-webkit-scrollbar-track { background: #0a0a14; }
+.bb-shop-grid::-webkit-scrollbar-thumb { background: #3a3a52; border-radius: 4px; }
+.bb-shop-card {
+  background: linear-gradient(180deg, #14141e 0%, #0a0a14 100%);
+  border: 1px solid #2a2a40;
+  border-radius: 4px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.12s;
+}
+.bb-shop-card.owned { border-color: #3a5a3a; }
+.bb-shop-card.equipped {
+  border-color: #ffd23f;
+  box-shadow: 0 0 8px rgba(255, 210, 63, 0.3);
+}
+.bb-shop-preview {
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid #2a2a40;
+  border-radius: 2px;
+  image-rendering: pixelated;
+}
+.bb-shop-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.bb-shop-name {
+  font-size: 16px;
+  font-weight: 400;
+  color: #e8e8f0;
+  font-family: 'VT323', 'Courier New', monospace;
+  letter-spacing: 0.5px;
+  line-height: 1.1;
+}
+.bb-shop-tier {
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  font-family: 'VT323', 'Courier New', monospace;
+}
+.bb-shop-desc {
+  font-size: 13px;
+  color: #6a6f90;
+  line-height: 1.15;
+  font-family: 'VT323', 'Courier New', monospace;
+}
+.bb-shop-btn {
+  font-size: 15px;
+  padding: 2px 6px;
+  letter-spacing: 0.5px;
+  margin-top: 2px;
+}
+.bb-shop-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.bb-shop-btn-locked {
+  color: #ff6060;
+  border-color: #5a2a2a;
+}
+.bb-shop-back {
+  margin-top: 4px;
+  width: min(60%, 200px);
+  align-self: center;
+}
+
+/* ── Leaderboard (Etapa 5) ── */
+.bb-leaderboard-screen {
+  background: radial-gradient(ellipse at 50% 30%, rgba(60, 90, 160, 0.18), transparent 60%), #000010;
+  padding: 10px;
+  gap: 6px;
+}
+.bb-lb-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  max-width: 420px;
+  padding: 0 4px;
+}
+.bb-lb-title {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(20px, 3.4vh, 28px);
+  letter-spacing: 3px;
+  color: #fff;
+  font-weight: 400;
+  text-shadow: 0 0 8px rgba(80,150,255,0.5);
+}
+.bb-lb-mybest-wrap {
+  font-size: clamp(13px, 2vh, 16px);
+  color: #9aa0c0;
+  letter-spacing: 1px;
+  font-family: 'VT323', 'Courier New', monospace;
+}
+.bb-lb-mybest {
+  color: #ffd23f;
+  font-weight: 700;
+}
+.bb-lb-listhead {
+  display: grid;
+  grid-template-columns: 32px 1fr 56px 80px;
+  gap: 4px;
+  width: 100%;
+  max-width: 420px;
+  padding: 4px 8px;
+  font-size: 14px;
+  letter-spacing: 1px;
+  color: #6a6f90;
+  font-family: 'VT323', 'Courier New', monospace;
+  border-bottom: 1px solid #2a2a40;
+}
+.bb-lb-list {
+  flex: 1;
+  width: 100%;
+  max-width: 420px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px;
+}
+.bb-lb-list::-webkit-scrollbar { width: 8px; }
+.bb-lb-list::-webkit-scrollbar-track { background: #0a0a14; }
+.bb-lb-list::-webkit-scrollbar-thumb { background: #3a3a52; border-radius: 4px; }
+.bb-lb-row {
+  display: grid;
+  grid-template-columns: 32px 1fr 56px 80px;
+  gap: 4px;
+  padding: 4px 8px;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(15px, 2.3vh, 19px);
+  color: #c8c8e0;
+  border-bottom: 1px dotted #1a1a28;
+  align-items: center;
+}
+.bb-lb-row-me {
+  background: rgba(255, 210, 63, 0.08);
+  border-left: 2px solid #ffd23f;
+  padding-left: 6px;
+}
+.bb-lb-rank {
+  font-weight: 700;
+  text-align: center;
+  color: #6a6f90;
+}
+.bb-lb-name {
+  font-weight: 700;
+  color: #e8e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bb-lb-row-me .bb-lb-name { color: #ffd23f; }
+.bb-lb-level {
+  color: #9aa0c0;
+  font-size: 14px;
+  text-align: center;
+}
+.bb-lb-score {
+  text-align: right;
+  font-weight: 700;
+  color: #4dd964;
+  font-variant-numeric: tabular-nums;
+}
+.bb-lb-loading, .bb-lb-empty {
+  text-align: center;
+  color: #6a6f90;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 16px;
+  padding: 20px;
+  letter-spacing: 1px;
+}
+.bb-lb-back {
+  margin-top: 4px;
+  width: min(60%, 200px);
+  align-self: center;
 }
