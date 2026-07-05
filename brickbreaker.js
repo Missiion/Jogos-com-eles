@@ -662,6 +662,10 @@
     state.layoutIdx = Math.floor(Math.random() * LAYOUTS.length);
     buildBricks(state, LAYOUTS[state.layoutIdx]); resetBalls(state); updateHud(state); updateCoinsHud(state);
     showScreen(state, "game"); draw(ui.ctx, state); if (ui.wrap) ui.wrap.focus(); startLoop(state, ui);
+    // Etapa fix: hint bar (controlos) aparece ao início e faz fade out após 5s.
+    // A lógica está em create() (startHintFade) porque precisa de aceder ao
+    // hintFadeTimer e ui.hint que são scoped a create(). Exposta via state.
+    if (state.startHintFade) state.startHintFade();
   }
 
   // ─────────────────────────────────────────────
@@ -1055,12 +1059,27 @@
       lbList: wrap.querySelector('[data-hud="lb-list"]'),
       lbMyBest: wrap.querySelector('[data-hud="lb-mybest"]'),
       soundChk: wrap.querySelector("#bb-opt-sound"),
+      hint: wrap.querySelector(".bb-hint"),  // Etapa fix: hint bar (controlos) — fade out após 5s
     };
     ui.ctx = ui.canvas.getContext("2d");
     ui.ctx.imageSmoothingEnabled = false;
 
     const state = newState();
     state._ui = ui;
+
+    // Etapa fix: timer para o fade out da hint bar (controlos) após 5s de jogo.
+    let hintFadeTimer = null;
+    // Função exposta no state para startGame() poder iniciar o fade (startGame
+    // está no scope do IIFE, não consegue aceder a hintFadeTimer/ui diretamente).
+    state.startHintFade = function () {
+      if (!ui.hint) return;
+      ui.hint.classList.remove("bb-hint-hidden");
+      if (hintFadeTimer) { clearTimeout(hintFadeTimer); hintFadeTimer = null; }
+      hintFadeTimer = setTimeout(function () {
+        if (ui.hint) ui.hint.classList.add("bb-hint-hidden");
+        hintFadeTimer = null;
+      }, 5000);
+    };
 
     if (ui.soundChk) { ui.soundChk.checked = !sfx.isLocalMuted(); ui.soundChk.addEventListener("change", function () { sfx.setLocalMuted(!ui.soundChk.checked); }); }
 
@@ -1257,6 +1276,13 @@
     // mouseleave: NÃO desativa o mouseX — o listener do document trata de atualizar.
     // Mantemos o listener para evitar comportamentos estranhos, mas é no-op.
     ui.canvas.addEventListener("mouseleave", function () { /* no-op: paddle continua via document listener */ });
+    // Clique no canvas (ou no wrap) lança a bola se estiver em jogo.
+    // Etapa fix: este handler foi removido acidentalmente no fix do rato-fora-do-canvas.
+    // Agora está restaurado — sem isto, o clique não lança a bola.
+    ui.canvas.addEventListener("pointerdown", function (e) {
+      e.preventDefault(); wrap.focus();
+      if (state.screen === "game") { launchBalls(state); }
+    });
     function docMouseMoveHandler(e) {
       // Só atualiza se o jogo estiver ativo (não em menu/loja/pausa)
       if (state.screen !== "game") return;
@@ -1365,6 +1391,7 @@
       stopLoop(state);
       stopMenuBg(); // Etapa 2: para o RAF do background do menu
       if (bbdataSetupTimer) { clearTimeout(bbdataSetupTimer); bbdataSetupTimer = null; }
+      if (hintFadeTimer) { clearTimeout(hintFadeTimer); hintFadeTimer = null; } // Etapa fix: hint fade timer
       document.removeEventListener("visibilitychange", onVis);
       document.removeEventListener("keydown", docTestHandler, true);
       document.removeEventListener("keydown", docEscHandler, true); // Etapa 3: ESC nos sub-ecrãs
