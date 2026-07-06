@@ -729,10 +729,12 @@
         ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2); ctx.fill();
       } else if (p.type === "circuit") {
         // Mini placa de circuito: retângulo verde-escuro com trilho verde
+        // (v2: 1.5x larger — PCB rect and trace scaled up for more visible particles)
+        const s = p.size * 1.5;
         ctx.fillStyle = "#0a3a18";
-        ctx.fillRect(p.x - p.size, p.y - p.size * 0.6, p.size * 2, p.size * 1.2);
+        ctx.fillRect(p.x - s, p.y - s * 0.6, s * 2, s * 1.2);
         ctx.fillStyle = "#3fd96a";
-        ctx.fillRect(p.x - p.size * 0.7, p.y - 0.5, p.size * 1.4, 0.8);
+        ctx.fillRect(p.x - s * 0.7, p.y - 0.5, s * 1.4, 0.8);
       } else if (p.type === "lava") {
         // Mini bola de pedra e lava: círculo escuro com glow laranja
         ctx.fillStyle = "rgba(255,100,0," + (p.life * 0.4).toFixed(2) + ")";
@@ -743,17 +745,19 @@
         ctx.beginPath(); ctx.arc(p.x - p.size * 0.3, p.y - p.size * 0.3, p.size * 0.3, 0, Math.PI * 2); ctx.fill();
       } else if (p.type === "gold") {
         // Mini gema: forma de losango com brilho
+        // (v2: gem diamond 1.5x larger, specular highlight bigger)
+        const s = p.size * 1.5;
         ctx.fillStyle = p.color;
         ctx.beginPath();
-        ctx.moveTo(p.x, p.y - p.size);
-        ctx.lineTo(p.x + p.size * 0.7, p.y);
-        ctx.lineTo(p.x, p.y + p.size);
-        ctx.lineTo(p.x - p.size * 0.7, p.y);
+        ctx.moveTo(p.x, p.y - s);
+        ctx.lineTo(p.x + s * 0.7, p.y);
+        ctx.lineTo(p.x, p.y + s);
+        ctx.lineTo(p.x - s * 0.7, p.y);
         ctx.closePath();
         ctx.fill();
-        // Brilho specular
+        // Brilho specular (bigger — radius scaled up from 0.2 to 0.3)
         ctx.fillStyle = "rgba(255,255,255," + (p.life * 0.5).toFixed(2) + ")";
-        ctx.beginPath(); ctx.arc(p.x - p.size * 0.25, p.y - p.size * 0.25, p.size * 0.2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x - s * 0.25, p.y - s * 0.25, s * 0.3, 0, Math.PI * 2); ctx.fill();
       } else {
         // Default: quadrado colorido
         ctx.fillStyle = p.color;
