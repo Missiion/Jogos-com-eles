@@ -1640,32 +1640,41 @@
         ctx.restore();
       }
 
-      // ── 5. Cinco cristais gigantes facetados (ametista, esmeralda, quartzo, rubi) ──
+      // ── 5. Seis cristais gigantes facetados (ametista, esmeralda, quartzo, rubi, topázio) ──
       // Cores: edge=claro, mid=médio, dark=escuro, glow=halo com ALPHA placeholder
+      // wid agora é FRAÇÃO de w (não px absolutos) → proporcional em qualquer canvas.
+      // Base (parte traseira) encostada às bordas: chão em y=1.0 (ang=0, ponta p/ cima),
+      // teto em y=0.0 (ang=PI, ponta p/ baixo). Cristais mais largos e altos.
       const crystals = [
-        // Ametista (roxo) — grande, chão, esquerda
-        { x: 0.20, y: 0.92, len: 0.42, ang: -0.22, wid: 26,
+        // ── 4 cristais no CHÃO (base na borda inferior) ──
+        // Ametista (roxo) — esquerda, o mais alto
+        { x: 0.12, y: 1.00, len: 0.64, ang: 0,          wid: 0.078,
           cols: { edge: "#c890ff", mid: "#7a3eb8", dark: "#3a1860", glow: "rgba(200,120,255,ALPHA)" },
           phase: 0.0 },
-        // Esmeralda (verde) — médio, chão, centro-esquerda
-        { x: 0.38, y: 0.95, len: 0.34, ang: 0.10, wid: 22,
+        // Esmeralda (verde) — centro-esquerda
+        { x: 0.36, y: 1.00, len: 0.56, ang: 0,          wid: 0.072,
           cols: { edge: "#80ffc0", mid: "#2e9860", dark: "#0e4a28", glow: "rgba(100,255,180,ALPHA)" },
           phase: 1.2 },
-        // Quartzo (ciano-branco) — grande, teto, centro
-        { x: 0.52, y: 0.04, len: 0.40, ang: Math.PI + 0.05, wid: 24,
-          cols: { edge: "#e0f8ff", mid: "#88c8e8", dark: "#2a5878", glow: "rgba(200,240,255,ALPHA)" },
-          phase: 2.4 },
-        // Rubi (vermelho-rosa) — médio, chão, direita
-        { x: 0.70, y: 0.93, len: 0.36, ang: 0.18, wid: 23,
+        // Rubi (rosa) — centro-direita
+        { x: 0.62, y: 1.00, len: 0.60, ang: 0,          wid: 0.075,
           cols: { edge: "#ff90b0", mid: "#c83060", dark: "#601028", glow: "rgba(255,120,160,ALPHA)" },
           phase: 0.6 },
-        // Ametista pequena (roxo) — teto, direita
-        { x: 0.82, y: 0.06, len: 0.28, ang: Math.PI - 0.12, wid: 18,
+        // Topázio (dourado) — direita (6º cristal, NOVO)
+        { x: 0.88, y: 1.00, len: 0.54, ang: 0,          wid: 0.070,
+          cols: { edge: "#ffe890", mid: "#d09020", dark: "#6a4810", glow: "rgba(255,210,100,ALPHA)" },
+          phase: 2.0 },
+        // ── 2 cristais no TETO (base na borda superior) ──
+        // Quartzo (ciano) — centro-esquerda
+        { x: 0.28, y: 0.00, len: 0.58, ang: Math.PI,    wid: 0.074,
+          cols: { edge: "#e0f8ff", mid: "#88c8e8", dark: "#2a5878", glow: "rgba(200,240,255,ALPHA)" },
+          phase: 2.4 },
+        // Ametista (roxo) — centro-direita
+        { x: 0.74, y: 0.00, len: 0.52, ang: Math.PI,    wid: 0.066,
           cols: { edge: "#d0a0ff", mid: "#8848c8", dark: "#402070", glow: "rgba(210,140,255,ALPHA)" },
           phase: 1.8 },
       ];
       crystals.forEach(function (c) {
-        drawCrystal(c.x * w, c.y * h, c.len * h, c.ang, c.wid, c.cols, c.phase);
+        drawCrystal(c.x * w, c.y * h, c.len * h, c.ang, c.wid * w, c.cols, c.phase);
       });
 
       // ── 6. Raios de luz divinos (god rays) a descer do topo ──
