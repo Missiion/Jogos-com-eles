@@ -134,6 +134,7 @@ import {
   const SKIN_ID_MIGRATION = {
     "ball-rainbow": "ball-prism",  // Etapa 4: substituído
     "bg-grid": "bg-aurora",        // Etapa 4: renomeado (ID ≠ nome)
+    "bg-starfield": "bg-matrix",   // Etapa fix: starfield removido, migra para matrix
   };
 
   // Normaliza ownedSkins — apenas devolve o array único. Nenhuma skin é
