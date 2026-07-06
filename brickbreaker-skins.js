@@ -1039,10 +1039,12 @@
       for (let y = 0; y <= h; y += 32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
     },
     "bg-arcade": function (ctx, w, h, t) {
-      // Blue Sky + Big Clouds — céu azul simples e calmo com nuvens fofas
-      // (substitui o antigo River Meadow). Apenas céu + nuvens a derivar.
-      // Nuvens feitas de círculos sobrepostos (não pixel-art), todas a mover
-      // para a direita a velocidades ligeiramente diferentes, com wrap-around.
+      // Blue Sky + Big Clouds — céu azul simples e calmo com nuvens fofas.
+      // Nuvens feitas de círculos sobrepostos, direções mistas, com wrap-around.
+      // IMPORTANTE: a escala das nuvens deriva da altura do canvas (baseSc = h/110)
+      // para que sejam "grandes" no jogo (h≈480 → sc≈4.4) mas proporcionais no
+      // preview pequeno da loja (h≈56 → sc≈0.5). Antes a escala era fixa (4-5)
+      // e cada nuvem cobria todo o canvas de 96×56, deixando o preview branco.
       // ── Céu (gradiente azul claro, simples) ──
       const sky = ctx.createLinearGradient(0, 0, 0, h);
       sky.addColorStop(0, "#87CEEB");
@@ -1050,23 +1052,19 @@
       ctx.fillStyle = sky;
       ctx.fillRect(0, 0, w, h);
 
-      // ── Nuvens fofas (5 grandes, cada uma com 5-7 círculos sobrepostos) ──
-      // Cada cloud tem largura ~40-60px, posição y fixa, drift horizontal lento.
-      // Todos se movem para a direita (esquerda → direita) a velocidades diferentes.
-      // cloudWidth usado para o wrap-around (margem fora do ecrã).
+      // ── Nuvens fofas (círculos sobrepostos, sem pixel arrastando) ──
       function drawFluffyCloud(cx, cy, scale) {
-        // Sombra cinza-azulada no fundo da nuvem (subtil)
-        ctx.fillStyle = "rgba(140,160,180,0.22)";
+        // Sombra cinza-azulada no fundo da nuvem
+        ctx.fillStyle = "rgba(140,160,180,0.20)";
         ctx.beginPath();
         ctx.arc(cx + 8 * scale, cy + 9 * scale, 12 * scale, 0, Math.PI * 2);
         ctx.arc(cx + 24 * scale, cy + 11 * scale, 14 * scale, 0, Math.PI * 2);
         ctx.arc(cx + 40 * scale, cy + 9 * scale, 12 * scale, 0, Math.PI * 2);
         ctx.arc(cx + 56 * scale, cy + 10 * scale, 10 * scale, 0, Math.PI * 2);
         ctx.fill();
-        // Corpo branco fofo da nuvem (5-7 círculos de tamanhos variados)
+        // Corpo branco fofo (7 círculos)
         ctx.fillStyle = "rgba(255,255,255,0.92)";
         ctx.beginPath();
-        // 7 círculos: base larga + tops arredondados + extremidades menores
         ctx.arc(cx + 4 * scale, cy + 4 * scale, 9 * scale, 0, Math.PI * 2);
         ctx.arc(cx + 16 * scale, cy - 2 * scale, 13 * scale, 0, Math.PI * 2);
         ctx.arc(cx + 30 * scale, cy + 1 * scale, 15 * scale, 0, Math.PI * 2);
@@ -1075,33 +1073,25 @@
         ctx.arc(cx + 12 * scale, cy + 6 * scale, 12 * scale, 0, Math.PI * 2);
         ctx.arc(cx + 42 * scale, cy + 6 * scale, 12 * scale, 0, Math.PI * 2);
         ctx.fill();
-        // Highlight superior (topo branco brilhante)
-        ctx.fillStyle = "rgba(255,255,255,0.55)";
-        ctx.beginPath();
-        ctx.arc(cx + 16 * scale, cy - 4 * scale, 6 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 30 * scale, cy - 3 * scale, 7 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 44 * scale, cy - 4 * scale, 6 * scale, 0, Math.PI * 2);
-        ctx.fill();
       }
 
-      // 7 nuvens ENORMES em todo o ecrã (incluindo parte inferior):
-      // Escalas 2.5-4.0 — muito maiores que antes. Distribuídas em todo o ecrã.
+      // 4 nuvens grandes com direções mistas.
+      // baseSc = h/110 → jogo ≈4.36, preview ≈0.51 (proporcional, não fixo).
+      // offFrac é fração da largura total (0..1) → funciona em qualquer w.
+      const baseSc = h / 110;
       const cloudW = 70;
       const clouds = [
-        { y: h * 0.12, sc: 3.5, sp: 5,  off: 0 },
-        { y: h * 0.30, sc: 2.8, sp: 3.5, off: 180 },
-        { y: h * 0.50, sc: 4.0, sp: 7,  off: 360 },
-        { y: h * 0.70, sc: 3.0, sp: 4,  off: 540 },
-        { y: h * 0.85, sc: 2.5, sp: 6,  off: 720 },
-        { y: h * 0.42, sc: 3.2, sp: 5.5, off: 900 },
-        { y: h * 0.60, sc: 2.7, sp: 3,  off: 1080 },
+        { y: h * 0.15, scMul: 1.00, sp:  4, offFrac: 0.00, dir:  1 },   // direita
+        { y: h * 0.45, scMul: 1.10, sp:  6, offFrac: 0.25, dir: -1 },   // esquerda
+        { y: h * 0.72, scMul: 0.90, sp:  3, offFrac: 0.50, dir:  1 },   // direita
+        { y: h * 0.88, scMul: 0.95, sp:  5, offFrac: 0.75, dir: -1 },   // esquerda
       ];
       clouds.forEach(function (c) {
-        // Movimento: direita, wrap-around quando sai do ecrã.
-        // wrap = (t * sp + off) % (w + cloudW*sc*2) — posição sempre dentro.
-        const totalW = w + cloudW * c.sc * 2;
-        const cx = ((t * c.sp + c.off) % totalW) - cloudW * c.sc;
-        drawFluffyCloud(cx, c.y, c.sc);
+        const sc = baseSc * c.scMul;
+        const totalW = w + cloudW * sc * 2;
+        const off = c.offFrac * totalW;
+        const cx = ((t * c.sp * c.dir + off + totalW * 10) % totalW) - cloudW * sc;
+        drawFluffyCloud(cx, c.y, sc);
       });
     },
     "bg-starfield": function (ctx, w, h, t) {
@@ -1615,7 +1605,48 @@
         drawGear(g.x * w, g.y * h, g.R, g.t, g.s, t * g.sp, g.ti);
       });
 
-      // ── Canos de vapor (horizontais e verticais com juntas) ──
+      // ── 2 Medidores de pressão GRANDES (atrás das engrenagens) ──
+      // Desenhados ANTES dos canos para ficarem atrás visualmente
+      function drawGauge(gx, gy, gr) {
+        // Corpo exterior (brass escuro)
+        ctx.fillStyle = "#3a2818";
+        ctx.beginPath(); ctx.arc(gx, gy, gr + 3, 0, Math.PI * 2); ctx.fill();
+        // Anel brass
+        ctx.fillStyle = "#8B7355";
+        ctx.beginPath(); ctx.arc(gx, gy, gr, 0, Math.PI * 2); ctx.fill();
+        // Highlight no anel
+        ctx.strokeStyle = "rgba(220,180,130,0.4)";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(gx, gy, gr, Math.PI * 1.1, Math.PI * 1.6); ctx.stroke();
+        // Mostrador escuro
+        ctx.fillStyle = "#1a0e04";
+        ctx.beginPath(); ctx.arc(gx, gy, gr - 3, 0, Math.PI * 2); ctx.fill();
+        // Marcas (ticks) no mostrador
+        ctx.strokeStyle = "rgba(200,160,100,0.4)";
+        ctx.lineWidth = 0.8;
+        for (let i = 0; i < 10; i++) {
+          const ta = Math.PI * 0.75 + (i / 9) * Math.PI * 1.5;
+          ctx.beginPath();
+          ctx.moveTo(gx + Math.cos(ta) * (gr - 5), gy + Math.sin(ta) * (gr - 5));
+          ctx.lineTo(gx + Math.cos(ta) * (gr - 9), gy + Math.sin(ta) * (gr - 9));
+          ctx.stroke();
+        }
+        // Ponteiro (move-se com t)
+        const needleAng = Math.PI * 0.75 + Math.sin(t * 0.8) * Math.PI * 0.5;
+        ctx.strokeStyle = "#ff6030";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(gx, gy);
+        ctx.lineTo(gx + Math.cos(needleAng) * (gr - 6), gy + Math.sin(needleAng) * (gr - 6));
+        ctx.stroke();
+        // Centro do ponteiro
+        ctx.fillStyle = "#c8a080";
+        ctx.beginPath(); ctx.arc(gx, gy, 2.5, 0, Math.PI * 2); ctx.fill();
+      }
+      drawGauge(w * 0.88, h * 0.15, 25);  // canto superior direito (grande)
+      drawGauge(w * 0.12, h * 0.50, 22);  // lado esquerdo meio (grande)
+
+      // ── Canos de vapor (horizontais, verticais e diagonais com juntas) ──
       ctx.strokeStyle = "#5C4030";
       ctx.lineWidth = 4;
       // Cano horizontal superior
@@ -1624,11 +1655,17 @@
       ctx.beginPath(); ctx.moveTo(w * 0.03, 0); ctx.lineTo(w * 0.03, h); ctx.stroke();
       // Cano vertical direito
       ctx.beginPath(); ctx.moveTo(w * 0.97, 0); ctx.lineTo(w * 0.97, h); ctx.stroke();
+      // Cano horizontal meio
+      ctx.beginPath(); ctx.moveTo(0, h * 0.50); ctx.lineTo(w, h * 0.50); ctx.stroke();
+      // Cano horizontal inferior
+      ctx.beginPath(); ctx.moveTo(0, h * 0.92); ctx.lineTo(w, h * 0.92); ctx.stroke();
       // Juntas (rings nos canos)
       ctx.fillStyle = "#8B7355";
       for (let i = 0; i < 6; i++) {
         const jx = (i + 1) * (w / 7);
-        ctx.fillRect(jx - 3, h * 0.08 - 6, 6, 12); // junta horizontal
+        ctx.fillRect(jx - 3, h * 0.08 - 6, 6, 12);  // junta horizontal topo
+        ctx.fillRect(jx - 3, h * 0.50 - 6, 6, 12);  // junta horizontal meio
+        ctx.fillRect(jx - 3, h * 0.92 - 6, 6, 12);  // junta horizontal baixo
         ctx.fillRect(w * 0.03 - 6, (i + 1) * (h / 7) - 3, 12, 6); // junta vertical esq
         ctx.fillRect(w * 0.97 - 6, (i + 1) * (h / 7) - 3, 12, 6); // junta vertical dir
       }
@@ -1636,60 +1673,12 @@
       ctx.strokeStyle = "rgba(220,180,130,0.3)";
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(0, h * 0.08 - 1.5); ctx.lineTo(w, h * 0.08 - 1.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, h * 0.50 - 1.5); ctx.lineTo(w, h * 0.50 - 1.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, h * 0.92 - 1.5); ctx.lineTo(w, h * 0.92 - 1.5); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(w * 0.03 - 1.5, 0); ctx.lineTo(w * 0.03 - 1.5, h); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(w * 0.97 - 1.5, 0); ctx.lineTo(w * 0.97 - 1.5, h); ctx.stroke();
 
-      // ── Medidor de pressão (manómetro) no canto superior direito ──
-      const gaugeX = w * 0.88, gaugeY = h * 0.15, gaugeR = 12;
-      // Corpo
-      ctx.fillStyle = "#3a2818";
-      ctx.beginPath(); ctx.arc(gaugeX, gaugeY, gaugeR + 2, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#8B7355";
-      ctx.beginPath(); ctx.arc(gaugeX, gaugeY, gaugeR, 0, Math.PI * 2); ctx.fill();
-      // Mostrador
-      ctx.fillStyle = "#1a0e04";
-      ctx.beginPath(); ctx.arc(gaugeX, gaugeY, gaugeR - 2, 0, Math.PI * 2); ctx.fill();
-      // Ponteiro (move-se com t)
-      const needleAng = Math.PI * 0.75 + Math.sin(t * 0.8) * Math.PI * 0.5;
-      ctx.strokeStyle = "#ff6030";
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(gaugeX, gaugeY);
-      ctx.lineTo(gaugeX + Math.cos(needleAng) * (gaugeR - 4), gaugeY + Math.sin(needleAng) * (gaugeR - 4));
-      ctx.stroke();
-      // Centro do ponteiro
-      ctx.fillStyle = "#c8a080";
-      ctx.beginPath(); ctx.arc(gaugeX, gaugeY, 1.5, 0, Math.PI * 2); ctx.fill();
-
-      // ── Válvula de vapor (roda de válvula no canto inferior esquerdo) ──
-      const valveX = w * 0.10, valveY = h * 0.88, valveR = 10;
-      ctx.save();
-      ctx.translate(valveX, valveY);
-      ctx.rotate(t * 0.15);
-      // 4 braços da válvula
-      ctx.strokeStyle = "#8B7355";
-      ctx.lineWidth = 3;
-      for (let i = 0; i < 4; i++) {
-        const a = (i / 4) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(a) * valveR, Math.sin(a) * valveR);
-        ctx.stroke();
-      }
-      // Pontas dos braços (botões)
-      for (let i = 0; i < 4; i++) {
-        const a = (i / 4) * Math.PI * 2;
-        ctx.fillStyle = "#c8a080";
-        ctx.beginPath();
-        ctx.arc(Math.cos(a) * valveR, Math.sin(a) * valveR, 2, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // Centro
-      ctx.fillStyle = "#5C4030";
-      ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-
-      // ── Vapor a subir do fundo (wisps semi-transparentes que sobem e dissipam) ──
+      // ── Vapor a subir do fundo ──
       // 5 fontes de vapor ao longo do fundo; cada uma tem ciclo de vida 0..1.
       for (let i = 0; i < 6; i++) {
         const baseX = w * (0.08 + i * 0.16);
@@ -1774,7 +1763,8 @@
       const ph2 = Math.floor(ph * 0.25);
       drawPaddle(ctx, Math.floor(pw * 0.15), Math.floor(ph * 0.55), Math.floor(pw * 0.7), ph2, skinId, false);
     } else if (category === "bg") {
-      drawBackground(ctx, pw, ph, skinId, 1.5);
+      // t=0 para preview — evita que nuvens enormes cubram todo o canvas pequeno
+      drawBackground(ctx, pw, ph, skinId, 0);
     }
   }
 
