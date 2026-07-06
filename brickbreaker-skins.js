@@ -30,7 +30,7 @@
   // ─────────────────────────────────────────────
   const CATALOG = {
     bricks: [
-      { id: "brick-stone",   name: "Stone",         tier: 1, desc: "Carved rock" },
+      { id: "brick-stone",   name: "Dirt Block",    tier: 1, desc: "Minecraft floor" },
       { id: "brick-neon",    name: "Neon Glow",     tier: 2, desc: "Bright neon" },
       { id: "brick-ice",     name: "Frosted Ice",   tier: 3, desc: "Cold crystal" },
       { id: "brick-lava",    name: "Lava Rock",     tier: 4, desc: "Molten cracks" },
@@ -50,8 +50,8 @@
       { id: "pad-chrome",  name: "Chrome",    tier: 2, desc: "Polished metal" },
       { id: "pad-wood",    name: "Oak Wood",  tier: 3, desc: "Varnished timber" },
       { id: "pad-neon",    name: "Neon Edge", tier: 4, desc: "Glowing strip" },
-      { id: "pad-royal",   name: "Royal Gold",tier: 6, desc: "Crowned with gems" },
       { id: "pad-circuit", name: "Circuit",   tier: 5, desc: "Tech platform" },
+      { id: "pad-royal",   name: "Royal Gold",tier: 6, desc: "Crowned with gems" },
     ],
     bg: [
       { id: "bg-arcade",    name: "Blue Sky",      tier: 1, desc: "Drifting clouds" },
@@ -92,7 +92,7 @@
       case "brick-default":
       case "brick-neon":
         return ROW_COLORS[r];
-      case "brick-stone": return "#707078";
+      case "brick-stone": return "#6b4f2a";
       case "brick-ice":   return "#b0dcf0";
       case "brick-lava":  return "#ff6a1a";
       case "brick-circuit": return "#3fd96a";
@@ -138,117 +138,98 @@
       ctx.fillRect(x + w - 2, y, 2, h);
     },
     "brick-stone": function (ctx, x, y, w, h, row) {
-      // Tijolo de pedra talhada — cinza com textura.
-      // 7 padrões de NATUREZA completamente diferentes por row (row % 7):
-      //   0 = pedra limpa (só fissuras)
-      //   1 = patches de musgo
-      //   2 = flores pequenas a crescer das fissuras
-      //   3 = calhaus (mini-rocks) embebidos na pedra
-      //   4 = inseto (beetle) a rastejar
-      //   5 = musgo + flores combinados
-      //   6 = fissuras com trepadeiras (vines)
-      ctx.fillStyle = vgrad(ctx, x, y, w, h, "#707078", "#48484e");
-      ctx.fillRect(x, y, w, h);
+      // Dirt Block (tier 1) — bloco de terra do Minecraft.
+      // 7 variações de camadas/textura por row (row % 7), todas com relva no topo.
       const v = row % 7;
-      // Offsets variados por row (base para vines e flores)
-      const vx = [0.30, 0.50, 0.20, 0.70, 0.40, 0.60, 0.35][v];
-      const vy = [0.40, 0.45, 0.55, 0.35, 0.50, 0.40, 0.60][v];
-      const dx = [0.80, 0.20, 0.60, 0.30, 0.75, 0.15, 0.50][v];
-      const dy = [0.70, 0.20, 0.80, 0.50, 0.30, 0.75, 0.15][v];
-      // Fissuras básicas (em todos os padrões)
-      ctx.strokeStyle = "rgba(40,40,45,0.4)";
-      ctx.lineWidth = 0.6;
-      ctx.beginPath();
-      ctx.moveTo(x + w * vx, y); ctx.lineTo(x + w * (vx + 0.05), y + h);
-      ctx.moveTo(x, y + h * vy); ctx.lineTo(x + w, y + h * (vy + 0.05));
-      ctx.stroke();
-      // ── Decorações por padrão (row % 7) ──
+      // ── Camada de relva (topo, 3px) ──
+      // Varia a tonalidade da relva por row (algumas mais secas, outras mais viçosas)
+      const grassColors = ["#5a8c3a", "#6a9c4a", "#4a7c2a", "#7aac5a", "#5a8c3a", "#3a6c1a", "#6a9c4a"];
+      const grassDark = ["#3a6a20", "#4a7a30", "#2a5a10", "#5a8a40", "#3a6a20", "#1a4a00", "#4a7a30"];
+      ctx.fillStyle = grassColors[v];
+      ctx.fillRect(x, y, w, 3);
+      ctx.fillStyle = grassDark[v];
+      ctx.fillRect(x, y + 2, w, 1);
+      // ── Corpo de terra (castanho com gradiente) ──
+      const dirt = vgrad(ctx, x, y + 3, w, h - 3, "#6b4f2a", "#4a3618");
+      ctx.fillStyle = dirt;
+      ctx.fillRect(x, y + 3, w, h - 3);
+      // ── Pixel-art texture dots (varia por row) ──
+      // Pequenos quadrados mais escuros espalhados pela terra (estilo Minecraft)
+      ctx.fillStyle = "rgba(40,25,10,0.5)";
+      const dotPositions = [
+        [[0.15, 0.50], [0.45, 0.65], [0.75, 0.55], [0.30, 0.80]],
+        [[0.25, 0.45], [0.55, 0.70], [0.80, 0.50], [0.10, 0.75]],
+        [[0.35, 0.55], [0.65, 0.45], [0.50, 0.80], [0.85, 0.70]],
+        [[0.20, 0.60], [0.50, 0.50], [0.70, 0.75], [0.40, 0.85]],
+        [[0.10, 0.55], [0.60, 0.60], [0.80, 0.80], [0.35, 0.70]],
+        [[0.45, 0.50], [0.70, 0.65], [0.20, 0.75], [0.55, 0.85]],
+        [[0.30, 0.55], [0.65, 0.50], [0.85, 0.75], [0.15, 0.65]],
+      ][v];
+      dotPositions.forEach(function (d) {
+        ctx.fillRect(x + w * d[0] - 0.5, y + h * d[1] - 0.5, 1.5, 1.5);
+      });
+      // ── Pequenas pedras grey embutidas (varia por row) ──
+      ctx.fillStyle = "#888888";
+      const stonePos = [
+        [[0.40, 0.60], [0.70, 0.45]],
+        [[0.20, 0.70], [0.60, 0.55]],
+        [[0.50, 0.45], [0.80, 0.65]],
+        [[0.30, 0.50], [0.65, 0.70]],
+        [[0.55, 0.65], [0.25, 0.55]],
+        [[0.45, 0.55], [0.75, 0.50]],
+        [[0.35, 0.65], [0.60, 0.45]],
+      ][v];
+      stonePos.forEach(function (s) {
+        ctx.fillRect(x + w * s[0] - 0.5, y + h * s[1] - 0.5, 1.5, 1.5);
+        ctx.fillStyle = "rgba(200,200,200,0.4)";
+        ctx.fillRect(x + w * s[0] - 0.5, y + h * s[1] - 0.5, 0.8, 0.8);
+        ctx.fillStyle = "#888888";
+      });
+      // ── Variações especiais por row ──
       switch (v) {
-        case 0: // Pedra limpa — só fissuras + pequena marca (o "clean")
-          ctx.fillStyle = "rgba(30,30,35,0.5)";
-          ctx.fillRect(x + w * dx, y + h * dy, 1.5, 1.5);
+        case 0: // Terra limpa (só textura + pedras)
           break;
-        case 1: // Patches de musgo (tufos verde-escuro + highlight)
+        case 1: // Tufo de musgo na terra
           ctx.fillStyle = "#3a6a30";
-          ctx.beginPath(); ctx.arc(x + w * 0.20, y + h * 0.30, Math.max(2, w * 0.06), 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(x + w * 0.75, y + h * 0.70, Math.max(2, w * 0.07), 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x + w * 0.25, y + h * 0.70, 2, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = "#5a8a40";
-          ctx.beginPath(); ctx.arc(x + w * 0.20, y + h * 0.30, Math.max(1, w * 0.03), 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(x + w * 0.75, y + h * 0.70, Math.max(1, w * 0.035), 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x + w * 0.25, y + h * 0.70, 1, 0, Math.PI * 2); ctx.fill();
           break;
-        case 2: // Flores pequenas (4 pétalas) a crescer das fissuras
-          drawTinyFlower(ctx, x + w * vx, y + h * 0.20, Math.max(1.5, w * 0.045), "#e84040");
-          drawTinyFlower(ctx, x + w * 0.85, y + h * (vy + 0.05), Math.max(1.5, w * 0.045), "#ffd040");
-          drawTinyFlower(ctx, x + w * 0.10, y + h * 0.85, Math.max(1.3, w * 0.040), "#ffffff");
+        case 2: // Pequena flor a crescer da terra
+          drawTinyFlower(ctx, x + w * 0.50, y + h * 0.55, 1.5, "#ffd040");
           break;
-        case 3: // Mini-rocks (calhaus) — pedras pequenas embebidas
-          ctx.fillStyle = "#5a5a62";
-          ctx.beginPath(); ctx.arc(x + w * 0.25, y + h * 0.65, 1.8, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(x + w * 0.70, y + h * 0.40, 1.5, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(x + w * 0.55, y + h * 0.80, 1.3, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(x + w * 0.40, y + h * 0.30, 1.2, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = "rgba(180,180,190,0.5)";
-          ctx.fillRect(x + w * 0.25 - 0.5, y + h * 0.65 - 0.5, 1, 1);
-          ctx.fillRect(x + w * 0.70 - 0.5, y + h * 0.40 - 0.5, 1, 1);
+        case 3: // Tufo de relva extra a crescer do lado
+          ctx.fillStyle = grassColors[v];
+          ctx.fillRect(x + w * 0.15, y + h * 0.45, 3, 2);
+          ctx.fillRect(x + w * 0.70, y + h * 0.60, 3, 2);
           break;
-        case 4: { // Inseto (beetle) — corpo oval escuro + patas
-          const bs = Math.max(2, Math.min(w, h) * 0.10);
-          const bx = x + w * 0.45, by = y + h * 0.55;
-          ctx.fillStyle = "#1a0a20";
-          ctx.beginPath(); ctx.ellipse(bx, by, bs, bs * 0.6, 0, 0, Math.PI * 2); ctx.fill();
-          ctx.strokeStyle = "#3a1a30";
-          ctx.lineWidth = 0.5;
-          ctx.beginPath(); ctx.moveTo(bx, by - bs * 0.5); ctx.lineTo(bx, by + bs * 0.5); ctx.stroke();
-          ctx.fillStyle = "#0a0510";
-          ctx.beginPath(); ctx.arc(bx, by - bs * 0.7, bs * 0.35, 0, Math.PI * 2); ctx.fill();
-          ctx.strokeStyle = "#0a0510";
-          ctx.lineWidth = 0.6;
+        case 4: // Raiz visível na terra
+          ctx.strokeStyle = "#3a2a10";
+          ctx.lineWidth = 0.8;
           ctx.beginPath();
-          for (let p = -1; p <= 1; p++) {
-            ctx.moveTo(bx - bs * 0.8, by + p * bs * 0.3);
-            ctx.lineTo(bx - bs * 1.3, by + p * bs * 0.5);
-            ctx.moveTo(bx + bs * 0.8, by + p * bs * 0.3);
-            ctx.lineTo(bx + bs * 1.3, by + p * bs * 0.5);
-          }
+          ctx.moveTo(x + w * 0.40, y + 3);
+          ctx.lineTo(x + w * 0.45, y + h * 0.5);
+          ctx.lineTo(x + w * 0.35, y + h * 0.7);
           ctx.stroke();
           break;
-        }
-        case 5: // Musgo + flores combinados
+        case 5: // Musgo + pedra extra
           ctx.fillStyle = "#3a6a30";
-          ctx.beginPath(); ctx.arc(x + w * 0.15, y + h * 0.75, Math.max(2, w * 0.05), 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(x + w * 0.80, y + h * 0.25, Math.max(2, w * 0.06), 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x + w * 0.60, y + h * 0.50, 2, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = "#5a8a40";
-          ctx.beginPath(); ctx.arc(x + w * 0.15, y + h * 0.75, Math.max(1, w * 0.025), 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(x + w * 0.80, y + h * 0.25, Math.max(1, w * 0.03), 0, Math.PI * 2); ctx.fill();
-          drawTinyFlower(ctx, x + w * 0.45, y + h * 0.50, Math.max(1.5, w * 0.045), "#ffffff");
-          drawTinyFlower(ctx, x + w * 0.65, y + h * 0.85, Math.max(1.3, w * 0.040), "#ffd040");
+          ctx.beginPath(); ctx.arc(x + w * 0.60, y + h * 0.50, 1, 0, Math.PI * 2); ctx.fill();
           break;
-        case 6: // Fissuras com trepadeiras (vines verdes)
-          ctx.strokeStyle = "#4a8a3a";
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(x + w * vx, y);
-          ctx.lineTo(x + w * (vx + 0.05), y + h * 0.4);
-          ctx.lineTo(x + w * vx, y + h * 0.6);
-          ctx.lineTo(x + w * (vx + 0.05), y + h);
-          ctx.moveTo(x, y + h * vy);
-          ctx.lineTo(x + w * 0.3, y + h * (vy + 0.02));
-          ctx.lineTo(x + w * 0.6, y + h * (vy - 0.02));
-          ctx.lineTo(x + w, y + h * (vy + 0.05));
-          ctx.stroke();
-          ctx.fillStyle = "#5a9a4a";
-          ctx.beginPath(); ctx.ellipse(x + w * (vx + 0.05), y + h * 0.4, 1.5, 1, 0.4, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.ellipse(x + w * 0.3, y + h * (vy + 0.02), 1.5, 1, -0.3, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.ellipse(x + w * 0.6, y + h * (vy - 0.02), 1.5, 1, 0.3, 0, Math.PI * 2); ctx.fill();
+        case 6: // Mini cogumelo (cabeça vermelha + ponto branco)
+          ctx.fillStyle = "#c0303a";
+          ctx.beginPath(); ctx.arc(x + w * 0.50, y + h * 0.50, 1.5, Math.PI, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#fff";
+          ctx.fillRect(x + w * 0.50 - 0.5, y + h * 0.48, 0.8, 0.8);
           break;
       }
-      // Edge highlight + shadow (mantém o mesmo acabamento em todos os padrões)
-      ctx.fillStyle = "rgba(160,160,170,0.4)";
-      ctx.fillRect(x, y, w, 1.5);
-      ctx.fillRect(x, y, 1.5, h);
-      ctx.fillStyle = "rgba(20,20,25,0.5)";
+      // ── Highlight + shadow ──
+      ctx.fillStyle = "rgba(255,255,200,0.15)";
+      ctx.fillRect(x, y, w, 1);
+      ctx.fillStyle = "rgba(20,10,0,0.4)";
       ctx.fillRect(x, y + h - 1.5, w, 1.5);
-      ctx.fillRect(x + w - 1.5, y, 1.5, h);
     },
     "brick-neon": function (ctx, x, y, w, h, row) {
       const col = ROW_COLORS[row % ROW_COLORS.length];
