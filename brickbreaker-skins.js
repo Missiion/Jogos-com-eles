@@ -54,11 +54,11 @@
       { id: "pad-royal",   name: "Royal Gold",tier: 6, desc: "Crowned with gems" },
     ],
     bg: [
-      { id: "bg-arcade",    name: "Blue Sky",      tier: 1, desc: "Drifting clouds" },
-      { id: "bg-matrix",    name: "Matrix Rain",   tier: 2, desc: "Digital rain" },
-      { id: "bg-ocean",     name: "Deep Ocean",    tier: 3, desc: "Underwater abyss" },
-      { id: "bg-aurora",    name: "Aurora",        tier: 4, desc: "Boreal lights" },
-      { id: "bg-crystal",   name: "Crystal Sanctum", tier: 5, desc: "Living geode" },
+      { id: "bg-arcade",    name: "Blue Sky",        tier: 1, desc: "Drifting clouds" },
+      { id: "bg-ocean",     name: "Deep Ocean",      tier: 2, desc: "Underwater abyss" },
+      { id: "bg-matrix",    name: "Matrix Rain",     tier: 3, desc: "Digital rain" },
+      { id: "bg-crystal",   name: "Crystal Sanctum", tier: 4, desc: "Living geode" },
+      { id: "bg-aurora",    name: "Aurora",          tier: 5, desc: "Boreal lights" },
       { id: "bg-nebula",    name: "Neon Metropolis", tier: 6, desc: "Cyberpunk city" },
     ],
   };
