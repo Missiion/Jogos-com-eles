@@ -728,13 +728,22 @@
         ctx.fillStyle = p.color;
         ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2); ctx.fill();
       } else if (p.type === "circuit") {
-        // Mini placa de circuito: retângulo verde-escuro com trilho verde
-        // (v2: 1.5x larger — PCB rect and trace scaled up for more visible particles)
-        const s = p.size * 1.5;
+        // Mini placa de circuito: retângulo verde-escuro com trilhos verdes + pads
+        // Visível e reconhecível como PCB
+        const s = p.size * 2;
+        // PCB base (verde escuro)
         ctx.fillStyle = "#0a3a18";
-        ctx.fillRect(p.x - s, p.y - s * 0.6, s * 2, s * 1.2);
+        ctx.fillRect(p.x - s, p.y - s * 0.7, s * 2, s * 1.4);
+        // Trilho horizontal verde brilhante
         ctx.fillStyle = "#3fd96a";
-        ctx.fillRect(p.x - s * 0.7, p.y - 0.5, s * 1.4, 0.8);
+        ctx.fillRect(p.x - s * 0.8, p.y - 0.5, s * 1.6, 1);
+        // Trilho vertical
+        ctx.fillRect(p.x - 0.5, p.y - s * 0.6, 1, s * 1.2);
+        // Pads (pontos brilhantes nos cruzamentos)
+        ctx.fillStyle = "#7dfca0";
+        ctx.beginPath(); ctx.arc(p.x, p.y, 1.2, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x - s * 0.7, p.y, 1, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x + s * 0.7, p.y, 1, 0, Math.PI * 2); ctx.fill();
       } else if (p.type === "lava") {
         // Mini bola de pedra e lava: círculo escuro com glow laranja
         ctx.fillStyle = "rgba(255,100,0," + (p.life * 0.4).toFixed(2) + ")";
@@ -744,9 +753,10 @@
         ctx.fillStyle = "rgba(255,140,30," + (p.life * 0.5).toFixed(2) + ")";
         ctx.beginPath(); ctx.arc(p.x - p.size * 0.3, p.y - p.size * 0.3, p.size * 0.3, 0, Math.PI * 2); ctx.fill();
       } else if (p.type === "gold") {
-        // Mini gema: forma de losango com brilho
-        // (v2: gem diamond 1.5x larger, specular highlight bigger)
-        const s = p.size * 1.5;
+        // Mini pedra preciosa: losango facetado com brilho specular
+        // Maior e mais reconhecível como gema
+        const s = p.size * 2;
+        // Corpo da gema (losango)
         ctx.fillStyle = p.color;
         ctx.beginPath();
         ctx.moveTo(p.x, p.y - s);
@@ -755,9 +765,28 @@
         ctx.lineTo(p.x - s * 0.7, p.y);
         ctx.closePath();
         ctx.fill();
-        // Brilho specular (bigger — radius scaled up from 0.2 to 0.3)
-        ctx.fillStyle = "rgba(255,255,255," + (p.life * 0.5).toFixed(2) + ")";
-        ctx.beginPath(); ctx.arc(p.x - s * 0.25, p.y - s * 0.25, s * 0.3, 0, Math.PI * 2); ctx.fill();
+        // Faceta superior (mais clara — simula corte da gema)
+        ctx.fillStyle = "rgba(255,255,255," + (p.life * 0.3).toFixed(2) + ")";
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y - s);
+        ctx.lineTo(p.x + s * 0.35, p.y - s * 0.3);
+        ctx.lineTo(p.x, p.y);
+        ctx.lineTo(p.x - s * 0.35, p.y - s * 0.3);
+        ctx.closePath();
+        ctx.fill();
+        // Brilho specular (ponto de luz)
+        ctx.fillStyle = "rgba(255,255,255," + (p.life * 0.6).toFixed(2) + ")";
+        ctx.beginPath(); ctx.arc(p.x - s * 0.2, p.y - s * 0.3, s * 0.25, 0, Math.PI * 2); ctx.fill();
+        // Contorno escuro (define a gema)
+        ctx.strokeStyle = "rgba(0,0,0," + (p.life * 0.3).toFixed(2) + ")";
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y - s);
+        ctx.lineTo(p.x + s * 0.7, p.y);
+        ctx.lineTo(p.x, p.y + s);
+        ctx.lineTo(p.x - s * 0.7, p.y);
+        ctx.closePath();
+        ctx.stroke();
       } else {
         // Default: quadrado colorido
         ctx.fillStyle = p.color;
