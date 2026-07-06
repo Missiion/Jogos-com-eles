@@ -92,7 +92,7 @@
       case "brick-default":
       case "brick-neon":
         return ROW_COLORS[r];
-      case "brick-stone": return "#6b4f2a";
+      case "brick-stone": return ["#5a8c3a", "#6b4f2a", "#828282", "#a07255", "#b8b098", "#727272", "#2e2e3a"][r];
       case "brick-ice":   return "#b0dcf0";
       case "brick-lava":  return "#ff6a1a";
       case "brick-circuit": return "#3fd96a";
@@ -138,25 +138,38 @@
       ctx.fillRect(x + w - 2, y, 2, h);
     },
     "brick-stone": function (ctx, x, y, w, h, row) {
-      // Dirt Block (tier 1) — bloco de terra do Minecraft.
-      // 7 variações de camadas/textura por row (row % 7), todas com relva no topo.
+      // Minecraft Blocks (tier 1) — 7 níveis de Minecraft por row (row % 7):
+      //   0 = Grass Block (relva + terra)
+      //   1 = Dirt (terra)
+      //   2 = Stone (pedra)
+      //   3 = Granite (granito)
+      //   4 = Diorite (diorito)
+      //   5 = Andesite (andesito)
+      //   6 = Deepslate (ardósia profunda)
       const v = row % 7;
-      // ── Camada de relva (topo, 3px) ──
-      // Varia a tonalidade da relva por row (algumas mais secas, outras mais viçosas)
-      const grassColors = ["#5a8c3a", "#6a9c4a", "#4a7c2a", "#7aac5a", "#5a8c3a", "#3a6c1a", "#6a9c4a"];
-      const grassDark = ["#3a6a20", "#4a7a30", "#2a5a10", "#5a8a40", "#3a6a20", "#1a4a00", "#4a7a30"];
-      ctx.fillStyle = grassColors[v];
+      // Cores base de cada bloco
+      const blockColors = [
+        { top: "#5a8c3a", topDark: "#3a6a20", body1: "#6b4f2a", body2: "#4a3618", dotCol: "rgba(40,25,10,0.5)" }, // Grass
+        { top: "#6b4f2a", topDark: "#4a3618", body1: "#7a5a34", body2: "#5a3e20", dotCol: "rgba(40,25,10,0.4)" },  // Dirt
+        { top: "#7e7e7e", topDark: "#5a5a5a", body1: "#828282", body2: "#5e5e5e", dotCol: "rgba(50,50,55,0.4)" },   // Stone
+        { top: "#9d6b4f", topDark: "#7a4f38", body1: "#a07255", body2: "#7a4f38", dotCol: "rgba(60,30,15,0.4)" },   // Granite
+        { top: "#b0a890", topDark: "#8a8270", body1: "#b8b098", body2: "#8a8270", dotCol: "rgba(60,55,45,0.4)" },   // Diorite
+        { top: "#6a6a6a", topDark: "#4a4a4a", body1: "#727272", body2: "#525252", dotCol: "rgba(40,40,45,0.4)" },   // Andesite
+        { top: "#2a2a35", topDark: "#1a1a25", body1: "#2e2e3a", body2: "#1a1a25", dotCol: "rgba(10,10,20,0.5)" },   // Deepslate
+      ];
+      const bc = blockColors[v];
+      // ── Topo (3px) — cor "top" + borda escura ──
+      ctx.fillStyle = bc.top;
       ctx.fillRect(x, y, w, 3);
-      ctx.fillStyle = grassDark[v];
+      ctx.fillStyle = bc.topDark;
       ctx.fillRect(x, y + 2, w, 1);
-      // ── Corpo de terra (castanho com gradiente) ──
-      const dirt = vgrad(ctx, x, y + 3, w, h - 3, "#6b4f2a", "#4a3618");
-      ctx.fillStyle = dirt;
+      // ── Corpo com gradiente ──
+      const body = vgrad(ctx, x, y + 3, w, h - 3, bc.body1, bc.body2);
+      ctx.fillStyle = body;
       ctx.fillRect(x, y + 3, w, h - 3);
-      // ── Pixel-art texture dots (varia por row) ──
-      // Pequenos quadrados mais escuros espalhados pela terra (estilo Minecraft)
-      ctx.fillStyle = "rgba(40,25,10,0.5)";
-      const dotPositions = [
+      // ── Pixel-art texture dots (4 por bloco, posições variam por row) ──
+      ctx.fillStyle = bc.dotCol;
+      const dots = [
         [[0.15, 0.50], [0.45, 0.65], [0.75, 0.55], [0.30, 0.80]],
         [[0.25, 0.45], [0.55, 0.70], [0.80, 0.50], [0.10, 0.75]],
         [[0.35, 0.55], [0.65, 0.45], [0.50, 0.80], [0.85, 0.70]],
@@ -165,70 +178,54 @@
         [[0.45, 0.50], [0.70, 0.65], [0.20, 0.75], [0.55, 0.85]],
         [[0.30, 0.55], [0.65, 0.50], [0.85, 0.75], [0.15, 0.65]],
       ][v];
-      dotPositions.forEach(function (d) {
+      dots.forEach(function (d) {
         ctx.fillRect(x + w * d[0] - 0.5, y + h * d[1] - 0.5, 1.5, 1.5);
       });
-      // ── Pequenas pedras grey embutidas (varia por row) ──
-      ctx.fillStyle = "#888888";
-      const stonePos = [
-        [[0.40, 0.60], [0.70, 0.45]],
-        [[0.20, 0.70], [0.60, 0.55]],
-        [[0.50, 0.45], [0.80, 0.65]],
-        [[0.30, 0.50], [0.65, 0.70]],
-        [[0.55, 0.65], [0.25, 0.55]],
-        [[0.45, 0.55], [0.75, 0.50]],
-        [[0.35, 0.65], [0.60, 0.45]],
-      ][v];
-      stonePos.forEach(function (s) {
-        ctx.fillRect(x + w * s[0] - 0.5, y + h * s[1] - 0.5, 1.5, 1.5);
-        ctx.fillStyle = "rgba(200,200,200,0.4)";
-        ctx.fillRect(x + w * s[0] - 0.5, y + h * s[1] - 0.5, 0.8, 0.8);
-        ctx.fillStyle = "#888888";
-      });
-      // ── Variações especiais por row ──
+      // ── Detalhes específicos por tipo de bloco ──
       switch (v) {
-        case 0: // Terra limpa (só textura + pedras)
-          break;
-        case 1: // Tufo de musgo na terra
-          ctx.fillStyle = "#3a6a30";
-          ctx.beginPath(); ctx.arc(x + w * 0.25, y + h * 0.70, 2, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = "#5a8a40";
-          ctx.beginPath(); ctx.arc(x + w * 0.25, y + h * 0.70, 1, 0, Math.PI * 2); ctx.fill();
-          break;
-        case 2: // Pequena flor a crescer da terra
+        case 0: // Grass Block — relva no topo + pequena flor
           drawTinyFlower(ctx, x + w * 0.50, y + h * 0.55, 1.5, "#ffd040");
           break;
-        case 3: // Tufo de relva extra a crescer do lado
-          ctx.fillStyle = grassColors[v];
-          ctx.fillRect(x + w * 0.15, y + h * 0.45, 3, 2);
-          ctx.fillRect(x + w * 0.70, y + h * 0.60, 3, 2);
+        case 1: // Dirt — sem detalhes extra (só textura)
           break;
-        case 4: // Raiz visível na terra
-          ctx.strokeStyle = "#3a2a10";
-          ctx.lineWidth = 0.8;
+        case 2: // Stone — pequenas fissuras
+          ctx.strokeStyle = "rgba(40,40,45,0.4)";
+          ctx.lineWidth = 0.6;
           ctx.beginPath();
-          ctx.moveTo(x + w * 0.40, y + 3);
-          ctx.lineTo(x + w * 0.45, y + h * 0.5);
-          ctx.lineTo(x + w * 0.35, y + h * 0.7);
+          ctx.moveTo(x + w * 0.30, y + 3); ctx.lineTo(x + w * 0.35, y + h);
           ctx.stroke();
           break;
-        case 5: // Musgo + pedra extra
-          ctx.fillStyle = "#3a6a30";
-          ctx.beginPath(); ctx.arc(x + w * 0.60, y + h * 0.50, 2, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = "#5a8a40";
-          ctx.beginPath(); ctx.arc(x + w * 0.60, y + h * 0.50, 1, 0, Math.PI * 2); ctx.fill();
+        case 3: // Granite — veios mais escuros
+          ctx.strokeStyle = "rgba(80,40,20,0.3)";
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(x, y + h * 0.40); ctx.lineTo(x + w, y + h * 0.45);
+          ctx.stroke();
           break;
-        case 6: // Mini cogumelo (cabeça vermelha + ponto branco)
-          ctx.fillStyle = "#c0303a";
-          ctx.beginPath(); ctx.arc(x + w * 0.50, y + h * 0.50, 1.5, Math.PI, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = "#fff";
-          ctx.fillRect(x + w * 0.50 - 0.5, y + h * 0.48, 0.8, 0.8);
+        case 4: // Diorite — manchas brancas
+          ctx.fillStyle = "rgba(220,215,200,0.3)";
+          ctx.fillRect(x + w * 0.20, y + h * 0.55, 2, 2);
+          ctx.fillRect(x + w * 0.65, y + h * 0.45, 2, 2);
+          break;
+        case 5: // Andesite — micro-pontos brancos e escuros
+          ctx.fillStyle = "rgba(200,200,200,0.2)";
+          ctx.fillRect(x + w * 0.30, y + h * 0.60, 1, 1);
+          ctx.fillStyle = "rgba(30,30,35,0.3)";
+          ctx.fillRect(x + w * 0.70, y + h * 0.50, 1, 1);
+          break;
+        case 6: // Deepslate — fissuras escuras
+          ctx.strokeStyle = "rgba(0,0,5,0.5)";
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(x + w * 0.20, y + 3); ctx.lineTo(x + w * 0.25, y + h);
+          ctx.moveTo(x + w * 0.70, y + 3); ctx.lineTo(x + w * 0.65, y + h);
+          ctx.stroke();
           break;
       }
       // ── Highlight + shadow ──
-      ctx.fillStyle = "rgba(255,255,200,0.15)";
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
       ctx.fillRect(x, y, w, 1);
-      ctx.fillStyle = "rgba(20,10,0,0.4)";
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
       ctx.fillRect(x, y + h - 1.5, w, 1.5);
     },
     "brick-neon": function (ctx, x, y, w, h, row) {
@@ -1088,15 +1085,15 @@
         ctx.fill();
       }
 
-      // 5 nuvens: cada uma com y, escala, velocidade e offset inicial diferentes.
+      // 5 nuvens MUITO maiores: cada uma com y, escala, velocidade e offset inicial diferentes.
       // cloudW = largura total aproximada de uma nuvem (para wrap-around).
       const cloudW = 70;
       const clouds = [
-        { y: h * 0.15, sc: 0.95, sp: 5,  off: 0 },
-        { y: h * 0.28, sc: 0.70, sp: 3.5, off: 180 },
-        { y: h * 0.10, sc: 1.10, sp: 7,  off: 360 },
-        { y: h * 0.35, sc: 0.60, sp: 4,  off: 540 },
-        { y: h * 0.22, sc: 0.85, sp: 6,  off: 720 },
+        { y: h * 0.15, sc: 2.0, sp: 5,  off: 0 },
+        { y: h * 0.28, sc: 1.5, sp: 3.5, off: 180 },
+        { y: h * 0.10, sc: 2.3, sp: 7,  off: 360 },
+        { y: h * 0.35, sc: 1.3, sp: 4,  off: 540 },
+        { y: h * 0.22, sc: 1.8, sp: 6,  off: 720 },
       ];
       clouds.forEach(function (c) {
         // Movimento: direita, wrap-around quando sai do ecrã.
@@ -1606,21 +1603,96 @@
         ctx.restore();
       }
 
-      // ── 7 engrenagens gigantes de latão (tamanhos/posições/sentidos variados) ──
-      // Posicionadas para os dentes se interligarem visualmente: cada par adjacente
-      // tem distância ≈ soma dos raios base, alternando alturas.
+      // ── 9 engrenagens gigantes que cobrem o fundo todo ──
+      // Tamanhos maiores para preencher todo o ecrã, como na preview da loja.
       const gears = [
-        { x: 0.08, y: 0.28, R: 42, t: 14, s: 5, sp:  0.30, dir:  1, ti: 0 }, // pequena, CW
-        { x: 0.22, y: 0.55, R: 55, t: 12, s: 4, sp: -0.22, dir: -1, ti: 1 }, // média, CCW
-        { x: 0.40, y: 0.28, R: 48, t: 16, s: 6, sp:  0.26, dir:  1, ti: 0 }, // média, CW
-        { x: 0.56, y: 0.60, R: 60, t: 14, s: 5, sp: -0.18, dir: -1, ti: 1 }, // grande, CCW
-        { x: 0.74, y: 0.30, R: 50, t: 12, s: 4, sp:  0.24, dir:  1, ti: 0 }, // média, CW
-        { x: 0.90, y: 0.60, R: 38, t: 16, s: 6, sp: -0.32, dir: -1, ti: 1 }, // pequena, CCW
-        { x: 0.30, y: 0.85, R: 44, t: 14, s: 5, sp:  0.20, dir:  1, ti: 0 }, // pequena, CW (em baixo)
+        { x: 0.05, y: 0.20, R: 65, t: 14, s: 5, sp:  0.30, dir:  1, ti: 0 },
+        { x: 0.20, y: 0.55, R: 80, t: 12, s: 4, sp: -0.22, dir: -1, ti: 1 },
+        { x: 0.38, y: 0.22, R: 70, t: 16, s: 6, sp:  0.26, dir:  1, ti: 0 },
+        { x: 0.55, y: 0.60, R: 90, t: 14, s: 5, sp: -0.18, dir: -1, ti: 1 },
+        { x: 0.72, y: 0.25, R: 75, t: 12, s: 4, sp:  0.24, dir:  1, ti: 0 },
+        { x: 0.90, y: 0.55, R: 60, t: 16, s: 6, sp: -0.32, dir: -1, ti: 1 },
+        { x: 0.15, y: 0.85, R: 70, t: 14, s: 5, sp:  0.20, dir:  1, ti: 0 },
+        { x: 0.50, y: 0.90, R: 55, t: 12, s: 4, sp: -0.28, dir: -1, ti: 1 },
+        { x: 0.85, y: 0.88, R: 65, t: 16, s: 6, sp:  0.22, dir:  1, ti: 0 },
       ];
       gears.forEach(function (g) {
         drawGear(g.x * w, g.y * h, g.R, g.t, g.s, t * g.sp, g.ti);
       });
+
+      // ── Canos de vapor (horizontais e verticais com juntas) ──
+      ctx.strokeStyle = "#5C4030";
+      ctx.lineWidth = 4;
+      // Cano horizontal superior
+      ctx.beginPath(); ctx.moveTo(0, h * 0.08); ctx.lineTo(w, h * 0.08); ctx.stroke();
+      // Cano vertical esquerdo
+      ctx.beginPath(); ctx.moveTo(w * 0.03, 0); ctx.lineTo(w * 0.03, h); ctx.stroke();
+      // Cano vertical direito
+      ctx.beginPath(); ctx.moveTo(w * 0.97, 0); ctx.lineTo(w * 0.97, h); ctx.stroke();
+      // Juntas (rings nos canos)
+      ctx.fillStyle = "#8B7355";
+      for (let i = 0; i < 6; i++) {
+        const jx = (i + 1) * (w / 7);
+        ctx.fillRect(jx - 3, h * 0.08 - 6, 6, 12); // junta horizontal
+        ctx.fillRect(w * 0.03 - 6, (i + 1) * (h / 7) - 3, 12, 6); // junta vertical esq
+        ctx.fillRect(w * 0.97 - 6, (i + 1) * (h / 7) - 3, 12, 6); // junta vertical dir
+      }
+      // Highlight nos canos
+      ctx.strokeStyle = "rgba(220,180,130,0.3)";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, h * 0.08 - 1.5); ctx.lineTo(w, h * 0.08 - 1.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(w * 0.03 - 1.5, 0); ctx.lineTo(w * 0.03 - 1.5, h); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(w * 0.97 - 1.5, 0); ctx.lineTo(w * 0.97 - 1.5, h); ctx.stroke();
+
+      // ── Medidor de pressão (manómetro) no canto superior direito ──
+      const gaugeX = w * 0.88, gaugeY = h * 0.15, gaugeR = 12;
+      // Corpo
+      ctx.fillStyle = "#3a2818";
+      ctx.beginPath(); ctx.arc(gaugeX, gaugeY, gaugeR + 2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#8B7355";
+      ctx.beginPath(); ctx.arc(gaugeX, gaugeY, gaugeR, 0, Math.PI * 2); ctx.fill();
+      // Mostrador
+      ctx.fillStyle = "#1a0e04";
+      ctx.beginPath(); ctx.arc(gaugeX, gaugeY, gaugeR - 2, 0, Math.PI * 2); ctx.fill();
+      // Ponteiro (move-se com t)
+      const needleAng = Math.PI * 0.75 + Math.sin(t * 0.8) * Math.PI * 0.5;
+      ctx.strokeStyle = "#ff6030";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(gaugeX, gaugeY);
+      ctx.lineTo(gaugeX + Math.cos(needleAng) * (gaugeR - 4), gaugeY + Math.sin(needleAng) * (gaugeR - 4));
+      ctx.stroke();
+      // Centro do ponteiro
+      ctx.fillStyle = "#c8a080";
+      ctx.beginPath(); ctx.arc(gaugeX, gaugeY, 1.5, 0, Math.PI * 2); ctx.fill();
+
+      // ── Válvula de vapor (roda de válvula no canto inferior esquerdo) ──
+      const valveX = w * 0.10, valveY = h * 0.88, valveR = 10;
+      ctx.save();
+      ctx.translate(valveX, valveY);
+      ctx.rotate(t * 0.15);
+      // 4 braços da válvula
+      ctx.strokeStyle = "#8B7355";
+      ctx.lineWidth = 3;
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * valveR, Math.sin(a) * valveR);
+        ctx.stroke();
+      }
+      // Pontas dos braços (botões)
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        ctx.fillStyle = "#c8a080";
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * valveR, Math.sin(a) * valveR, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Centro
+      ctx.fillStyle = "#5C4030";
+      ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
 
       // ── Vapor a subir do fundo (wisps semi-transparentes que sobem e dissipam) ──
       // 5 fontes de vapor ao longo do fundo; cada uma tem ciclo de vida 0..1.
