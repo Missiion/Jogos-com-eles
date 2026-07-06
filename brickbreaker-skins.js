@@ -38,7 +38,7 @@
       { id: "brick-gold",    name: "Solid Gold",    tier: 6, desc: "Gilded with ruby" },
     ],
     ball: [
-      { id: "ball-comet",    name: "Comet",      tier: 1, desc: "Icy trail" },
+      { id: "ball-comet",    name: "Tadpole Egg", tier: 1, desc: "Living egg" },
       { id: "ball-blackhole",name: "Black Hole", tier: 2, desc: "Event horizon" },
       { id: "ball-frost",    name: "Ice Sphere", tier: 3, desc: "Frozen crystal" },
       { id: "ball-plasma",   name: "Plasma Core",tier: 4, desc: "Purple energy" },
@@ -46,7 +46,7 @@
       { id: "ball-prism",    name: "Prism",      tier: 6, desc: "Refracting crystal" },
     ],
     paddle: [
-      { id: "pad-iron",    name: "Iron Bar",  tier: 1, desc: "Forged iron" },
+      { id: "pad-iron",    name: "Stone Bar", tier: 1, desc: "Mossy stone" },
       { id: "pad-chrome",  name: "Chrome",    tier: 2, desc: "Polished metal" },
       { id: "pad-wood",    name: "Oak Wood",  tier: 3, desc: "Varnished timber" },
       { id: "pad-neon",    name: "Neon Edge", tier: 4, desc: "Glowing strip" },
@@ -54,11 +54,11 @@
       { id: "pad-circuit", name: "Circuit",   tier: 6, desc: "Tech platform" },
     ],
     bg: [
-      { id: "bg-arcade",    name: "Arcade",       tier: 1, desc: "CRT scanlines" },
-      { id: "bg-starfield", name: "Starfield",    tier: 2, desc: "Distant stars" },
-      { id: "bg-aurora",    name: "Aurora",       tier: 3, desc: "Boreal lights" },
-      { id: "bg-ocean",     name: "Deep Ocean",   tier: 4, desc: "Underwater abyss" },
-      { id: "bg-matrix",    name: "Matrix Rain",  tier: 5, desc: "Digital rain" },
+      { id: "bg-arcade",    name: "River Meadow",  tier: 1, desc: "Nature retreat" },
+      { id: "bg-matrix",    name: "Matrix Rain",   tier: 2, desc: "Digital rain" },
+      { id: "bg-ocean",     name: "Deep Ocean",    tier: 3, desc: "Underwater abyss" },
+      { id: "bg-aurora",    name: "Aurora",        tier: 4, desc: "Boreal lights" },
+      { id: "bg-crystal",   name: "Crystal Cave",  tier: 5, desc: "Living geode" },
       { id: "bg-nebula",    name: "Neon Metropolis", tier: 6, desc: "Cyberpunk city" },
     ],
   };
@@ -108,6 +108,19 @@
     return g;
   }
 
+  // Helper: flor pequena de 4 pétalas com centro amarelo (usada em brick-stone e pad-iron)
+  function drawTinyFlower(ctx, cx, cy, r, col) {
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(cx, cy - r, r * 0.7, 0, Math.PI * 2);
+    ctx.arc(cx, cy + r, r * 0.7, 0, Math.PI * 2);
+    ctx.arc(cx - r, cy, r * 0.7, 0, Math.PI * 2);
+    ctx.arc(cx + r, cy, r * 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffe040";
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2); ctx.fill();
+  }
+
   // ─────────────────────────────────────────────
   //  BRICKS — drawBrick(ctx, x, y, w, h, row, skinId)
   // ─────────────────────────────────────────────
@@ -126,29 +139,113 @@
     },
     "brick-stone": function (ctx, x, y, w, h, row) {
       // Tijolo de pedra talhada — cinza com textura.
-      // 7 variações de fissuras por row (row % 7 como seed) — mesma cor base.
+      // 7 padrões de NATUREZA completamente diferentes por row (row % 7):
+      //   0 = pedra limpa (só fissuras)
+      //   1 = patches de musgo
+      //   2 = flores pequenas a crescer das fissuras
+      //   3 = calhaus (mini-rocks) embebidos na pedra
+      //   4 = inseto (beetle) a rastejar
+      //   5 = musgo + flores combinados
+      //   6 = fissuras com trepadeiras (vines)
       ctx.fillStyle = vgrad(ctx, x, y, w, h, "#707078", "#48484e");
       ctx.fillRect(x, y, w, h);
       const v = row % 7;
-      // 7 padrões de fissuras (offsets variados por row)
+      // Offsets variados por row (base para vines e flores)
       const vx = [0.30, 0.50, 0.20, 0.70, 0.40, 0.60, 0.35][v];
       const vy = [0.40, 0.45, 0.55, 0.35, 0.50, 0.40, 0.60][v];
       const dx = [0.80, 0.20, 0.60, 0.30, 0.75, 0.15, 0.50][v];
       const dy = [0.70, 0.20, 0.80, 0.50, 0.30, 0.75, 0.15][v];
+      // Fissuras básicas (em todos os padrões)
       ctx.strokeStyle = "rgba(40,40,45,0.4)";
       ctx.lineWidth = 0.6;
       ctx.beginPath();
       ctx.moveTo(x + w * vx, y); ctx.lineTo(x + w * (vx + 0.05), y + h);
       ctx.moveTo(x, y + h * vy); ctx.lineTo(x + w, y + h * (vy + 0.05));
       ctx.stroke();
-      // pequena marca de pedra (varia por row) — detalhe discreto
-      ctx.fillStyle = "rgba(30,30,35,0.5)";
-      ctx.fillRect(x + w * dx, y + h * dy, 1.5, 1.5);
-      // highlight
+      // ── Decorações por padrão (row % 7) ──
+      switch (v) {
+        case 0: // Pedra limpa — só fissuras + pequena marca (o "clean")
+          ctx.fillStyle = "rgba(30,30,35,0.5)";
+          ctx.fillRect(x + w * dx, y + h * dy, 1.5, 1.5);
+          break;
+        case 1: // Patches de musgo (tufos verde-escuro + highlight)
+          ctx.fillStyle = "#3a6a30";
+          ctx.beginPath(); ctx.arc(x + w * 0.20, y + h * 0.30, Math.max(2, w * 0.06), 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x + w * 0.75, y + h * 0.70, Math.max(2, w * 0.07), 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#5a8a40";
+          ctx.beginPath(); ctx.arc(x + w * 0.20, y + h * 0.30, Math.max(1, w * 0.03), 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x + w * 0.75, y + h * 0.70, Math.max(1, w * 0.035), 0, Math.PI * 2); ctx.fill();
+          break;
+        case 2: // Flores pequenas (4 pétalas) a crescer das fissuras
+          drawTinyFlower(ctx, x + w * vx, y + h * 0.20, Math.max(1.5, w * 0.045), "#e84040");
+          drawTinyFlower(ctx, x + w * 0.85, y + h * (vy + 0.05), Math.max(1.5, w * 0.045), "#ffd040");
+          drawTinyFlower(ctx, x + w * 0.10, y + h * 0.85, Math.max(1.3, w * 0.040), "#ffffff");
+          break;
+        case 3: // Mini-rocks (calhaus) — pedras pequenas embebidas
+          ctx.fillStyle = "#5a5a62";
+          ctx.beginPath(); ctx.arc(x + w * 0.25, y + h * 0.65, 1.8, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x + w * 0.70, y + h * 0.40, 1.5, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x + w * 0.55, y + h * 0.80, 1.3, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x + w * 0.40, y + h * 0.30, 1.2, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "rgba(180,180,190,0.5)";
+          ctx.fillRect(x + w * 0.25 - 0.5, y + h * 0.65 - 0.5, 1, 1);
+          ctx.fillRect(x + w * 0.70 - 0.5, y + h * 0.40 - 0.5, 1, 1);
+          break;
+        case 4: { // Inseto (beetle) — corpo oval escuro + patas
+          const bs = Math.max(2, Math.min(w, h) * 0.10);
+          const bx = x + w * 0.45, by = y + h * 0.55;
+          ctx.fillStyle = "#1a0a20";
+          ctx.beginPath(); ctx.ellipse(bx, by, bs, bs * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = "#3a1a30";
+          ctx.lineWidth = 0.5;
+          ctx.beginPath(); ctx.moveTo(bx, by - bs * 0.5); ctx.lineTo(bx, by + bs * 0.5); ctx.stroke();
+          ctx.fillStyle = "#0a0510";
+          ctx.beginPath(); ctx.arc(bx, by - bs * 0.7, bs * 0.35, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = "#0a0510";
+          ctx.lineWidth = 0.6;
+          ctx.beginPath();
+          for (let p = -1; p <= 1; p++) {
+            ctx.moveTo(bx - bs * 0.8, by + p * bs * 0.3);
+            ctx.lineTo(bx - bs * 1.3, by + p * bs * 0.5);
+            ctx.moveTo(bx + bs * 0.8, by + p * bs * 0.3);
+            ctx.lineTo(bx + bs * 1.3, by + p * bs * 0.5);
+          }
+          ctx.stroke();
+          break;
+        }
+        case 5: // Musgo + flores combinados
+          ctx.fillStyle = "#3a6a30";
+          ctx.beginPath(); ctx.arc(x + w * 0.15, y + h * 0.75, Math.max(2, w * 0.05), 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x + w * 0.80, y + h * 0.25, Math.max(2, w * 0.06), 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#5a8a40";
+          ctx.beginPath(); ctx.arc(x + w * 0.15, y + h * 0.75, Math.max(1, w * 0.025), 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(x + w * 0.80, y + h * 0.25, Math.max(1, w * 0.03), 0, Math.PI * 2); ctx.fill();
+          drawTinyFlower(ctx, x + w * 0.45, y + h * 0.50, Math.max(1.5, w * 0.045), "#ffffff");
+          drawTinyFlower(ctx, x + w * 0.65, y + h * 0.85, Math.max(1.3, w * 0.040), "#ffd040");
+          break;
+        case 6: // Fissuras com trepadeiras (vines verdes)
+          ctx.strokeStyle = "#4a8a3a";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x + w * vx, y);
+          ctx.lineTo(x + w * (vx + 0.05), y + h * 0.4);
+          ctx.lineTo(x + w * vx, y + h * 0.6);
+          ctx.lineTo(x + w * (vx + 0.05), y + h);
+          ctx.moveTo(x, y + h * vy);
+          ctx.lineTo(x + w * 0.3, y + h * (vy + 0.02));
+          ctx.lineTo(x + w * 0.6, y + h * (vy - 0.02));
+          ctx.lineTo(x + w, y + h * (vy + 0.05));
+          ctx.stroke();
+          ctx.fillStyle = "#5a9a4a";
+          ctx.beginPath(); ctx.ellipse(x + w * (vx + 0.05), y + h * 0.4, 1.5, 1, 0.4, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.ellipse(x + w * 0.3, y + h * (vy + 0.02), 1.5, 1, -0.3, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.ellipse(x + w * 0.6, y + h * (vy - 0.02), 1.5, 1, 0.3, 0, Math.PI * 2); ctx.fill();
+          break;
+      }
+      // Edge highlight + shadow (mantém o mesmo acabamento em todos os padrões)
       ctx.fillStyle = "rgba(160,160,170,0.4)";
       ctx.fillRect(x, y, w, 1.5);
       ctx.fillRect(x, y, 1.5, h);
-      // sombra
       ctx.fillStyle = "rgba(20,20,25,0.5)";
       ctx.fillRect(x, y + h - 1.5, w, 1.5);
       ctx.fillRect(x + w - 1.5, y, 1.5, h);
@@ -433,19 +530,76 @@
       ctx.fillStyle = "rgba(255,255,255,0.5)";
       ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.4, 0, Math.PI * 2); ctx.fill();
     },
-    // ball-comet: bola azul-escura com núcleo brilhante (cometa)
-    "ball-comet": function (ctx, x, y, r) {
-      // glow azul
-      ctx.fillStyle = "rgba(100,180,255,0.2)";
-      ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.fill();
-      // corpo azul-escuro
-      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, "#c0e0ff"); g.addColorStop(0.4, "#4080c0"); g.addColorStop(1, "#102040");
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-      // núcleo brilhante
-      ctx.fillStyle = "rgba(220,240,255,0.7)";
-      ctx.beginPath(); ctx.arc(x - r * 0.2, y - r * 0.2, r * 0.35, 0, Math.PI * 2); ctx.fill();
+    // ball-comet: ovo translúcido com girino dentro (substitui o antigo cometa)
+    // Casca semi-transparente (oval, mais alto que largo), girino que se mexe com t.
+    "ball-comet": function (ctx, x, y, r, t) {
+      // t é opcional: undefined em jogo → usa performance.now() (animado);
+      // passado como 0 no preview da loja → girino em posição default.
+      if (t === undefined) t = performance.now() / 1000;
+      const eggRX = r * 0.85, eggRY = r * 1.05;  // oval ligeiramente mais alto que largo
+      // ── Halo subtil à volta do ovo ──
+      ctx.fillStyle = "rgba(220,255,230,0.10)";
+      ctx.beginPath(); ctx.ellipse(x, y, eggRX + 2, eggRY + 2, 0, 0, Math.PI * 2); ctx.fill();
+      // ── Casca translúcida (gradiente pálido branco-verde iridescente) ──
+      const shell = ctx.createRadialGradient(x - r * 0.3, y - r * 0.35, 0, x, y, eggRY);
+      shell.addColorStop(0, "rgba(245,255,250,0.55)");
+      shell.addColorStop(0.5, "rgba(200,240,220,0.40)");
+      shell.addColorStop(1, "rgba(160,210,190,0.45)");
+      ctx.fillStyle = shell;
+      ctx.beginPath(); ctx.ellipse(x, y, eggRX, eggRY, 0, 0, Math.PI * 2); ctx.fill();
+      // ── Girino dentro do ovo (clipped à casca para não sair) ──
+      // Posição do girino: wobble subtil dentro do ovo usando t
+      const wobble = Math.sin(t * 2) * r * 0.12;
+      const headX = x + wobble;
+      const headY = y + Math.cos(t * 1.5) * r * 0.10 - r * 0.15;
+      const headR = r * 0.32;
+      const tailBaseX = headX;
+      const tailBaseY = headY + headR * 0.8;
+      const tailEndX = headX + Math.sin(t * 6) * r * 0.15;
+      const tailEndY = headY + r * 0.55;
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(x, y, eggRX * 0.92, eggRY * 0.92, 0, 0, Math.PI * 2);
+      ctx.clip();
+      // Cauda do girino (curva bezier com wiggle)
+      ctx.strokeStyle = "#2a3038";
+      ctx.lineWidth = Math.max(1, r * 0.10);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(tailBaseX, tailBaseY);
+      const wiggle1 = Math.sin(t * 5) * r * 0.10;
+      const wiggle2 = Math.sin(t * 5 + 1) * r * 0.12;
+      ctx.bezierCurveTo(
+        tailBaseX + wiggle1, tailBaseY + r * 0.18,
+        tailEndX - wiggle2, tailEndY - r * 0.15,
+        tailEndX, tailEndY
+      );
+      ctx.stroke();
+      // Cabeça do girino (redonda, escura, com gradiente)
+      const headGrad = ctx.createRadialGradient(
+        headX - headR * 0.3, headY - headR * 0.3, 0,
+        headX, headY, headR
+      );
+      headGrad.addColorStop(0, "#3a4048");
+      headGrad.addColorStop(0.7, "#1a2028");
+      headGrad.addColorStop(1, "#0a1018");
+      ctx.fillStyle = headGrad;
+      ctx.beginPath(); ctx.arc(headX, headY, headR, 0, Math.PI * 2); ctx.fill();
+      // Olho do girino (ponto brilhante)
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.beginPath(); ctx.arc(headX + headR * 0.3, headY - headR * 0.2, headR * 0.15, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#000";
+      ctx.beginPath(); ctx.arc(headX + headR * 0.35, headY - headR * 0.2, headR * 0.07, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();  // remove clip
+      // ── Brilho specular na casca (mostra 3D) ──
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      ctx.beginPath();
+      ctx.ellipse(x - r * 0.35, y - r * 0.45, r * 0.18, r * 0.10, -0.4, 0, Math.PI * 2);
+      ctx.fill();
+      // ── Contorno subtil do ovo ──
+      ctx.strokeStyle = "rgba(200,230,220,0.45)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.ellipse(x, y, eggRX, eggRY, 0, 0, Math.PI * 2); ctx.stroke();
     },
     "ball-fire": function (ctx, x, y, r, t) {
       // Fireball — bola de fogo com chamas dinâmicas (Tier 5)
@@ -626,23 +780,54 @@
       ctx.fillStyle = laserActive ? "#ff4040" : "#3fb8d4";
       ctx.fillRect(x + w / 2 - 10, y + 3, 20, h - 6);
     },
-    // pad-iron: barra de ferro forjado — escuro com brilho metálico
-    "pad-iron": function (ctx, x, y, w, h, laserActive) {
-      ctx.fillStyle = vgrad(ctx, x, y, w, h, "#4a4a52", "#2a2a30");
+    // pad-iron (agora STONE): plataforma de pedra com musgo e flores (redesenhado)
+    // Mesma cor base que brick-stone. Center strip é pedra mais escura (não cyan/vermelho).
+    // hitTime (recente) → glow subtil de pedra (não flash neon).
+    "pad-iron": function (ctx, x, y, w, h, laserActive, hitTime) {
+      const now = Date.now();
+      const hitAge = hitTime ? (now - hitTime) : 9999;
+      const hit = hitAge < 300 ? (1 - hitAge / 300) : 0;  // 1=just hit, 0=no hit
+      // Base: gradiente de pedra (igual ao brick-stone)
+      ctx.fillStyle = vgrad(ctx, x, y, w, h, "#707078", "#48484e");
       ctx.fillRect(x, y, w, h);
-      // rebites (pontos metálicos)
-      ctx.fillStyle = "#6a6a72";
-      ctx.fillRect(x + 5, y + h / 2 - 1.5, 3, 3);
-      ctx.fillRect(x + w - 8, y + h / 2 - 1.5, 3, 3);
-      // highlight superior
-      ctx.fillStyle = "rgba(120,120,130,0.5)";
+      // Textura de pedra: fissuras/cracks
+      ctx.strokeStyle = "rgba(40,40,45,0.4)";
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(x + w * 0.20, y); ctx.lineTo(x + w * 0.25, y + h);
+      ctx.moveTo(x, y + h * 0.45); ctx.lineTo(x + w * 0.45, y + h * 0.48);
+      ctx.moveTo(x + w * 0.75, y); ctx.lineTo(x + w * 0.72, y + h);
+      ctx.moveTo(x + w * 0.55, y + h * 0.50); ctx.lineTo(x + w, y + h * 0.46);
+      ctx.stroke();
+      // Patches de musgo (tufos verde)
+      ctx.fillStyle = "#3a6a30";
+      ctx.beginPath(); ctx.arc(x + w * 0.12, y + h * 0.30, Math.max(1.5, h * 0.10), 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + w * 0.88, y + h * 0.70, Math.max(1.5, h * 0.12), 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#5a8a40";
+      ctx.beginPath(); ctx.arc(x + w * 0.12, y + h * 0.30, Math.max(0.8, h * 0.05), 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + w * 0.88, y + h * 0.70, Math.max(0.8, h * 0.06), 0, Math.PI * 2); ctx.fill();
+      // 1-2 flores pequenas (vermelho + amarelo)
+      drawTinyFlower(ctx, x + w * 0.30, y + h * 0.75, Math.max(1.2, h * 0.08), "#e84040");
+      drawTinyFlower(ctx, x + w * 0.70, y + h * 0.25, Math.max(1.2, h * 0.08), "#ffd040");
+      // Highlight + shadow edges (igual a brick-stone)
+      ctx.fillStyle = "rgba(160,160,170,0.4)";
       ctx.fillRect(x, y, w, 1.5);
-      // sombra inferior
-      ctx.fillStyle = "rgba(10,10,15,0.6)";
+      ctx.fillRect(x, y, 1.5, h);
+      ctx.fillStyle = "rgba(20,20,25,0.5)";
       ctx.fillRect(x, y + h - 1.5, w, 1.5);
-      // center
-      ctx.fillStyle = laserActive ? "#ff4040" : "#3a3a42";
+      ctx.fillRect(x + w - 1.5, y, 1.5, h);
+      // Center strip — pedra mais escura (não cyan/vermelho como ferro antigo)
+      const centerCol = laserActive ? "#ff4040" : "#5a5a62";
+      ctx.fillStyle = centerCol;
       ctx.fillRect(x + w / 2 - 10, y + 3, 20, h - 6);
+      // Hit glow (subtle stone glow — não flash neon)
+      if (hit > 0) {
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.fillStyle = "rgba(200,180,140," + (hit * 0.35).toFixed(2) + ")";
+        ctx.fillRect(x, y, w, h);
+        ctx.restore();
+      }
     },
     "pad-chrome": function (ctx, x, y, w, h, laserActive) {
       // Chrome — metal polido com reflexos dinâmicos (Tier 2)
@@ -858,28 +1043,189 @@
       for (let y = 0; y <= h; y += 32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
     },
     "bg-arcade": function (ctx, w, h, t) {
-      // CRT Arcade — fundo preto com scanlines subtis e glow verde/ciano
-      ctx.fillStyle = "#000005";
-      ctx.fillRect(0, 0, w, h);
-      // Scanlines horizontais (efeito CRT)
-      ctx.fillStyle = "rgba(0,255,200,0.03)";
-      for (let y = 0; y < h; y += 2) {
-        ctx.fillRect(0, y, w, 1);
+      // River Meadow — cena da natureza animada (substitui o antigo bg-arcade CRT).
+      // Céu azul claro + sol pulsante + nuvens a derivar + colinas verdes +
+      // rio com ondulações/cintilações + relva com flores + casa de pedra +
+      // rochas junto ao rio + patches de musgo. Performance ~30 draw calls.
+      const horizonY = h * 0.58;
+      const riverTop = h * 0.62;
+      const riverH = h * 0.12;
+      const riverBot = riverTop + riverH;
+      const grassTop = riverBot;
+      // ── Céu (gradiente azul claro) ──
+      const sky = ctx.createLinearGradient(0, 0, 0, horizonY);
+      sky.addColorStop(0, "#87CEEB");
+      sky.addColorStop(1, "#B0E0E6");
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, w, horizonY);
+      // ── Sol (canto superior direito, pulsante) ──
+      const sunX = w * 0.85, sunY = h * 0.15, sunR = Math.max(14, h * 0.06);
+      const sunPulse = 0.85 + 0.15 * Math.sin(t * 1.5);
+      const halo = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR * 3);
+      halo.addColorStop(0, "rgba(255,240,150," + (0.35 * sunPulse).toFixed(2) + ")");
+      halo.addColorStop(0.4, "rgba(255,220,120," + (0.15 * sunPulse).toFixed(2) + ")");
+      halo.addColorStop(1, "rgba(255,220,120,0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath(); ctx.arc(sunX, sunY, sunR * 3, 0, Math.PI * 2); ctx.fill();
+      const sun = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR);
+      sun.addColorStop(0, "#fff8c0"); sun.addColorStop(0.6, "#ffe070"); sun.addColorStop(1, "#ffc030");
+      ctx.fillStyle = sun;
+      ctx.beginPath(); ctx.arc(sunX, sunY, sunR * sunPulse, 0, Math.PI * 2); ctx.fill();
+      // ── Nuvens brancas a derivar (4, tamanhos/velocidades diferentes) ──
+      function drawCloud(cx, cy, scale) {
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.beginPath();
+        ctx.arc(cx, cy, 12 * scale, 0, Math.PI * 2);
+        ctx.arc(cx + 14 * scale, cy + 2 * scale, 15 * scale, 0, Math.PI * 2);
+        ctx.arc(cx + 28 * scale, cy, 11 * scale, 0, Math.PI * 2);
+        ctx.arc(cx + 14 * scale, cy - 6 * scale, 10 * scale, 0, Math.PI * 2);
+        ctx.fill();
       }
-      // Glow canto superior esquerdo (como um CRT aceso)
-      const glow = ctx.createRadialGradient(w * 0.3, h * 0.2, 0, w * 0.3, h * 0.2, w * 0.6);
-      glow.addColorStop(0, "rgba(0,200,180,0.06)");
-      glow.addColorStop(1, "rgba(0,200,180,0)");
-      ctx.fillStyle = glow;
-      ctx.fillRect(0, 0, w, h);
-      // Linha de scan brilhante que se move (efeito CRT refresh)
-      const scanY = (t * 80) % (h + 40) - 20;
-      const scanGrad = ctx.createLinearGradient(0, scanY - 10, 0, scanY + 10);
-      scanGrad.addColorStop(0, "rgba(0,255,200,0)");
-      scanGrad.addColorStop(0.5, "rgba(0,255,200,0.04)");
-      scanGrad.addColorStop(1, "rgba(0,255,200,0)");
-      ctx.fillStyle = scanGrad;
-      ctx.fillRect(0, scanY - 10, w, 20);
+      const cloudData = [
+        { y: h * 0.12, sp: 6, sc: 1.0, off: 0 },
+        { y: h * 0.22, sp: 4, sc: 0.75, off: 200 },
+        { y: h * 0.30, sp: 8, sc: 1.15, off: 400 },
+        { y: h * 0.16, sp: 5, sc: 0.6, off: 600 },
+      ];
+      cloudData.forEach(function (c) {
+        const cx = ((t * c.sp + c.off) % (w + 160)) - 80;
+        drawCloud(cx, c.y, c.sc);
+      });
+      // ── Colinas verde-escuras (silhuetas onduladas, 2 camadas) ──
+      ctx.fillStyle = "#3a6a3a";
+      ctx.beginPath();
+      ctx.moveTo(0, horizonY);
+      for (let hx = 0; hx <= w; hx += 8) {
+        const yy = horizonY - Math.sin(hx * 0.012) * 14 - Math.sin(hx * 0.025) * 8;
+        ctx.lineTo(hx, yy);
+      }
+      ctx.lineTo(w, horizonY + 4); ctx.lineTo(0, horizonY + 4);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "#4a8a4a";
+      ctx.beginPath();
+      ctx.moveTo(0, horizonY);
+      for (let hx = 0; hx <= w; hx += 8) {
+        const yy = horizonY - Math.sin(hx * 0.018 + 1.2) * 10 - Math.sin(hx * 0.035 + 0.5) * 6;
+        ctx.lineTo(hx, yy);
+      }
+      ctx.lineTo(w, horizonY + 4); ctx.lineTo(0, horizonY + 4);
+      ctx.closePath(); ctx.fill();
+      // ── Rio (banda horizontal com ondulações + cintilações) ──
+      const river = ctx.createLinearGradient(0, riverTop, 0, riverBot);
+      river.addColorStop(0, "#3a8ac8");
+      river.addColorStop(0.5, "#2a6aa8");
+      river.addColorStop(1, "#1a5088");
+      ctx.fillStyle = river;
+      ctx.fillRect(0, riverTop, w, riverH);
+      ctx.strokeStyle = "rgba(220,240,255,0.35)";
+      ctx.lineWidth = 1;
+      for (let row = 0; row < 4; row++) {
+        const wy = riverTop + 3 + row * (riverH / 5);
+        ctx.beginPath();
+        for (let rx = 0; rx <= w; rx += 4) {
+          const yy = wy + Math.sin(rx * 0.04 + t * 1.5 + row) * 1.5;
+          if (rx === 0) ctx.moveTo(rx, yy); else ctx.lineTo(rx, yy);
+        }
+        ctx.stroke();
+      }
+      // Cintilações (pontos brilhantes que piscam)
+      for (let i = 0; i < 18; i++) {
+        const sx = (i * 67 + Math.sin(t + i) * 10) % w;
+        const sy = riverTop + (i * 37) % riverH;
+        const sp = 0.5 + 0.5 * Math.sin(t * 4 + i * 1.7);
+        if (sp > 0.55) {
+          ctx.fillStyle = "rgba(255,255,255," + (sp * 0.6).toFixed(2) + ")";
+          ctx.fillRect(sx, sy, 1.5, 1);
+        }
+      }
+      // ── Relva (verde, com flores pequenas) ──
+      const grass = ctx.createLinearGradient(0, grassTop, 0, h);
+      grass.addColorStop(0, "#4d9a3a");
+      grass.addColorStop(1, "#2f6a25");
+      ctx.fillStyle = grass;
+      ctx.fillRect(0, grassTop, w, h - grassTop);
+      // Textura de relva (linha senoidal subtil no topo)
+      ctx.fillStyle = "#5aaa45";
+      for (let gx = 0; gx < w; gx += 3) {
+        const yy = grassTop + Math.sin(gx * 0.2 + t * 0.5) * 0.6;
+        ctx.fillRect(gx, yy, 2, 1);
+      }
+      // Flores (4 cores, balançam ligeiramente)
+      const flowerColors = ["#e84040", "#ffd040", "#ffffff", "#a060c0"];
+      for (let i = 0; i < 24; i++) {
+        const fx = (i * 73 + 13) % w;
+        const fy = grassTop + 6 + ((i * 29) % Math.max(1, h - grassTop - 8));
+        const sway = Math.sin(t * 1.2 + i) * 1.2;
+        const col = flowerColors[i % flowerColors.length];
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(fx + sway, fy - 1, 1.4, 0, Math.PI * 2);
+        ctx.arc(fx + sway + 1.5, fy, 1.4, 0, Math.PI * 2);
+        ctx.arc(fx + sway - 1.5, fy, 1.4, 0, Math.PI * 2);
+        ctx.arc(fx + sway, fy + 1, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#ffe040";
+        ctx.fillRect(fx + sway - 0.5, fy - 0.5, 1, 1);
+      }
+      // ── Casa de pedra (lado direito da relva) ──
+      const houseW = Math.max(40, w * 0.13), houseH = Math.max(34, h * 0.16);
+      const houseX = w * 0.70 - houseW / 2;
+      const houseY = grassTop + (h - grassTop) * 0.45 - houseH / 2;
+      // Telhado (castanho, triângulo)
+      ctx.fillStyle = "#6a3818";
+      ctx.beginPath();
+      ctx.moveTo(houseX - 4, houseY + houseH * 0.45);
+      ctx.lineTo(houseX + houseW / 2, houseY - 2);
+      ctx.lineTo(houseX + houseW + 4, houseY + houseH * 0.45);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = "rgba(255,200,150,0.3)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(houseX - 4, houseY + houseH * 0.45);
+      ctx.lineTo(houseX + houseW / 2, houseY - 2);
+      ctx.stroke();
+      // Paredes de pedra (cinzento)
+      ctx.fillStyle = "#7a7a82";
+      ctx.fillRect(houseX, houseY + houseH * 0.45, houseW, houseH * 0.55);
+      // Textura de pedra (linhas subtis)
+      ctx.strokeStyle = "rgba(40,40,45,0.4)";
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(houseX, houseY + houseH * 0.65); ctx.lineTo(houseX + houseW, houseY + houseH * 0.65);
+      ctx.moveTo(houseX + houseW * 0.5, houseY + houseH * 0.45); ctx.lineTo(houseX + houseW * 0.5, houseY + houseH * 0.65);
+      ctx.moveTo(houseX + houseW * 0.25, houseY + houseH * 0.65); ctx.lineTo(houseX + houseW * 0.25, houseY + houseH);
+      ctx.moveTo(houseX + houseW * 0.75, houseY + houseH * 0.65); ctx.lineTo(houseX + houseW * 0.75, houseY + houseH);
+      ctx.stroke();
+      // Janela com luz quente (pisca ligeiramente)
+      const winPulse = 0.7 + 0.3 * Math.sin(t * 2.5);
+      ctx.fillStyle = "rgba(255,200,80," + winPulse.toFixed(2) + ")";
+      ctx.fillRect(houseX + houseW * 0.35, houseY + houseH * 0.55, houseW * 0.3, houseH * 0.18);
+      ctx.strokeStyle = "#3a2810";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(houseX + houseW * 0.35, houseY + houseH * 0.55, houseW * 0.3, houseH * 0.18);
+      ctx.beginPath();
+      ctx.moveTo(houseX + houseW * 0.5, houseY + houseH * 0.55); ctx.lineTo(houseX + houseW * 0.5, houseY + houseH * 0.73);
+      ctx.moveTo(houseX + houseW * 0.35, houseY + houseH * 0.64); ctx.lineTo(houseX + houseW * 0.65, houseY + houseH * 0.64);
+      ctx.stroke();
+      // ── Rochas junto ao rio (margem esquerda + direita) ──
+      function drawRock(rx, ry, rs) {
+        ctx.fillStyle = "#6a6a72";
+        ctx.beginPath(); ctx.ellipse(rx, ry, rs, rs * 0.7, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(160,160,170,0.5)";
+        ctx.beginPath(); ctx.ellipse(rx - rs * 0.3, ry - rs * 0.3, rs * 0.4, rs * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(20,20,25,0.4)";
+        ctx.beginPath(); ctx.ellipse(rx, ry + rs * 0.4, rs * 0.8, rs * 0.15, 0, 0, Math.PI * 2); ctx.fill();
+      }
+      drawRock(w * 0.08, riverBot - 2, Math.max(6, w * 0.018));
+      drawRock(w * 0.16, riverBot + 1, Math.max(4, w * 0.012));
+      drawRock(w * 0.24, riverBot - 1, Math.max(5, w * 0.015));
+      drawRock(w * 0.50, riverBot + 1, Math.max(6, w * 0.016));
+      drawRock(w * 0.58, riverBot - 1, Math.max(4, w * 0.012));
+      // ── Patches de musgo (verde-escuros nas rochas) ──
+      ctx.fillStyle = "rgba(40,90,30,0.7)";
+      ctx.beginPath(); ctx.ellipse(w * 0.08, riverBot - 4, Math.max(5, w * 0.014), 3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(w * 0.24, riverBot - 4, Math.max(4, w * 0.010), 2.5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(w * 0.50, riverBot - 3, Math.max(5, w * 0.012), 2.5, 0, 0, Math.PI * 2); ctx.fill();
     },
     "bg-starfield": function (ctx, w, h, t) {
       ctx.fillStyle = "#000005";
@@ -1247,6 +1593,124 @@
       if (lightningAlpha > 0) {
         ctx.fillStyle = "rgba(150,180,255," + lightningAlpha.toFixed(3) + ")";
         ctx.fillRect(0, 0, w, horizonY);
+      }
+    },
+    "bg-crystal": function (ctx, w, h, t) {
+      // Crystal Cave — caverna mística com cristais gigantes (Tier 5).
+      // Cristais facetados (5 cores diferentes) pulsam com luz interior,
+      // feixes de luz refração arco-íris das pontas, partículas a subir,
+      // brilho quente ao fundo, estalactites no teto.
+      // ── Paredes da caverna (gradiente roxo-escuro radial) ──
+      const cave = ctx.createRadialGradient(w * 0.5, h * 0.55, w * 0.1, w * 0.5, h * 0.5, Math.max(w, h) * 0.75);
+      cave.addColorStop(0, "#1a0830");
+      cave.addColorStop(0.5, "#0a0418");
+      cave.addColorStop(1, "#02010a");
+      ctx.fillStyle = cave;
+      ctx.fillRect(0, 0, w, h);
+      // ── Brilho quente ao fundo da caverna (laranja/âmbar pulsante) ──
+      const deepPulse = 0.7 + 0.3 * Math.sin(t * 1.2);
+      const deepGlow = ctx.createRadialGradient(w * 0.5, h * 0.85, 0, w * 0.5, h * 0.85, w * 0.5);
+      deepGlow.addColorStop(0, "rgba(255,140,40," + (0.20 * deepPulse).toFixed(2) + ")");
+      deepGlow.addColorStop(0.5, "rgba(180,60,20," + (0.08 * deepPulse).toFixed(2) + ")");
+      deepGlow.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = deepGlow;
+      ctx.fillRect(0, 0, w, h);
+      // ── Estalactites no teto (14 triangulares, determinísticas) ──
+      ctx.fillStyle = "#0a0418";
+      for (let i = 0; i < 14; i++) {
+        const sx = (i * w / 14 + (i * 37) % 20) % w;
+        const sh = 12 + (i * 13) % 28;
+        ctx.beginPath();
+        ctx.moveTo(sx - 3, 0);
+        ctx.lineTo(sx + 3, 0);
+        ctx.lineTo(sx, sh);
+        ctx.closePath(); ctx.fill();
+      }
+      // ── Cristais gigantes (7, cores diferentes) ──
+      // dir = -1 → cresce do chão (para cima); dir = 1 → cresce do teto (para baixo)
+      const crystals = [
+        { x: 0.10, y: 0.95, dir: -1, len: 0.32, cw: 0.06, c1: "#d0a0ff", c2: "#8040c0", c3: "#400080" }, // purple floor
+        { x: 0.22, y: 0.00, dir:  1, len: 0.22, cw: 0.05, c1: "#a0f0e0", c2: "#40c0a0", c3: "#108070" }, // cyan ceiling
+        { x: 0.36, y: 0.96, dir: -1, len: 0.38, cw: 0.07, c1: "#c0f0a0", c2: "#60c040", c3: "#208020" }, // green floor
+        { x: 0.50, y: 0.00, dir:  1, len: 0.18, cw: 0.04, c1: "#fff0c0", c2: "#ffc040", c3: "#a06010" }, // amber ceiling
+        { x: 0.62, y: 0.95, dir: -1, len: 0.28, cw: 0.06, c1: "#ffffff", c2: "#c0c0e0", c3: "#6060a0" }, // white floor
+        { x: 0.76, y: 0.00, dir:  1, len: 0.26, cw: 0.055, c1: "#e0a0ff", c2: "#9040d0", c3: "#400070" }, // purple ceiling
+        { x: 0.88, y: 0.96, dir: -1, len: 0.30, cw: 0.06, c1: "#a0e0ff", c2: "#4080c0", c3: "#104070" }, // cyan floor
+      ];
+      const pulse = 0.5 + 0.5 * Math.sin(t * 2);
+      crystals.forEach(function (cr, idx) {
+        const cx = cr.x * w;
+        const baseY = cr.y * h;
+        const halfW = cr.cw * w * 0.5;
+        const tipY = baseY + cr.dir * cr.len * h;
+        const midY = baseY + cr.dir * cr.len * h * 0.3;
+        // ── Luz interior pulsante (radial na ponta do cristal) ──
+        const glow = ctx.createRadialGradient(cx, tipY, 0, cx, tipY, halfW * 2.8);
+        glow.addColorStop(0, "rgba(255,255,255," + (0.30 * pulse).toFixed(2) + ")");
+        glow.addColorStop(0.4, cr.c1);
+        glow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath(); ctx.arc(cx, tipY, halfW * 2.8, 0, Math.PI * 2); ctx.fill();
+        // ── Cristal facetado (polígono com gradiente) ──
+        const grad = ctx.createLinearGradient(cx - halfW, baseY, cx + halfW, tipY);
+        grad.addColorStop(0, cr.c3);
+        grad.addColorStop(0.4, cr.c2);
+        grad.addColorStop(0.7, cr.c1);
+        grad.addColorStop(1, "#ffffff");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(cx - halfW, baseY);
+        ctx.lineTo(cx - halfW * 0.4, midY);
+        ctx.lineTo(cx, tipY);
+        ctx.lineTo(cx + halfW * 0.4, midY);
+        ctx.lineTo(cx + halfW, baseY);
+        ctx.closePath(); ctx.fill();
+        // ── Linhas de faceta brilhantes (contornos) ──
+        ctx.strokeStyle = "rgba(255,255,255," + (0.3 + pulse * 0.3).toFixed(2) + ")";
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.moveTo(cx - halfW, baseY); ctx.lineTo(cx, tipY);
+        ctx.moveTo(cx + halfW, baseY); ctx.lineTo(cx, tipY);
+        ctx.moveTo(cx - halfW * 0.4, midY); ctx.lineTo(cx + halfW * 0.4, midY);
+        ctx.stroke();
+      });
+      // ── Feixes de luz refração (arco-íris das pontas, rodam com t) ──
+      ctx.globalCompositeOperation = "lighter";
+      crystals.forEach(function (cr, idx) {
+        const cx = cr.x * w;
+        const baseY = cr.y * h;
+        const tipY = baseY + cr.dir * cr.len * h;
+        for (let b = 0; b < 2; b++) {
+          const ang = t * 0.7 + idx * 1.3 + b * Math.PI;
+          const len = w * 0.4;
+          const ex = cx + Math.cos(ang) * len;
+          const ey = tipY + Math.sin(ang) * len;
+          const beamGrad = ctx.createLinearGradient(cx, tipY, ex, ey);
+          const hue = (t * 50 + idx * 60 + b * 120) % 360;
+          beamGrad.addColorStop(0, "hsla(" + hue + ",100%,70%,0.40)");
+          beamGrad.addColorStop(0.6, "hsla(" + hue + ",100%,70%,0.12)");
+          beamGrad.addColorStop(1, "hsla(" + hue + ",100%,70%,0)");
+          ctx.strokeStyle = beamGrad;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(cx, tipY); ctx.lineTo(ex, ey);
+          ctx.stroke();
+        }
+      });
+      ctx.globalCompositeOperation = "source-over";
+      // ── Partículas de cristal a subir (sparkles coloridos) ──
+      for (let i = 0; i < 30; i++) {
+        const px = (i * 89 + 13) % w;
+        const py = h - ((t * (15 + i % 5 * 4) + i * 37) % (h + 20));
+        const ps = 0.8 + (i % 3) * 0.6;
+        const a = 0.3 + 0.4 * Math.sin(t * 3 + i);
+        const hue = (i * 47 + t * 30) % 360;
+        ctx.fillStyle = "hsla(" + hue + ",80%,70%," + a.toFixed(2) + ")";
+        ctx.fillRect(px, py, ps, ps);
+        if (a > 0.5) {
+          ctx.fillStyle = "rgba(255,255,255," + (a * 0.4).toFixed(2) + ")";
+          ctx.fillRect(px - 0.5, py - 0.5, ps + 1, ps + 1);
+        }
       }
     },
   };
