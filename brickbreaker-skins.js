@@ -58,7 +58,7 @@
       { id: "bg-matrix",    name: "Matrix Rain",   tier: 2, desc: "Digital rain" },
       { id: "bg-ocean",     name: "Deep Ocean",    tier: 3, desc: "Underwater abyss" },
       { id: "bg-aurora",    name: "Aurora",        tier: 4, desc: "Boreal lights" },
-      { id: "bg-crystal",   name: "Steampunk Gears", tier: 5, desc: "Brass machinery" },
+      { id: "bg-crystal",   name: "Crystal Sanctum", tier: 5, desc: "Living geode" },
       { id: "bg-nebula",    name: "Neon Metropolis", tier: 6, desc: "Cyberpunk city" },
     ],
   };
@@ -1052,27 +1052,50 @@
       ctx.fillStyle = sky;
       ctx.fillRect(0, 0, w, h);
 
-      // ── Nuvens fofas (círculos sobrepostos, sem pixel arrastando) ──
+      // ── Nuvens fofas (silhueta bezier suave, UM só path) ──
+      // IMPORTANTE: antes usávamos 7 círculos sobrepostos num só beginPath/fill.
+      // Com imageSmoothingEnabled=false (game canvas pixel-art), os arcos ficavam
+      // aliased e criavam "buracos" escuros nos pontos de interseção → pontos
+      // escuros no meio das nuvens. Agora usamos UMA silhueta bezier fechada,
+      // preenchida uma só vez — sem interseções de arcos, sem buracos, sem pontos.
+      // Além disso, ativamos imageSmoothingEnabled temporariamente para as nuvens
+      // ficarem suaves mesmo no canvas pixel-art do jogo.
       function drawFluffyCloud(cx, cy, scale) {
-        // Sombra cinza-azulada no fundo da nuvem
-        ctx.fillStyle = "rgba(140,160,180,0.20)";
+        const s = scale;
+        const prevSmoothing = ctx.imageSmoothingEnabled;
+        ctx.imageSmoothingEnabled = true;
+        // ── Sombra cinza-azulada (offset baixo, silhueta ligeiramente maior) ──
+        ctx.fillStyle = "rgba(120,140,165,0.22)";
         ctx.beginPath();
-        ctx.arc(cx + 8 * scale, cy + 9 * scale, 12 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 24 * scale, cy + 11 * scale, 14 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 40 * scale, cy + 9 * scale, 12 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 56 * scale, cy + 10 * scale, 10 * scale, 0, Math.PI * 2);
+        ctx.moveTo(cx + 2 * s, cy + 11 * s);
+        ctx.bezierCurveTo(cx + 0 * s, cy + 14 * s, cx + 14 * s, cy + 16 * s, cx + 22 * s, cy + 14 * s);
+        ctx.bezierCurveTo(cx + 32 * s, cy + 18 * s, cx + 46 * s, cy + 18 * s, cx + 54 * s, cy + 13 * s);
+        ctx.bezierCurveTo(cx + 66 * s, cy + 14 * s, cx + 74 * s, cy + 8 * s, cx + 70 * s, cy + 2 * s);
+        ctx.bezierCurveTo(cx + 74 * s, cy - 6 * s, cx + 66 * s, cy - 12 * s, cx + 58 * s, cy - 8 * s);
+        ctx.bezierCurveTo(cx + 56 * s, cy - 16 * s, cx + 44 * s, cy - 20 * s, cx + 36 * s, cy - 12 * s);
+        ctx.bezierCurveTo(cx + 30 * s, cy - 22 * s, cx + 16 * s, cy - 22 * s, cx + 10 * s, cy - 12 * s);
+        ctx.bezierCurveTo(cx + 0 * s, cy - 16 * s, cx - 6 * s, cy - 6 * s, cx + 2 * s, cy + 11 * s);
+        ctx.closePath();
         ctx.fill();
-        // Corpo branco fofo (7 círculos)
-        ctx.fillStyle = "rgba(255,255,255,0.92)";
+        // ── Corpo branco (silhueta bezier, um só path, sem overlap) ──
+        ctx.fillStyle = "rgba(255,255,255,0.95)";
         ctx.beginPath();
-        ctx.arc(cx + 4 * scale, cy + 4 * scale, 9 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 16 * scale, cy - 2 * scale, 13 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 30 * scale, cy + 1 * scale, 15 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 44 * scale, cy - 1 * scale, 13 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 56 * scale, cy + 4 * scale, 10 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 12 * scale, cy + 6 * scale, 12 * scale, 0, Math.PI * 2);
-        ctx.arc(cx + 42 * scale, cy + 6 * scale, 12 * scale, 0, Math.PI * 2);
+        ctx.moveTo(cx + 4 * s, cy + 9 * s);
+        ctx.bezierCurveTo(cx + 2 * s, cy + 12 * s, cx + 14 * s, cy + 13 * s, cx + 22 * s, cy + 11 * s);
+        ctx.bezierCurveTo(cx + 32 * s, cy + 15 * s, cx + 44 * s, cy + 15 * s, cx + 52 * s, cy + 10 * s);
+        ctx.bezierCurveTo(cx + 62 * s, cy + 11 * s, cx + 70 * s, cy + 6 * s, cx + 66 * s, cy + 0 * s);
+        ctx.bezierCurveTo(cx + 70 * s, cy - 6 * s, cx + 62 * s, cy - 12 * s, cx + 54 * s, cy - 8 * s);
+        ctx.bezierCurveTo(cx + 52 * s, cy - 16 * s, cx + 40 * s, cy - 20 * s, cx + 32 * s, cy - 12 * s);
+        ctx.bezierCurveTo(cx + 26 * s, cy - 22 * s, cx + 14 * s, cy - 22 * s, cx + 8 * s, cy - 12 * s);
+        ctx.bezierCurveTo(cx - 2 * s, cy - 16 * s, cx - 6 * s, cy - 4 * s, cx + 4 * s, cy + 9 * s);
+        ctx.closePath();
         ctx.fill();
+        // ── Highlight brilhante no topo-esquerdo (elipse suave) ──
+        ctx.fillStyle = "rgba(255,255,255,0.55)";
+        ctx.beginPath();
+        ctx.ellipse(cx + 20 * s, cy - 6 * s, 12 * s, 4 * s, -0.25, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.imageSmoothingEnabled = prevSmoothing;
       }
 
       // 4 nuvens grandes com direções mistas.
@@ -1463,243 +1486,297 @@
       }
     },
     "bg-crystal": function (ctx, w, h, t) {
-      // Steampunk Gears — cena de máquinas a vapor com engrenagens de latão
-      // (substitui o antigo Crystal Cave). Tier 5 (mas com nível de detalhe
-      // equivalente ao Neon Metropolis tier 6). Muitos elementos animados:
-      //   • Fundo: gradiente castanho-sepia (interior de máquina antiga)
-      //   • 7 engrenagens gigantes de latão que rodam (velocidades/sentidos diferentes)
-      //     — cada uma com dentes (12-16), buraco central (donut), raios (4-6)
-      //   • rebites de latão espalhados pelo fundo (metal rebitado)
-      //   • vapor a subir do fundo (wisps semi-transparentes que sobem e dissipam)
-      //   • flicker de fornalha (luz quente que pisca vinda de baixo)
-      // ── Fundo: gradiente castanho-sepia ──
-      const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, "#1a1208");
-      bg.addColorStop(0.6, "#22180a");
-      bg.addColorStop(1, "#2a1a08");
+      // ════════════════════════════════════════════════════════════════════
+      //  CRYSTAL SANCTUM — caverna mágica de cristais gigantes (Tier 5)
+      //  Tema totalmente original: nenhum outro bg usa cristais/gemas.
+      //  Nível de detalhe equivalente ao Neon Metropolis (Tier 6):
+      //    • Fundo: gradiente radial roxo-índigo (interior de geode)
+      //    • Cristais silhueta ao fundo (parallax, escuros)
+      //    • Veios minerais pulsantes (linhas de luz magenta)
+      //    • 5 cristais gigantes facetados (ametista, esmeralda, quartzo, rubi)
+      //      — polígono com facetas internas, gradiente, highlights, glow pulsante
+      //    • Raios de luz divinos (god rays) a descer do topo
+      //    • Shardes de cristal flutuantes (rodam e sobem lentamente)
+      //    • Sparkles prismáticos (pontos que cintilam)
+      //    • Névoa do solo (roxo-magenta a derivar)
+      // ════════════════════════════════════════════════════════════════════
+      const prevSmoothing = ctx.imageSmoothingEnabled;
+      ctx.imageSmoothingEnabled = true;
+
+      // ── 1. Fundo: gradiente radial roxo-índigo (interior de geode) ──
+      const bg = ctx.createRadialGradient(w * 0.5, h * 0.55, 0, w * 0.5, h * 0.5, Math.max(w, h) * 0.75);
+      bg.addColorStop(0, "#2a1840");
+      bg.addColorStop(0.4, "#180a28");
+      bg.addColorStop(0.8, "#0a0418");
+      bg.addColorStop(1, "#04020a");
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, w, h);
 
-      // ── Rebites de latão (grade determinística com offset) ──
-      // Simulam placas de metal rebitadas — pequenos pontos brass no fundo.
-      const rivetCols = 8, rivetRows = 5;
-      for (let r = 0; r < rivetRows; r++) {
-        for (let c = 0; c < rivetCols; c++) {
-          const rx = (c + 0.5 + (r % 2) * 0.5) * (w / rivetCols);
-          const ry = (r + 0.5) * (h / rivetRows);
-          // base escura do rebite
-          ctx.fillStyle = "#3a2818";
-          ctx.beginPath(); ctx.arc(rx, ry, 2, 0, Math.PI * 2); ctx.fill();
-          // latão
-          ctx.fillStyle = "#8B7355";
-          ctx.beginPath(); ctx.arc(rx, ry, 1.5, 0, Math.PI * 2); ctx.fill();
-          // highlight (brilho metálico no canto superior-esquerdo)
-          ctx.fillStyle = "rgba(220,180,120,0.7)";
-          ctx.beginPath(); ctx.arc(rx - 0.4, ry - 0.4, 0.7, 0, Math.PI * 2); ctx.fill();
-        }
-      }
-
-      // ── Flicker de fornalha (luz quente vinda de baixo, pisca) ──
-      const flicker = 0.55 + 0.45 * (Math.sin(t * 8.3) * 0.6 + Math.sin(t * 3.7) * 0.4);
-      const furnace = ctx.createRadialGradient(w * 0.5, h * 1.05, 0, w * 0.5, h * 1.05, w * 0.65);
-      furnace.addColorStop(0, "rgba(255,120,30," + (0.28 * flicker).toFixed(3) + ")");
-      furnace.addColorStop(0.4, "rgba(200,70,15," + (0.13 * flicker).toFixed(3) + ")");
-      furnace.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = furnace;
-      ctx.fillRect(0, 0, w, h);
-
-      // ── Helper: desenha uma engrenagem de latão ──
-      // R = raio exterior (inclui dentes), teeth = nº de dentes, spokes = nº de raios
-      // rot = rotação atual (rad), tint = desvio de cor (0=brass, 1=mais cobre)
-      function drawGear(cx, cy, R, teeth, spokes, rot, tint) {
+      // ── 2. Cristais silhueta ao fundo (parallax, escuros) ──
+      // Formas triangulares longas a apontar para o centro, muito escuras.
+      const bgCrystals = [
+        { x: 0.08, y: 0.95, ang: -0.35, len: 0.42, wid: 0.10, col: "rgba(30,16,48,0.85)" },
+        { x: 0.22, y: 0.02, ang:  0.30, len: 0.38, wid: 0.09, col: "rgba(26,14,42,0.85)" },
+        { x: 0.78, y: 0.03, ang: -0.30, len: 0.40, wid: 0.10, col: "rgba(28,14,46,0.85)" },
+        { x: 0.93, y: 0.96, ang:  0.35, len: 0.44, wid: 0.11, col: "rgba(32,18,50,0.85)" },
+        { x: 0.50, y: 0.00, ang:  0.05, len: 0.30, wid: 0.08, col: "rgba(22,12,38,0.80)" },
+      ];
+      bgCrystals.forEach(function (c) {
+        const cx = c.x * w, cy = c.y * h;
+        const len = c.len * h, wid = c.wid * w;
         ctx.save();
         ctx.translate(cx, cy);
-        ctx.rotate(rot);
-        const baseR = R * 0.82;          // raio entre dentes
-        // ── Corpo da engrenagem com dentes (path) ──
+        ctx.rotate(c.ang);
+        ctx.fillStyle = c.col;
         ctx.beginPath();
-        for (let i = 0; i < teeth * 2; i++) {
-          const a = (i / (teeth * 2)) * Math.PI * 2;
-          const r = (i % 2 === 0) ? R : baseR;
-          const xx = Math.cos(a) * r, yy = Math.sin(a) * r;
-          if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
-        }
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-wid, len);
+        ctx.lineTo(wid, len);
         ctx.closePath();
-        // Gradiente brass com desvio de matiz (latão vs cobre)
-        const c1 = tint > 0.5 ? "#d8a070" : "#c8a080";
-        const c2 = tint > 0.5 ? "#a87045" : "#8B7355";
-        const c3 = tint > 0.5 ? "#6a4020" : "#5C4030";
-        const grad = ctx.createRadialGradient(-R * 0.3, -R * 0.3, 0, 0, 0, R);
-        grad.addColorStop(0, c1);
-        grad.addColorStop(0.45, c2);
-        grad.addColorStop(0.85, c3);
-        grad.addColorStop(1, "#2a1a08");
-        ctx.fillStyle = grad;
         ctx.fill();
-        ctx.strokeStyle = "rgba(30,18,6,0.7)";
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        // ── Buraco central grande (donut) — área interna escura ──
-        const innerR = R * 0.55;
+        ctx.restore();
+      });
+
+      // ── 3. Veios minerais pulsantes (linhas de luz magenta nas "paredes") ──
+      // Linhas quebradas que pulsam brilho com o tempo.
+      function drawVein(pts, baseAlpha, phase) {
+        const pulse = 0.5 + 0.5 * Math.sin(t * 1.8 + phase);
+        ctx.strokeStyle = "rgba(220,120,255," + (baseAlpha * (0.4 + pulse * 0.6)).toFixed(3) + ")";
+        ctx.lineWidth = 1.8;
         ctx.beginPath();
-        ctx.arc(0, 0, innerR, 0, Math.PI * 2);
-        const innerGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, innerR);
-        innerGrad.addColorStop(0, "#1a0e04");
-        innerGrad.addColorStop(1, "#2a1a08");
-        ctx.fillStyle = innerGrad;
-        ctx.fill();
-        // ── Raios (spokes) do núcleo central até ao anel interno ──
-        const hubR = R * 0.18;
-        for (let s = 0; s < spokes; s++) {
-          const a = (s / spokes) * Math.PI * 2;
-          ctx.save();
-          ctx.rotate(a);
-          // Raio: rectângulo estreito de latão
-          ctx.fillStyle = c2;
-          ctx.fillRect(-R * 0.05, hubR, R * 0.10, innerR - hubR);
-          // Highlight no topo do raio (brilho metálico)
-          ctx.fillStyle = "rgba(220,180,130,0.4)";
-          ctx.fillRect(-R * 0.05, hubR, R * 0.04, innerR - hubR);
-          ctx.restore();
+        ctx.moveTo(pts[0][0] * w, pts[0][1] * h);
+        for (let i = 1; i < pts.length; i++) {
+          ctx.lineTo(pts[i][0] * w, pts[i][1] * h);
         }
-        // ── Núcleo central (hub) com gradiente brass ──
+        ctx.stroke();
+        // Glow adicional no brilho máximo
+        ctx.strokeStyle = "rgba(255,180,255," + (baseAlpha * pulse * 0.4).toFixed(3) + ")";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+      drawVein([[0,0.15],[0.12,0.22],[0.08,0.40],[0.15,0.58],[0.06,0.78]], 0.5, 0.0);
+      drawVein([[1,0.10],[0.88,0.20],[0.92,0.38],[0.85,0.55],[0.94,0.75]], 0.5, 1.7);
+      drawVein([[0.30,1.0],[0.36,0.85],[0.30,0.70]], 0.4, 0.8);
+      drawVein([[0.70,1.0],[0.64,0.85],[0.72,0.68]], 0.4, 2.4);
+
+      // ── 4. Helper: desenha um cristal facetado gigante ──
+      // cx,cy = base (ponta grossa), len = comprimento, ang = inclinação (rad)
+      // wid = largura da base, cols = {edge, mid, dark, glow} cores, phase = fase do pulse
+      function drawCrystal(cx, cy, len, ang, wid, cols, phase) {
+        const pulse = 0.6 + 0.4 * Math.sin(t * 1.3 + phase);
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(ang);
+        // Ponta do cristal (topo afilado)
+        const tipX = 0, tipY = -len;
+        // Cantos da base
+        const blX = -wid, brX = wid, baseY = 0;
+        // ── Glow de fundo (halo pulsante atrás do cristal) ──
+        const glowR = len * 0.6;
+        const glow = ctx.createRadialGradient(0, -len * 0.5, 0, 0, -len * 0.5, glowR);
+        glow.addColorStop(0, cols.glow.replace("ALPHA", (0.35 * pulse).toFixed(3)));
+        glow.addColorStop(1, cols.glow.replace("ALPHA", "0"));
+        ctx.fillStyle = glow;
+        ctx.fillRect(-glowR, -len - glowR * 0.3, glowR * 2, len + glowR);
+        // ── Corpo principal do cristal (polígono) com gradiente ──
+        const bodyGrad = ctx.createLinearGradient(-wid, 0, wid, -len);
+        bodyGrad.addColorStop(0, cols.dark);
+        bodyGrad.addColorStop(0.3, cols.mid);
+        bodyGrad.addColorStop(0.6, cols.edge);
+        bodyGrad.addColorStop(1, cols.dark);
+        ctx.fillStyle = bodyGrad;
         ctx.beginPath();
-        ctx.arc(0, 0, hubR, 0, Math.PI * 2);
-        const hubGrad = ctx.createRadialGradient(-hubR * 0.3, -hubR * 0.3, 0, 0, 0, hubR);
-        hubGrad.addColorStop(0, c1);
-        hubGrad.addColorStop(0.7, c2);
-        hubGrad.addColorStop(1, c3);
-        ctx.fillStyle = hubGrad;
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(brX, baseY);
+        ctx.lineTo(blX, baseY);
+        ctx.closePath();
         ctx.fill();
-        ctx.strokeStyle = "rgba(30,18,6,0.6)";
-        ctx.lineWidth = 0.8;
-        ctx.stroke();
-        // ── Buraco do eixo (pequeno círculo escuro no centro do hub) ──
+        // ── Faceta central (linha do meio + face clara) ──
+        // Face esquerda (mais escura)
+        ctx.fillStyle = cols.dark;
         ctx.beginPath();
-        ctx.arc(0, 0, hubR * 0.38, 0, Math.PI * 2);
-        ctx.fillStyle = "#0a0602";
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(0, baseY);
+        ctx.lineTo(blX, baseY);
+        ctx.closePath();
         ctx.fill();
-        // ── Highlight metálico no corpo (arco brilhante no canto sup-esq) ──
-        ctx.strokeStyle = "rgba(255,230,180,0.35)";
-        ctx.lineWidth = 1.4;
+        // Face direita (mais clara, com brilho pulsante)
+        const faceGrad = ctx.createLinearGradient(0, tipY, wid, baseY);
+        faceGrad.addColorStop(0, cols.edge);
+        faceGrad.addColorStop(1, cols.mid);
+        ctx.fillStyle = faceGrad;
         ctx.beginPath();
-        ctx.arc(0, 0, R * 0.72, Math.PI * 1.05, Math.PI * 1.55);
-        ctx.stroke();
-        // ── Anel interno (linha decorativa entre dentes e buraco) ──
-        ctx.strokeStyle = "rgba(50,30,12,0.6)";
-        ctx.lineWidth = 0.8;
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(0, baseY);
+        ctx.lineTo(brX, baseY);
+        ctx.closePath();
+        ctx.fill();
+        // ── Linhas de faceta (contornos) ──
+        ctx.strokeStyle = "rgba(255,255,255," + (0.25 + pulse * 0.3).toFixed(3) + ")";
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(0, 0, innerR + 1.5, 0, Math.PI * 2);
+        ctx.moveTo(tipX, tipY); ctx.lineTo(0, baseY);
+        ctx.moveTo(tipX, tipY); ctx.lineTo(blX, baseY);
+        ctx.moveTo(tipX, tipY); ctx.lineTo(brX, baseY);
         ctx.stroke();
+        // ── Highlight brilhante na aresta esquerda (brilho metálico) ──
+        ctx.strokeStyle = "rgba(255,255,255," + (0.5 + pulse * 0.4).toFixed(3) + ")";
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(blX * 0.7, baseY * 0.3);
+        ctx.stroke();
+        // ── Brilho interno pulsante no centro do cristal ──
+        const innerGlow = ctx.createRadialGradient(0, -len * 0.4, 0, 0, -len * 0.4, len * 0.35);
+        innerGlow.addColorStop(0, cols.glow.replace("ALPHA", (0.5 * pulse).toFixed(3)));
+        innerGlow.addColorStop(1, cols.glow.replace("ALPHA", "0"));
+        ctx.fillStyle = innerGlow;
+        ctx.beginPath();
+        ctx.moveTo(tipX, tipY);
+        ctx.lineTo(brX, baseY);
+        ctx.lineTo(blX, baseY);
+        ctx.closePath();
+        ctx.fill();
         ctx.restore();
       }
 
-      // ── 3 engrenagens ENORMES que cobrem o fundo todo ──
-      // Cada uma é gigante (raio ~ metade do ecrã), sobrepondo-se para preencher tudo.
-      const gears = [
-        { x: 0.30, y: 0.35, R: 180, t: 16, s: 6, sp:  0.12, dir:  1, ti: 0 },  // gigante CW
-        { x: 0.75, y: 0.65, R: 200, t: 14, s: 5, sp: -0.10, dir: -1, ti: 1 },  // gigante CCW
-        { x: 0.20, y: 0.85, R: 150, t: 18, s: 4, sp:  0.15, dir:  1, ti: 0 },  // grande CW (em baixo)
+      // ── 5. Cinco cristais gigantes facetados (ametista, esmeralda, quartzo, rubi) ──
+      // Cores: edge=claro, mid=médio, dark=escuro, glow=halo com ALPHA placeholder
+      const crystals = [
+        // Ametista (roxo) — grande, chão, esquerda
+        { x: 0.20, y: 0.92, len: 0.42, ang: -0.22, wid: 26,
+          cols: { edge: "#c890ff", mid: "#7a3eb8", dark: "#3a1860", glow: "rgba(200,120,255,ALPHA)" },
+          phase: 0.0 },
+        // Esmeralda (verde) — médio, chão, centro-esquerda
+        { x: 0.38, y: 0.95, len: 0.34, ang: 0.10, wid: 22,
+          cols: { edge: "#80ffc0", mid: "#2e9860", dark: "#0e4a28", glow: "rgba(100,255,180,ALPHA)" },
+          phase: 1.2 },
+        // Quartzo (ciano-branco) — grande, teto, centro
+        { x: 0.52, y: 0.04, len: 0.40, ang: Math.PI + 0.05, wid: 24,
+          cols: { edge: "#e0f8ff", mid: "#88c8e8", dark: "#2a5878", glow: "rgba(200,240,255,ALPHA)" },
+          phase: 2.4 },
+        // Rubi (vermelho-rosa) — médio, chão, direita
+        { x: 0.70, y: 0.93, len: 0.36, ang: 0.18, wid: 23,
+          cols: { edge: "#ff90b0", mid: "#c83060", dark: "#601028", glow: "rgba(255,120,160,ALPHA)" },
+          phase: 0.6 },
+        // Ametista pequena (roxo) — teto, direita
+        { x: 0.82, y: 0.06, len: 0.28, ang: Math.PI - 0.12, wid: 18,
+          cols: { edge: "#d0a0ff", mid: "#8848c8", dark: "#402070", glow: "rgba(210,140,255,ALPHA)" },
+          phase: 1.8 },
       ];
-      gears.forEach(function (g) {
-        drawGear(g.x * w, g.y * h, g.R, g.t, g.s, t * g.sp, g.ti);
+      crystals.forEach(function (c) {
+        drawCrystal(c.x * w, c.y * h, c.len * h, c.ang, c.wid, c.cols, c.phase);
       });
 
-      // ── 2 Medidores de pressão GRANDES (atrás das engrenagens) ──
-      // Desenhados ANTES dos canos para ficarem atrás visualmente
-      function drawGauge(gx, gy, gr) {
-        // Corpo exterior (brass escuro)
-        ctx.fillStyle = "#3a2818";
-        ctx.beginPath(); ctx.arc(gx, gy, gr + 3, 0, Math.PI * 2); ctx.fill();
-        // Anel brass
-        ctx.fillStyle = "#8B7355";
-        ctx.beginPath(); ctx.arc(gx, gy, gr, 0, Math.PI * 2); ctx.fill();
-        // Highlight no anel
-        ctx.strokeStyle = "rgba(220,180,130,0.4)";
-        ctx.lineWidth = 1.5;
-        ctx.beginPath(); ctx.arc(gx, gy, gr, Math.PI * 1.1, Math.PI * 1.6); ctx.stroke();
-        // Mostrador escuro
-        ctx.fillStyle = "#1a0e04";
-        ctx.beginPath(); ctx.arc(gx, gy, gr - 3, 0, Math.PI * 2); ctx.fill();
-        // Marcas (ticks) no mostrador
-        ctx.strokeStyle = "rgba(200,160,100,0.4)";
-        ctx.lineWidth = 0.8;
-        for (let i = 0; i < 10; i++) {
-          const ta = Math.PI * 0.75 + (i / 9) * Math.PI * 1.5;
-          ctx.beginPath();
-          ctx.moveTo(gx + Math.cos(ta) * (gr - 5), gy + Math.sin(ta) * (gr - 5));
-          ctx.lineTo(gx + Math.cos(ta) * (gr - 9), gy + Math.sin(ta) * (gr - 9));
-          ctx.stroke();
-        }
-        // Ponteiro (move-se com t)
-        const needleAng = Math.PI * 0.75 + Math.sin(t * 0.8) * Math.PI * 0.5;
-        ctx.strokeStyle = "#ff6030";
-        ctx.lineWidth = 1.5;
+      // ── 6. Raios de luz divinos (god rays) a descer do topo ──
+      // Feixes finos semi-transparentes que se deslocam ligeiramente.
+      ctx.globalCompositeOperation = "lighter";
+      for (let i = 0; i < 3; i++) {
+        const rayX = w * (0.30 + i * 0.22) + Math.sin(t * 0.25 + i * 1.7) * 18;
+        const rayW = 22 + Math.sin(t * 0.4 + i) * 6;
+        const rayGrad = ctx.createLinearGradient(rayX, 0, rayX, h * 0.75);
+        rayGrad.addColorStop(0, "rgba(220,180,255,0.10)");
+        rayGrad.addColorStop(0.4, "rgba(180,140,240,0.06)");
+        rayGrad.addColorStop(1, "rgba(100,60,180,0)");
+        ctx.fillStyle = rayGrad;
         ctx.beginPath();
-        ctx.moveTo(gx, gy);
-        ctx.lineTo(gx + Math.cos(needleAng) * (gr - 6), gy + Math.sin(needleAng) * (gr - 6));
+        ctx.moveTo(rayX, 0);
+        ctx.lineTo(rayX + rayW, 0);
+        ctx.lineTo(rayX + rayW + 40, h * 0.75);
+        ctx.lineTo(rayX - 40, h * 0.75);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.globalCompositeOperation = "source-over";
+
+      // ── 7. Shards de cristal flutuantes (sobem lentamente + rodam) ──
+      // 9 shards em posições determinísticas, cada um com ciclo de subida.
+      for (let i = 0; i < 9; i++) {
+        const baseX = w * (0.10 + (i * 0.087) % 0.85);
+        const cycle = ((t * (0.06 + (i % 3) * 0.02) + i * 0.31) % 1);
+        const py = h - cycle * h * 0.85;
+        const sz = 3 + (i % 3) * 1.5;
+        const rot = t * (0.5 + (i % 4) * 0.2) + i;
+        const alpha = (1 - cycle) * 0.7;
+        if (alpha <= 0.02) continue;
+        const shardCols = [
+          ["#e0b0ff", "#9040d0"],
+          ["#a0ffd0", "#30a060"],
+          ["#b0e0ff", "#4080c0"],
+          ["#ffb0c0", "#c04060"],
+        ][i % 4];
+        ctx.save();
+        ctx.translate(baseX, py);
+        ctx.rotate(rot);
+        ctx.fillStyle = shardCols[0];
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(0, -sz);
+        ctx.lineTo(sz * 0.6, sz);
+        ctx.lineTo(-sz * 0.6, sz);
+        ctx.closePath();
+        ctx.fill();
+        // face escura
+        ctx.fillStyle = shardCols[1];
+        ctx.beginPath();
+        ctx.moveTo(0, -sz);
+        ctx.lineTo(0, sz);
+        ctx.lineTo(-sz * 0.6, sz);
+        ctx.closePath();
+        ctx.fill();
+        // highlight
+        ctx.strokeStyle = "rgba(255,255,255,0.7)";
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.moveTo(0, -sz); ctx.lineTo(-sz * 0.6, sz);
         ctx.stroke();
-        // Centro do ponteiro
-        ctx.fillStyle = "#c8a080";
-        ctx.beginPath(); ctx.arc(gx, gy, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.restore();
       }
-      drawGauge(w * 0.88, h * 0.15, 25);  // canto superior direito (grande)
-      drawGauge(w * 0.12, h * 0.50, 22);  // lado esquerdo meio (grande)
 
-      // ── Canos de vapor (horizontais, verticais e diagonais com juntas) ──
-      ctx.strokeStyle = "#5C4030";
-      ctx.lineWidth = 4;
-      // Cano horizontal superior
-      ctx.beginPath(); ctx.moveTo(0, h * 0.08); ctx.lineTo(w, h * 0.08); ctx.stroke();
-      // Cano vertical esquerdo
-      ctx.beginPath(); ctx.moveTo(w * 0.03, 0); ctx.lineTo(w * 0.03, h); ctx.stroke();
-      // Cano vertical direito
-      ctx.beginPath(); ctx.moveTo(w * 0.97, 0); ctx.lineTo(w * 0.97, h); ctx.stroke();
-      // Cano horizontal meio
-      ctx.beginPath(); ctx.moveTo(0, h * 0.50); ctx.lineTo(w, h * 0.50); ctx.stroke();
-      // Cano horizontal inferior
-      ctx.beginPath(); ctx.moveTo(0, h * 0.92); ctx.lineTo(w, h * 0.92); ctx.stroke();
-      // Juntas (rings nos canos)
-      ctx.fillStyle = "#8B7355";
-      for (let i = 0; i < 6; i++) {
-        const jx = (i + 1) * (w / 7);
-        ctx.fillRect(jx - 3, h * 0.08 - 6, 6, 12);  // junta horizontal topo
-        ctx.fillRect(jx - 3, h * 0.50 - 6, 6, 12);  // junta horizontal meio
-        ctx.fillRect(jx - 3, h * 0.92 - 6, 6, 12);  // junta horizontal baixo
-        ctx.fillRect(w * 0.03 - 6, (i + 1) * (h / 7) - 3, 12, 6); // junta vertical esq
-        ctx.fillRect(w * 0.97 - 6, (i + 1) * (h / 7) - 3, 12, 6); // junta vertical dir
-      }
-      // Highlight nos canos
-      ctx.strokeStyle = "rgba(220,180,130,0.3)";
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(0, h * 0.08 - 1.5); ctx.lineTo(w, h * 0.08 - 1.5); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, h * 0.50 - 1.5); ctx.lineTo(w, h * 0.50 - 1.5); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, h * 0.92 - 1.5); ctx.lineTo(w, h * 0.92 - 1.5); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(w * 0.03 - 1.5, 0); ctx.lineTo(w * 0.03 - 1.5, h); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(w * 0.97 - 1.5, 0); ctx.lineTo(w * 0.97 - 1.5, h); ctx.stroke();
-
-      // ── Vapor a subir do fundo ──
-      // 5 fontes de vapor ao longo do fundo; cada uma tem ciclo de vida 0..1.
-      for (let i = 0; i < 6; i++) {
-        const baseX = w * (0.08 + i * 0.16);
-        const cycle = ((t * 0.35 + i * 0.27) % 1); // 0..1 — 0 = baixo, 1 = topo
-        const py = h - cycle * h * 0.75;
-        const alpha = (1 - cycle) * 0.35;
-        if (alpha <= 0) continue;
-        const sz = 7 + cycle * 14;
-        ctx.fillStyle = "rgba(210,210,220," + alpha.toFixed(3) + ")";
+      // ── 8. Sparkles prismáticos (pontos que cintilam) ──
+      // 18 posições determinísticas, alpha animado com fases diferentes.
+      for (let i = 0; i < 18; i++) {
+        const sx = (i * 137 + 23) % w;
+        const sy = (i * 211 + 41) % h;
+        const tw = Math.sin(t * 2.5 + i * 0.9);
+        if (tw < 0.2) continue;
+        const a = (tw - 0.2) * 0.9;
+        const sz = 1.5 + (i % 3) * 0.8;
+        // Estrela de 4 pontas (cruz)
+        ctx.fillStyle = "rgba(255,230,255," + a.toFixed(3) + ")";
+        ctx.fillRect(sx - sz, sy - 0.4, sz * 2, 0.8);
+        ctx.fillRect(sx - 0.4, sy - sz, 0.8, sz * 2);
+        // Centro brilhante
+        ctx.fillStyle = "rgba(255,255,255," + (a * 0.8).toFixed(3) + ")";
         ctx.beginPath();
-        ctx.arc(baseX, py, sz, 0, Math.PI * 2);
-        ctx.arc(baseX + sz * 0.8, py - sz * 0.3, sz * 0.7, 0, Math.PI * 2);
-        ctx.arc(baseX - sz * 0.8, py - sz * 0.2, sz * 0.65, 0, Math.PI * 2);
-        ctx.arc(baseX + sz * 0.3, py - sz * 0.7, sz * 0.55, 0, Math.PI * 2);
-        ctx.fill();
-        // Highlight superior (topo do vapor mais claro)
-        ctx.fillStyle = "rgba(240,240,250," + (alpha * 0.6).toFixed(3) + ")";
-        ctx.beginPath();
-        ctx.arc(baseX + sz * 0.3, py - sz * 0.6, sz * 0.4, 0, Math.PI * 2);
+        ctx.arc(sx, sy, 0.8, 0, Math.PI * 2);
         ctx.fill();
       }
+
+      // ── 9. Névoa do solo (roxo-magenta a derivar no fundo) ──
+      const mistShift = Math.sin(t * 0.15) * w * 0.05;
+      for (let i = 0; i < 5; i++) {
+        const mx = w * (0.1 + i * 0.2) + mistShift;
+        const my = h * (0.88 + Math.sin(t * 0.2 + i) * 0.02);
+        const mr = w * 0.18;
+        const mistGrad = ctx.createRadialGradient(mx, my, 0, mx, my, mr);
+        mistGrad.addColorStop(0, "rgba(140,70,180,0.18)");
+        mistGrad.addColorStop(1, "rgba(80,40,120,0)");
+        ctx.fillStyle = mistGrad;
+        ctx.beginPath();
+        ctx.arc(mx, my, mr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // ── 10. Vinheta subtil (escurece as bordas para focar o centro) ──
+      const vign = ctx.createRadialGradient(w * 0.5, h * 0.5, w * 0.3, w * 0.5, h * 0.5, w * 0.7);
+      vign.addColorStop(0, "rgba(0,0,0,0)");
+      vign.addColorStop(1, "rgba(0,0,0,0.35)");
+      ctx.fillStyle = vign;
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.imageSmoothingEnabled = prevSmoothing;
     },
   };
 
