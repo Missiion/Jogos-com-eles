@@ -183,8 +183,7 @@
       });
       // ── Detalhes específicos por tipo de bloco ──
       switch (v) {
-        case 0: // Grass Block — relva no topo + pequena flor
-          drawTinyFlower(ctx, x + w * 0.50, y + h * 0.55, 1.5, "#ffd040");
+        case 0: // Grass Block — relva no topo (sem flor)
           break;
         case 1: // Dirt — sem detalhes extra (só textura)
           break;
@@ -1085,15 +1084,17 @@
         ctx.fill();
       }
 
-      // 5 nuvens MUITO maiores: cada uma com y, escala, velocidade e offset inicial diferentes.
-      // cloudW = largura total aproximada de uma nuvem (para wrap-around).
+      // 7 nuvens ENORMES em todo o ecrã (incluindo parte inferior):
+      // Escalas 2.5-4.0 — muito maiores que antes. Distribuídas em todo o ecrã.
       const cloudW = 70;
       const clouds = [
-        { y: h * 0.15, sc: 2.0, sp: 5,  off: 0 },
-        { y: h * 0.28, sc: 1.5, sp: 3.5, off: 180 },
-        { y: h * 0.10, sc: 2.3, sp: 7,  off: 360 },
-        { y: h * 0.35, sc: 1.3, sp: 4,  off: 540 },
-        { y: h * 0.22, sc: 1.8, sp: 6,  off: 720 },
+        { y: h * 0.12, sc: 3.5, sp: 5,  off: 0 },
+        { y: h * 0.30, sc: 2.8, sp: 3.5, off: 180 },
+        { y: h * 0.50, sc: 4.0, sp: 7,  off: 360 },
+        { y: h * 0.70, sc: 3.0, sp: 4,  off: 540 },
+        { y: h * 0.85, sc: 2.5, sp: 6,  off: 720 },
+        { y: h * 0.42, sc: 3.2, sp: 5.5, off: 900 },
+        { y: h * 0.60, sc: 2.7, sp: 3,  off: 1080 },
       ];
       clouds.forEach(function (c) {
         // Movimento: direita, wrap-around quando sai do ecrã.
@@ -1603,18 +1604,12 @@
         ctx.restore();
       }
 
-      // ── 9 engrenagens gigantes que cobrem o fundo todo ──
-      // Tamanhos maiores para preencher todo o ecrã, como na preview da loja.
+      // ── 3 engrenagens ENORMES que cobrem o fundo todo ──
+      // Cada uma é gigante (raio ~ metade do ecrã), sobrepondo-se para preencher tudo.
       const gears = [
-        { x: 0.05, y: 0.20, R: 65, t: 14, s: 5, sp:  0.30, dir:  1, ti: 0 },
-        { x: 0.20, y: 0.55, R: 80, t: 12, s: 4, sp: -0.22, dir: -1, ti: 1 },
-        { x: 0.38, y: 0.22, R: 70, t: 16, s: 6, sp:  0.26, dir:  1, ti: 0 },
-        { x: 0.55, y: 0.60, R: 90, t: 14, s: 5, sp: -0.18, dir: -1, ti: 1 },
-        { x: 0.72, y: 0.25, R: 75, t: 12, s: 4, sp:  0.24, dir:  1, ti: 0 },
-        { x: 0.90, y: 0.55, R: 60, t: 16, s: 6, sp: -0.32, dir: -1, ti: 1 },
-        { x: 0.15, y: 0.85, R: 70, t: 14, s: 5, sp:  0.20, dir:  1, ti: 0 },
-        { x: 0.50, y: 0.90, R: 55, t: 12, s: 4, sp: -0.28, dir: -1, ti: 1 },
-        { x: 0.85, y: 0.88, R: 65, t: 16, s: 6, sp:  0.22, dir:  1, ti: 0 },
+        { x: 0.30, y: 0.35, R: 180, t: 16, s: 6, sp:  0.12, dir:  1, ti: 0 },  // gigante CW
+        { x: 0.75, y: 0.65, R: 200, t: 14, s: 5, sp: -0.10, dir: -1, ti: 1 },  // gigante CCW
+        { x: 0.20, y: 0.85, R: 150, t: 18, s: 4, sp:  0.15, dir:  1, ti: 0 },  // grande CW (em baixo)
       ];
       gears.forEach(function (g) {
         drawGear(g.x * w, g.y * h, g.R, g.t, g.s, t * g.sp, g.ti);
