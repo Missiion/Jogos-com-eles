@@ -497,12 +497,12 @@
     updateLasers(state, k);
     updatePowerups(state, k);
 
-    // Update partículas (combo + grenade explosions)
+    // Update partículas (combo + grenade + trails)
     for (let pi = state.particles.length - 1; pi >= 0; pi--) {
       const p = state.particles[pi];
       p.x += p.vx * k; p.y += p.vy * k;
-      p.vy += 0.15 * k;  // gravidade ligeira
-      p.life -= 0.04 * k;
+      if (p.type !== "trail") p.vy += 0.15 * k;  // trails não têm gravidade
+      p.life -= (p.type === "trail" ? 0.08 : 0.04) * k;  // trails fade mais rápido
       if (p.life <= 0) state.particles.splice(pi, 1);
     }
 
@@ -510,6 +510,21 @@
       const b = state.balls[bi];
       if (b.attached) { b.x = state.paddle.x + state.paddle.w / 2; b.y = state.paddle.y - b.r - 1; continue; }
       b.x += b.vx * k * state.speedMul; b.y += b.vy * k * state.speedMul;
+      // Rasto de partículas para fireball e prism (leve mas visível)
+      const ballSkinId = state.equippedSkins.ball;
+      if ((ballSkinId === "ball-fire" || ballSkinId === "ball-prism") && Math.random() < 0.5) {
+        let trailColor = "#ff8c1a";
+        if (ballSkinId === "ball-prism") {
+          const hue = (performance.now() / 1000 * 60) % 360;
+          trailColor = "hsl(" + hue + ",90%,60%)";
+        }
+        state.particles.push({
+          x: b.x + (Math.random() - 0.5) * b.r, y: b.y + (Math.random() - 0.5) * b.r,
+          vx: (Math.random() - 0.5) * 0.5, vy: (Math.random() - 0.5) * 0.5,
+          life: 0.5, color: trailColor, size: b.r * 0.4 + Math.random() * 2,
+          type: "trail"
+        });
+      }
       if (b.x - b.r < 0) { b.x = b.r; b.vx = -b.vx; sfx.wall(); }
       if (b.x + b.r > W) { b.x = W - b.r; b.vx = -b.vx; sfx.wall(); }
       if (b.y - b.r < 0) { b.y = b.r; b.vy = -b.vy; sfx.wall(); }
@@ -548,18 +563,33 @@
           sfx.brick(br.row);
           // Combo sound (escala com multiplicador)
           if (state.comboMult > 1) sfx.combo(state.comboMult);
-          // Partículas de explosão — cor = cor do bloco batido (via BBSkins.getBrickColor)
+          // Partículas de explosão — tipo e cor dependem da skin do tijolo
           const numParticles = 3 + state.comboMult * 2;
           const skins = window.BBSkins;
           const pcol = skins ? skins.getBrickColor(br.row, state.equippedSkins.bricks) : "#ff4040";
+          const brickSkinId = state.equippedSkins.bricks;
+          // Determinar tipo de partícula baseado na skin
+          let pType = "default";
+          if (brickSkinId === "brick-circuit") pType = "circuit";
+          else if (brickSkinId === "brick-lava") pType = "lava";
+          else if (brickSkinId === "brick-gold") pType = "gold";
+          // Cores de gemas para gold (mistura de todas as que aparecem nas texturas)
+          const goldGemColors = ["#e0204a", "#e8e8f0", "#40c080", "#4080c0", "#ffd040", "#a040c0", "#ff8030"];
           for (let p = 0; p < numParticles; p++) {
             const ang = (p / numParticles) * Math.PI * 2;
             const spd = 2 + Math.random() * 3 + state.comboMult * 0.5;
-            state.particles.push({
+            const pData = {
               x: br.x + br.w / 2, y: br.y + br.h / 2,
               vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
-              life: 1, color: pcol, size: 2 + Math.random() * 2
-            });
+              life: 1, color: pcol, size: 2 + Math.random() * 2,
+              type: pType
+            };
+            // Gold: cada partícula é uma gema aleatória das que estão nas texturas
+            if (pType === "gold") {
+              pData.color = goldGemColors[Math.floor(Math.random() * goldGemColors.length)];
+              pData.size = 2.5 + Math.random() * 2;
+            }
+            state.particles.push(pData);
           }
           // Screen shake aumenta com o combo (mais intenso em combos altas)
           state.shake = Math.min(12, state.shake + 1 + state.comboMult * 0.8);
@@ -689,12 +719,46 @@
       if (skins) skins.drawBrick(ctx, br.x, br.y, br.w, br.h, br.row, brickSkin);
     }
 
-    // Partículas (combo + grenade explosions)
+    // Partículas (combo + grenade + trails) — render por tipo
     for (let i = 0; i < state.particles.length; i++) {
       const p = state.particles[i];
       ctx.globalAlpha = Math.max(0, p.life);
-      ctx.fillStyle = p.color;
-      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      if (p.type === "trail") {
+        // Trail: círculo suave que encolhe com a vida
+        ctx.fillStyle = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2); ctx.fill();
+      } else if (p.type === "circuit") {
+        // Mini placa de circuito: retângulo verde-escuro com trilho verde
+        ctx.fillStyle = "#0a3a18";
+        ctx.fillRect(p.x - p.size, p.y - p.size * 0.6, p.size * 2, p.size * 1.2);
+        ctx.fillStyle = "#3fd96a";
+        ctx.fillRect(p.x - p.size * 0.7, p.y - 0.5, p.size * 1.4, 0.8);
+      } else if (p.type === "lava") {
+        // Mini bola de pedra e lava: círculo escuro com glow laranja
+        ctx.fillStyle = "rgba(255,100,0," + (p.life * 0.4).toFixed(2) + ")";
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size + 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#3a1010";
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,140,30," + (p.life * 0.5).toFixed(2) + ")";
+        ctx.beginPath(); ctx.arc(p.x - p.size * 0.3, p.y - p.size * 0.3, p.size * 0.3, 0, Math.PI * 2); ctx.fill();
+      } else if (p.type === "gold") {
+        // Mini gema: forma de losango com brilho
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y - p.size);
+        ctx.lineTo(p.x + p.size * 0.7, p.y);
+        ctx.lineTo(p.x, p.y + p.size);
+        ctx.lineTo(p.x - p.size * 0.7, p.y);
+        ctx.closePath();
+        ctx.fill();
+        // Brilho specular
+        ctx.fillStyle = "rgba(255,255,255," + (p.life * 0.5).toFixed(2) + ")";
+        ctx.beginPath(); ctx.arc(p.x - p.size * 0.25, p.y - p.size * 0.25, p.size * 0.2, 0, Math.PI * 2); ctx.fill();
+      } else {
+        // Default: quadrado colorido
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      }
     }
     ctx.globalAlpha = 1;
 
