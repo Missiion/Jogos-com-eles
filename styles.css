@@ -5209,9 +5209,12 @@ textarea:focus-visible,
   transition: opacity 0.15s ease;
   z-index: 10;
 }
-.crt-content.booting .crt-powered-off,
+.crt-content.booting .crt-powered-off {
+  opacity: 0;
+}
 .crt-content.on .crt-powered-off {
   opacity: 0;
+  display: none; /* garante que o ecrã preto NUNCA aparece quando o desktop está on */
 }
 
 /* ── Boot sequence (sem estática inicial) ──
@@ -7461,13 +7464,13 @@ textarea:focus-visible,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--c, #3fb8d4);
   color: #000;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 14px;
   text-shadow: none;
   box-shadow: 0 0 5px var(--c, #3fb8d4);
   flex-shrink: 0;
@@ -7484,7 +7487,7 @@ textarea:focus-visible,
   .bb-go-maxcombo-line { font-size: 13px; letter-spacing: 1px; }
   .bb-go-powerups-line { gap: 5px; }
   .bb-go-pu-chip { font-size: 13px; }
-  .bb-go-pu-icon { width: 15px; height: 15px; font-size: 10px; }
+  .bb-go-pu-icon { width: 17px; height: 17px; font-size: 12px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -7550,4 +7553,491 @@ textarea:focus-visible,
    ═══════════════════════════════════════════════════════════════ */
 .bb-lb-score {
   text-align: center !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CN BROWSER — browser fake estilo Win95/Netscape
+   ═══════════════════════════════════════════════════════════════ */
+.app-browser {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #c0c0c0;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+}
+/* ── Menu bar (File/Edit/View/...) ── */
+.app-browser-menubar {
+  display: flex;
+  gap: 2px;
+  padding: 2px 4px;
+  background: #c0c0c0;
+  border-bottom: 1px solid #808080;
+  flex-shrink: 0;
+}
+.app-browser-menuitem {
+  font-size: 11px;
+  color: #000;
+  padding: 2px 6px;
+  cursor: default;
+  border-radius: 2px;
+}
+.app-browser-menuitem:hover {
+  background: #000080;
+  color: #fff;
+}
+/* ── Toolbar (back/forward/reload/home + URL bar + add/restore) ── */
+.app-browser-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px;
+  background: #c0c0c0;
+  border-bottom: 1px solid #808080;
+  flex-shrink: 0;
+}
+.app-browser-btn {
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+}
+.app-browser-btn:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+}
+.app-browser-btn:hover {
+  background: #d0d0d8;
+}
+.app-browser-urlwrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.app-browser-urlprefix {
+  font-size: 11px;
+  color: #000;
+  white-space: nowrap;
+}
+.app-browser-url {
+  flex: 1;
+  font-size: 12px;
+  font-family: 'Tahoma', sans-serif;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  padding: 2px 4px;
+  background: #fff;
+  color: #000;
+  outline: none;
+  min-width: 0;
+}
+/* ── Content area ── */
+.app-browser-content {
+  flex: 1;
+  overflow-y: auto;
+  background: #fff;
+  position: relative;
+}
+.app-browser-content::-webkit-scrollbar { width: 12px; }
+.app-browser-content::-webkit-scrollbar-track { background: #e0e0e0; }
+.app-browser-content::-webkit-scrollbar-thumb { background: #a0a0a0; border-radius: 6px; border: 2px solid #e0e0e0; }
+/* ── Homepage ── */
+.app-browser-homepage {
+  padding: 20px;
+  min-height: 100%;
+  background: linear-gradient(180deg, #f0f0f8 0%, #e0e0e8 100%);
+}
+/* ── Tiles grid ── */
+.app-browser-tiles {
+  display: grid;
+  gap: 16px;
+}
+.app-browser-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 6px;
+  transition: background 0.12s;
+  position: relative;
+  min-width: 0; /* permite que 1fr funcione corretamente */
+}
+.app-browser-tile:hover {
+  background: rgba(0, 0, 128, 0.08);
+}
+.app-browser-tile-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid #808080;
+  position: relative;
+  background: #404060;
+}
+.app-browser-tile-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: fill; /* FILL: nunca deixa espaços pretos/vagos */
+  display: block;
+}
+.app-browser-tile-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: bold;
+  color: #fff;
+  background: linear-gradient(135deg, #4060a0, #204070);
+}
+.app-browser-tile-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 14px;
+  height: 14px;
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+  padding: 0;
+}
+.app-browser-tile-remove svg {
+  display: block;
+}
+.app-browser-tile-remove:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+}
+.app-browser-tile:hover .app-browser-tile-remove {
+  opacity: 1;
+}
+.app-browser-tile-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #000;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-browser-tile-url {
+  font-size: 10px;
+  color: #606080;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* ── Empty state ── */
+.app-browser-empty {
+  text-align: center;
+  color: #606080;
+  font-size: 13px;
+  padding: 40px 20px;
+}
+/* ── Add form ── */
+.app-browser-addform {
+  background: #d0d0d8;
+  border: 1px solid #808080;
+  border-radius: 4px;
+  padding: 12px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.app-browser-addform-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #000;
+  margin-bottom: 6px;
+}
+.app-browser-addform label {
+  font-size: 11px;
+  color: #404040;
+  margin-top: 4px;
+}
+.app-browser-addform input[type="text"] {
+  font-size: 12px;
+  font-family: 'Tahoma', sans-serif;
+  border: 2px solid;
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+  padding: 3px 5px;
+  background: #fff;
+  color: #000;
+  outline: none;
+}
+.app-browser-addform-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.app-browser-addform-save,
+.app-browser-addform-cancel {
+  font-size: 12px;
+  font-family: 'Tahoma', sans-serif;
+  padding: 4px 16px;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  background: #c0c0c0;
+  color: #000;
+  cursor: pointer;
+}
+.app-browser-addform-save:active,
+.app-browser-addform-cancel:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+}
+.app-browser-addform-save {
+  font-weight: bold;
+}
+/* ── Status bar ── */
+.app-browser-statusbar {
+  height: 20px;
+  background: #c0c0c0;
+  border-top: 1px solid #dfdfdf;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: #000;
+  flex-shrink: 0;
+}
+.app-browser-status {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CN BROWSER — updates v2 (capas quadradas, tamanhos, colunas, modal, edit panel)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Capas QUADRADAS (era 16/10) ── */
+.app-browser-tile-thumb {
+  aspect-ratio: 1 / 1;
+}
+
+/* ── Colunas por linha (definido via JS inline, não via CSS) ── */
+/* O JS define tiles.style.gridTemplateColumns = "repeat(N, 1fr)" diretamente. */
+.app-browser-tiles {
+  /* fallback default se JS não correu ainda */
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* ── Tamanhos dos tiles ── */
+/* Small: tiles mais pequenos, fonte menor */
+.app-browser-homepage.size-small .app-browser-tile-name { font-size: 10px; }
+.app-browser-homepage.size-small .app-browser-tile-url { font-size: 9px; }
+.app-browser-homepage.size-small .app-browser-tile-thumb img { image-rendering: pixelated; }
+/* Medium (default): tamanho normal */
+.app-browser-homepage.size-medium .app-browser-tile-name { font-size: 12px; }
+.app-browser-homepage.size-medium .app-browser-tile-url { font-size: 10px; }
+/* Large: tiles maiores, fonte maior */
+.app-browser-homepage.size-large .app-browser-tile-name { font-size: 14px; }
+.app-browser-homepage.size-large .app-browser-tile-url { font-size: 11px; }
+
+/* ── Modal de confirmação (Win95 dialog) ── */
+.app-browser-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.app-browser-modal {
+  background: #c0c0c0;
+  border: 2px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  min-width: 320px;
+  max-width: 90%;
+  box-shadow: 4px 4px 12px rgba(0, 0, 0, 0.3);
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+}
+.app-browser-modal-titlebar {
+  background: linear-gradient(90deg, #000080, #1084d0);
+  color: #fff;
+  padding: 3px 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+.app-browser-modal-close {
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  color: #000;
+  width: 18px;
+  height: 18px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+.app-browser-modal-close:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+}
+.app-browser-modal-body {
+  padding: 16px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.app-browser-modal-icon {
+  flex-shrink: 0;
+}
+.app-browser-modal-msg {
+  font-size: 12px;
+  color: #000;
+  line-height: 1.5;
+  flex: 1;
+}
+.app-browser-modal-buttons {
+  padding: 8px 16px 12px;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.app-browser-modal-yes,
+.app-browser-modal-no {
+  font-size: 12px;
+  font-family: 'Tahoma', sans-serif;
+  padding: 4px 20px;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  background: #c0c0c0;
+  color: #000;
+  cursor: pointer;
+  min-width: 70px;
+}
+.app-browser-modal-yes:active,
+.app-browser-modal-no:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+}
+.app-browser-modal-yes {
+  font-weight: bold;
+}
+
+/* ── Edit panel (definições de visualização) ── */
+.app-browser-editpanel {
+  background: #d0d0d8;
+  border: 1px solid #808080;
+  border-radius: 4px;
+  padding: 14px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.app-browser-editpanel-title {
+  font-size: 13px;
+  font-weight: bold;
+  color: #000;
+  margin-bottom: 4px;
+}
+.app-browser-editpanel-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.app-browser-editpanel-row label {
+  font-size: 11px;
+  color: #404040;
+}
+.app-browser-editpanel-options {
+  display: flex;
+  gap: 6px;
+}
+.app-browser-size-btn,
+.app-browser-cols-btn {
+  font-size: 12px;
+  font-family: 'Tahoma', sans-serif;
+  padding: 4px 14px;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  background: #c0c0c0;
+  color: #000;
+  cursor: pointer;
+}
+.app-browser-size-btn:active,
+.app-browser-cols-btn:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+}
+.app-browser-size-btn.active,
+.app-browser-cols-btn.active {
+  background: #000080;
+  color: #fff;
+  border-color: #000040;
+}
+.app-browser-editpanel-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.app-browser-editpanel-apply,
+.app-browser-editpanel-cancel {
+  font-size: 12px;
+  font-family: 'Tahoma', sans-serif;
+  padding: 4px 18px;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  background: #c0c0c0;
+  color: #000;
+  cursor: pointer;
+}
+.app-browser-editpanel-apply:active,
+.app-browser-editpanel-cancel:active {
+  border-color: #808080 #dfdfdf #dfdfdf #808080;
+}
+.app-browser-editpanel-apply {
+  font-weight: bold;
+}
+
+/* ── CN Browser: Edit dropdown (estilo Win95) ── */
+.app-browser-edit-dropdown {
+  background: #c0c0c0;
+  border: 1px solid;
+  border-color: #dfdfdf #808080 #808080 #dfdfdf;
+  min-width: 120px;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 12px;
+  box-shadow: 2px 2px 6px rgba(0,0,0,0.2);
+}
+.app-browser-edit-dropdown-label {
+  padding: 4px 10px;
+  font-size: 10px;
+  color: #606080;
+  border-bottom: 1px solid #808080;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.app-browser-edit-dropdown-item {
+  padding: 4px 14px;
+  color: #000;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.app-browser-edit-dropdown-item:hover {
+  background: #000080;
+  color: #fff;
+}
+.app-browser-edit-dropdown-item.active {
+  font-weight: bold;
 }
