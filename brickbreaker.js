@@ -80,14 +80,14 @@
 
   // ── Combo system ──
   // Se a bola destrói tijolos em rápida sucessão (dentro de COMBO_WINDOW_MS),
-  // o combo incrementa. Pontos multiplicam até x5 (cap). O combo continua
-  // infinitamente após x5, mas o multiplicador fica em x5.
+  // o combo incrementa. Pontos multiplicam até x7 (cap). O combo continua
+  // infinitamente após x7, mas o multiplicador fica em x7.
   const COMBO_WINDOW_MS = 600;   // janela de tempo para continuar o combo
-  const COMBO_MAX_MULT = 5;      // multiplicador máximo (x5)
+  const COMBO_MAX_MULT = 7;      // multiplicador máximo (x7)
 
   // Moedas = Math.floor(score / COIN_DIVISOR).
-  // 150 pts = 1 moeda.
-  const COIN_DIVISOR = 150;
+  // 130 pts = 1 moeda.
+  const COIN_DIVISOR = 130;
 
   // ─────────────────────────────────────────────
   //  ÍCONE SVG
@@ -317,11 +317,15 @@
       layoutIdx: 0,  // não usado (layouts são procedurais agora), mantido para compat
       combo: 0,         // contador de combo atual (incrementa a cada tijolo rápido)
       lastBrickTime: 0, // timestamp do último tijolo destruído (para combo window)
-      comboMult: 1,     // multiplicador atual (1-5, cap em 5)
+      comboMult: 1,     // multiplicador atual (1-7, cap em 7)
       comboPunch: 0,    // animação de "murro" no texto do combo (1=acabou de levar murro, 0=repouso)
       comboFade: 0,     // fade-out do combo (1=visível, 0=invisível). Quando combo expira, fade decai.
+      maxCombo: 0,      // combo máximo alcançado nesta partida (para o ecrã de game over + leaderboard)
       shake: 0,         // intensidade do screen shake (decai ao longo do tempo)
       paddleHitTime: 0, // timestamp do último hit da bola na paddle (para animação tier 5/6)
+      // Contagem de power-ups apanhados nesta partida, por tipo (ex: { nuke: 2, laser: 5, ... }).
+      // Mostrada no ecrã de game over. Reinicia em cada partida.
+      powerupCounts: {},
       coins: 0,
       coinsReady: false,
       lastAward: 0,
@@ -385,8 +389,26 @@
       }
     }
   }
+  // Helper: atualiza o maxCombo após um incremento de combo.
+  // Chamado em todos os pontos onde state.combo cresce (brick destroy,
+  // laser kill, grenade explosion, nuke). Centraliza o tracking para
+  // garantir que o valor do ecrã de game over + leaderboard é sempre correto.
+  function trackMaxCombo(state) {
+    if (state.combo > state.maxCombo) state.maxCombo = state.combo;
+  }
+
+  // Helper: regista um power-up apanhado pelo utilizador (para o ecrã de
+  // game over mostrar "Nuke ×12", etc.). Chamado em activateEffect.
+  function trackPowerup(state, type) {
+    if (!state.powerupCounts[type]) state.powerupCounts[type] = 0;
+    state.powerupCounts[type]++;
+  }
+
   function activateEffect(state, type) {
     sfx.powerup(); const pu = POWERUPS[type];
+    // Regista o power-up apanhado (para o ecrã de game over).
+    // Todos os tipos contam — inclusive os instantâneos (multi, extra, grenade, nuke).
+    trackPowerup(state, type);
     if (type === "multi") {
       const src = state.balls.find(function (b) { return !b.attached; }) || state.balls[0];
       for (let i = 0; i < 2; i++) {
@@ -422,6 +444,7 @@
           state.score += state.bricks[i].points * state.comboMult;
         }
       }
+      trackMaxCombo(state);
       state.lastBrickTime = now;
       state.comboPunch = 1;
       state.comboFade = 1;
@@ -470,6 +493,7 @@
           else state.combo = 1;
           state.lastBrickTime = now;
           state.comboMult = Math.min(COMBO_MAX_MULT, state.combo);
+          trackMaxCombo(state);
           state.comboPunch = 1;
           if (state.combo > 1) state.comboFade = 1;
           const pts = br.points * state.comboMult;
@@ -549,15 +573,16 @@
         if (b.x + b.r > br.x && b.x - b.r < br.x + br.w && b.y + b.r > br.y && b.y - b.r < br.y + br.h) {
           // ── Combo system ──
           // Se o último tijolo foi destruído há menos de COMBO_WINDOW_MS, incrementa combo.
-          // Caso contrário, reset a 1. Multiplicador cap em x5 mas combo continua infinito.
+          // Caso contrário, reset a 1. Multiplicador cap em x7 mas combo continua infinito.
           const now = Date.now();
           if (now - state.lastBrickTime < COMBO_WINDOW_MS) state.combo++;
           else state.combo = 1;
           state.lastBrickTime = now;
           state.comboMult = Math.min(COMBO_MAX_MULT, state.combo);
+          trackMaxCombo(state);
           state.comboPunch = 1; // trigger animação de "murro" no texto do combo
           if (state.combo > 1) state.comboFade = 1;  // só mostra texto em combo real (≥2)
-          // Pontos = points × multiplicador (x5 fica ativo sempre que combo >= 5)
+          // Pontos = points × multiplicador (x7 fica ativo sempre que combo >= 7)
           const pts = br.points * state.comboMult;
           br.alive = false; state.score += pts;
           sfx.brick(br.row);
@@ -610,6 +635,7 @@
               state.comboMult = Math.min(COMBO_MAX_MULT, state.combo);
               state.comboPunch = 1;
               if (state.combo > 1) state.comboFade = 1;
+              trackMaxCombo(state);
               nearby[g].brick.alive = false;
               state.score += nearby[g].brick.points * state.comboMult;
               // Partículas para cada tijolo da explosão
@@ -676,9 +702,10 @@
       const mult = state.comboMult;
       const punch = state.comboPunch;
       const fade = state.comboFade > 0 ? state.comboFade : 0;
-      // Cor por multiplicador
-      const colors = ["#fff", "#4dd964", "#3fb8d4", "#b06be0", "#ffd23f", "#ff5e7a"];
-      const col = colors[Math.min(mult, 5)];
+      // Cor por multiplicador (1-7). Índice 0 = sem cor (mult 1 usa #fff).
+      // x2=verde, x3=cyan, x4=roxo, x5=amarelo, x6=rosa, x7=vermelho intenso.
+      const colors = ["#fff", "#fff", "#4dd964", "#3fb8d4", "#b06be0", "#ffd23f", "#ff5e7a", "#ff4040"];
+      const col = colors[Math.min(mult, 7)];
       // Animação de "murro" — mais intensa:
       //   scale: encolhe (1 - punch*0.3) quando leva murro
       //   jitter: vibração muito mais intensa (punch * 12 em vez de 6)
@@ -874,8 +901,49 @@
   function gameOver(state) {
     const ui = state._ui; stopLoop(state); sfx.over(); state.screen = "gameover";
     if (ui && ui.finalScore) ui.finalScore.textContent = String(state.score);
+    // Popula as estatísticas finais: combo máximo + power-ups apanhados.
+    renderGameOverStats(state);
     awardCoinsOnGameOver(state);
     showScreen(state, "gameover");
+  }
+
+  // ─────────────────────────────────────────────
+  //  ESTATÍSTICAS DO GAME OVER
+  //  Linha 1: "COMBO MÁXIMO" + valor (entre o score e as moedas).
+  //  Linha 2: power-ups apanhados inline (ícone + contagem, um a seguir ao outro).
+  //  Se não houver power-ups, a linha 2 fica oculta.
+  // ─────────────────────────────────────────────
+  function renderGameOverStats(state) {
+    const ui = state._ui; if (!ui) return;
+
+    // ── Linha do combo máximo ──
+    if (ui.goMaxCombo) ui.goMaxCombo.textContent = String(state.maxCombo);
+
+    // ── Linha dos power-ups apanhados (inline) ──
+    if (ui.goPowerups) {
+      ui.goPowerups.innerHTML = "";
+      const ORDER = ["wide", "slow", "shield", "laser", "through", "multi", "extra", "grenade", "nuke"];
+      const counts = state.powerupCounts || {};
+      const visible = ORDER.filter(function (k) { return counts[k] > 0; });
+
+      if (visible.length === 0) {
+        // Sem power-ups — oculta a linha para não deixar espaço vazio.
+        ui.goPowerups.style.display = "none";
+      } else {
+        ui.goPowerups.style.display = "";
+        visible.forEach(function (k) {
+          const pu = POWERUPS[k];
+          const chip = document.createElement("span");
+          chip.className = "bb-go-pu-chip";
+          chip.style.setProperty("--c", pu.color);
+          chip.title = pu.name + " ×" + (counts[k] || 0);
+          chip.innerHTML =
+            '<span class="bb-go-pu-icon">' + pu.label + '</span>' +
+            '<span class="bb-go-pu-count">' + (counts[k] || 0) + '</span>';
+          ui.goPowerups.appendChild(chip);
+        });
+      }
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -919,7 +987,13 @@
     // Fallback: se não conseguir obter o nome, usa "Anonymous"
     if (!name) name = "Anonymous";
     try {
-      await window.BBData.submitScore(userId, name, state.score, state.level);
+      // Envia score + maxCombo + powerupCounts ao Firebase.
+      // O rating do leaderboard continua a ser a PONTUAÇÃO (score) —
+      // o maxCombo é guardado apenas como detalhe adicional (nova aba).
+      await window.BBData.submitScore(userId, name, state.score, state.level, {
+        maxCombo: state.maxCombo,
+        powerupCounts: state.powerupCounts || {},
+      });
     } catch (e) { /* silencioso — não bloqueia o fluxo */ }
   }
 
@@ -1245,7 +1319,16 @@
   }
 
   // ─────────────────────────────────────────────
-  //  LEADERBOARD (Etapa 5)
+  //  LEADERBOARD (Etapa 5 + coluna Combo)
+  //
+  //  Lista única com 5 colunas: #, NOME, NÍVEL, COMBO, PONTUAÇÃO.
+  //  O rating oficial continua a ser a PONTUAÇÃO (ordenado por score desc).
+  //  A coluna COMBO mostra o combo máximo de cada jogador — apenas detalhe.
+  //
+  //  Nota: o getLeaderboard lê scores PÚBLICOS (não precisa de login).
+  //  Só o "MELHOR:" (getUserBestScore) precisa de login.
+  //  Isto garante que a leaderboard aparece mesmo para utilizadores
+  //  não registados — só o destaque pessoal é que fica "—".
   // ─────────────────────────────────────────────
   async function renderLeaderboard(state) {
     const ui = state._ui; if (!ui || !ui.lbList) return;
@@ -1254,34 +1337,51 @@
     if (ui.lbMyBest) ui.lbMyBest.textContent = "—";
     let entries = [];
     let myBest = null;
-    if (window.BBData && window.BBData.isReady()) {
+    // getLeaderboard é público — funciona com ou sem login.
+    if (window.BBData) {
       try {
         entries = await window.BBData.getLeaderboard(10);
-        myBest = await window.BBData.getUserBestScore(window.BBData.getUserId());
       } catch (e) { /* fallback vazio */ }
+    }
+    // getUserBestScore precisa de login (userId).
+    if (window.BBData && window.BBData.isReady()) {
+      try {
+        myBest = await window.BBData.getUserBestScore(window.BBData.getUserId());
+      } catch (e) { /* sem destaque pessoal */ }
     }
     if (!entries || entries.length === 0) {
       ui.lbList.innerHTML = '<div class="bb-lb-empty">' + t("Sem pontuações ainda. Sê o primeiro!") + '</div>';
       if (ui.lbMyBest) ui.lbMyBest.textContent = "—";
       return;
     }
-    // Renderiza top 10
+    // Renderiza top 10 — 5 colunas: #, NOME, NÍVEL, COMBO, PONTUAÇÃO
+    // Combo 0 (docs antigos sem maxCombo) mostra "—" em vez de "×0".
     const currentUserId = (window.BBData && window.BBData.isReady()) ? window.BBData.getUserId() : null;
     ui.lbList.innerHTML = "";
     entries.forEach(function (entry) {
       const row = document.createElement("div");
       row.className = "bb-lb-row" + (entry.userId === currentUserId ? " bb-lb-row-me" : "");
       const medal = entry.rank === 1 ? "#ffd23f" : entry.rank === 2 ? "#c0c0c0" : entry.rank === 3 ? "#cd7f32" : null;
+      const mc = entry.maxCombo || 0;
+      const comboStr = mc > 0 ? ("×" + mc) : "—";
       row.innerHTML =
         '<span class="bb-lb-rank"' + (medal ? ' style="color:' + medal + '"' : "") + '>' + entry.rank + '</span>' +
         '<span class="bb-lb-name">' + escapeHtml(entry.name) + '</span>' +
         '<span class="bb-lb-level">LV ' + entry.level + '</span>' +
+        '<span class="bb-lb-combo">' + comboStr + '</span>' +
         '<span class="bb-lb-score">' + entry.score + '</span>';
       ui.lbList.appendChild(row);
     });
-    // Meu melhor
+    // "Meu melhor" — score (rating) + combo (detalhe) numa linha compacta.
+    // Combo 0 mostra "—" (docs antigos ou sem combo).
     if (ui.lbMyBest) {
-      ui.lbMyBest.textContent = myBest ? (myBest.score + " (LV " + myBest.level + ")") : "—";
+      if (myBest) {
+        const mc = myBest.maxCombo || 0;
+        const comboStr = mc > 0 ? ("×" + mc) : "—";
+        ui.lbMyBest.textContent = myBest.score + " (LV " + myBest.level + " · " + comboStr + ")";
+      } else {
+        ui.lbMyBest.textContent = "—";
+      }
     }
   }
 
@@ -1329,7 +1429,7 @@
             '<li><b>G</b> ' + t("Granada (10%) — explode 5 tijolos (por bola, não por tempo)") + '</li>' +
             '<li><b>N</b> ' + t("Nuke (5%) — limpa o nível completo instantaneamente") + '</li>' +
             '<li><b>' + t("Velocidade:") + '</b> ' + t("Aumenta a cada nível, cap no nível 10") + '</li>' +
-            '<li><b>' + t("Moedas:") + '</b> ' + t("Ganhas com a pontuação (150 pts = 1 moeda) — gasta na LOJA") + '</li>' +
+            '<li><b>' + t("Moedas:") + '</b> ' + t("Ganhas com a pontuação (130 pts = 1 moeda) — gasta na LOJA") + '</li>' +
             '<li><b>' + t("Loja:") + '</b> ' + t("Compra e equipa skins para tijolos, bola, plataforma e fundo") + '</li>' +
             '<li><b>' + t("Limpa todos os tijolos") + '</b> ' + t("para avançar — padrões infinitos") + '</li>' +
           '</ul>' +
@@ -1366,8 +1466,8 @@
       '<div class="bb-screen bb-game-screen bb-hidden">' +
         '<canvas class="bb-canvas" width="' + W + '" height="' + H + '"></canvas>' +
         '<div class="bb-hud">' +
-          '<div class="bb-hud-score">' + t("PONTOS") + '&nbsp;<span class="bb-hud-num" data-hud="score">0</span></div>' +
-          '<div class="bb-hud-level">' + t("NÍVEL") + '&nbsp;<span class="bb-hud-num" data-hud="level">1</span></div>' +
+          '<div class="bb-hud-score"><span class="bb-hud-label">' + t("PONTOS") + '</span><span class="bb-hud-num" data-hud="score">0</span></div>' +
+          '<div class="bb-hud-level"><span class="bb-hud-label">' + t("NÍVEL") + '</span><span class="bb-hud-num" data-hud="level">1</span></div>' +
           '<div class="bb-hud-coins" data-hud="coins-wrap">' +
             '<svg class="bb-coin-icon" width="11" height="11" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="#ffd23f" stroke="#b8860b" stroke-width="1.5"/><text x="8" y="11" font-size="8" text-anchor="middle" fill="#8b6914" font-family="serif" font-weight="bold">$</text></svg>' +
             '<span class="bb-hud-num bb-hud-coins-num" data-hud="coins">0</span>' +
@@ -1385,7 +1485,12 @@
       '<div class="bb-screen bb-gameover-screen bb-hidden">' +
         '<div class="bb-go-title">' + t("FIM DE JOGO") + '</div>' +
         '<div class="bb-go-score">' + t("PONTUAÇÃO FINAL") + '&nbsp;<span class="bb-hud-num" data-hud="final">0</span></div>' +
+        // Combo máximo — linha simples entre o score e as moedas.
+        '<div class="bb-go-maxcombo-line">' + t("COMBO MÁXIMO") + '&nbsp;<span class="bb-hud-num bb-go-maxcombo" data-hud="go-maxcombo">0</span></div>' +
         '<div class="bb-go-coins">' + t("MOEDAS GANHAS") + '&nbsp;<span class="bb-hud-num bb-go-coins-num" data-hud="coins-earned">+0</span></div>' +
+        // Power-ups apanhados — linha inline abaixo das moedas.
+        // Cada chip = ícone (círculo colorido com a letra) + contagem.
+        '<div class="bb-go-powerups-line" data-hud="go-powerups"></div>' +
         '<div class="bb-go-buttons">' +
           '<button class="bb-btn bb-btn-primary" type="button" data-act="retry">' + t("JOGAR DE NOVO") + '</button>' +
           '<button class="bb-btn" type="button" data-act="leaderboard">' + t("TABELA DE PONTUAÇÕES") + '</button>' +
@@ -1399,10 +1504,13 @@
           '<span class="bb-lb-title">' + t("TABELA DE PONTUAÇÕES") + '</span>' +
           '<span class="bb-lb-mybest-wrap">' + t("MELHOR:") + ' <span class="bb-lb-mybest" data-hud="lb-mybest">—</span></span>' +
         '</div>' +
+        // Cabeçalho da lista — 5 colunas: #, NOME, NÍVEL, COMBO, PONTUAÇÃO.
+        // COMBO é apenas um detalhe (o rating continua a ser a PONTUAÇÃO).
         '<div class="bb-lb-listhead">' +
           '<span class="bb-lb-h-rank">#</span>' +
           '<span class="bb-lb-h-name">' + t("NOME") + '</span>' +
           '<span class="bb-lb-h-level">' + t("NÍVEL") + '</span>' +
+          '<span class="bb-lb-h-combo">' + t("COMBO") + '</span>' +
           '<span class="bb-lb-h-score">' + t("PONTUAÇÃO") + '</span>' +
         '</div>' +
         '<div class="bb-lb-list" data-hud="lb-list"></div>' +
@@ -1451,6 +1559,9 @@
       coins: wrap.querySelector('[data-hud="coins"]'),
       coinsEarned: wrap.querySelector('[data-hud="coins-earned"]'),
       finalScore: wrap.querySelector('[data-hud="final"]'),
+      // ── Estatísticas do game over: combo máximo + power-ups ──
+      goMaxCombo: wrap.querySelector('[data-hud="go-maxcombo"]'),
+      goPowerups: wrap.querySelector('[data-hud="go-powerups"]'),
       shopGrid: wrap.querySelector('[data-hud="shop-grid"]'),
       shopTabs: wrap.querySelector('[data-hud="shop-tabs"]'),
       shopCoins: wrap.querySelector('[data-hud="shop-coins"]'),
