@@ -2015,11 +2015,12 @@ function getFilteredSortedGames() {
   // 1. Filter by active tab
   let list = gamesData.slice();
   if (activeTab === "escondidos") {
-    // Tab "Escondidos": mostra apenas jogos que o utilizador deu down-vote
-    // (escondidos localmente). NÃO inclui jogos marcados como jogados —
-    // esses estão na tab "Jogados". É uma pseudo-tab client-side que só
-    // aparece se o utilizador estiver logado.
-    list = list.filter(g => hiddenGames.has(g.firebaseId) && !isPlayed(g.firebaseId));
+    // Tab "Escondidos": mostra apenas jogos que o utilizador deu down-vote.
+    // Usa hasUserDownvoted() (Firebase downvotesMap) em vez de hiddenGames
+    // (localStorage) — o hiddenGames pode ter lixo acumulado de versões
+    // anteriores ou de syncs antigos. hasUserDownvoted é a fonte de verdade.
+    // NÃO inclui jogos marcados como jogados — esses estão na tab "Jogados".
+    list = list.filter(g => hasUserDownvoted(g.firebaseId) && !isPlayed(g.firebaseId));
   } else if (activeTab !== "all") {
     const allowed = tabGamesMap[activeTab] || new Set();
     list = list.filter(g => allowed.has(g.firebaseId));
@@ -4898,13 +4899,13 @@ function renderTabs() {
     // Pseudo-tab "Escondidos" — client-side, não está no Firebase.
     // Fica sempre em último (abaixo de Reprovados). Só aparece se o
     // utilizador estiver logado. Mostra apenas jogos que o utilizador
-    // deu down-vote (NÃO inclui jogos marcados como jogados — esses
-    // estão na tab "Jogados"). Reprovados é global (>= 2 down-votes de
-    // qualquer utilizador); Escondidos é pessoal (down-votes do próprio).
+    // deu down-vote (verificado via Firebase downvotesMap, não localStorage
+    // que pode ter lixo acumulado). NÃO inclui jogos marcados como jogados.
+    // Reprovados é global (>= 2 down-votes); Escondidos é pessoal (down-votes do próprio).
     ...(currentUser ? [{
       id: "escondidos",
       label: t("Escondidos"),
-      count: gamesData.filter(g => hiddenGames.has(g.firebaseId) && !isPlayed(g.firebaseId)).length,
+      count: gamesData.filter(g => hasUserDownvoted(g.firebaseId) && !isPlayed(g.firebaseId)).length,
       deletable: false,
     }] : []),
   ];
