@@ -2014,7 +2014,13 @@ function listenToGames() {
 function getFilteredSortedGames() {
   // 1. Filter by active tab
   let list = gamesData.slice();
-  if (activeTab !== "all") {
+  if (activeTab === "escondidos") {
+    // Tab "Escondidos": mostra apenas jogos que o utilizador deu down-vote
+    // (escondidos localmente). NÃO inclui jogos marcados como jogados —
+    // esses estão na tab "Jogados". É uma pseudo-tab client-side que só
+    // aparece se o utilizador estiver logado.
+    list = list.filter(g => hiddenGames.has(g.firebaseId) && !isPlayed(g.firebaseId));
+  } else if (activeTab !== "all") {
     const allowed = tabGamesMap[activeTab] || new Set();
     list = list.filter(g => allowed.has(g.firebaseId));
     // ⚠️  Tabs específicas (Jogados, Reprovados, Aprovados, tabs de users)
@@ -2028,11 +2034,9 @@ function getFilteredSortedGames() {
     list = list.filter(g => !isInTrash(g.firebaseId));
     // 1b. Esconde jogos que o user actual deu down-vote (localmente)
     // ou que foram marcados como "jogados" (também ficam escondidos da
-    // lista principal — só visíveis na tab "Jogados").
-    // Apenas na lista "Todos". Outras tabs (users, lixo, jogados) mostram tudo.
-    if (!showHiddenGames) {
-      list = list.filter(g => !hiddenGames.has(g.firebaseId));
-    }
+    // lista principal — só visíveis na tab "Jogados" e "Escondidos").
+    // Apenas na lista "Todos". Outras tabs mostram tudo.
+    list = list.filter(g => !hiddenGames.has(g.firebaseId));
   }
 
   // 1c. Filtro "Jogos em comum" — mostra apenas jogos em que o user actual
@@ -4878,7 +4882,7 @@ function renderTabs() {
   });
 
   const options = [
-    { id: "all", label: t("Todos"), count: gamesData.filter(g => !isInTrash(g.firebaseId)).length, deletable: false },
+    { id: "all", label: t("Todos"), count: gamesData.filter(g => !isInTrash(g.firebaseId) && !hiddenGames.has(g.firebaseId)).length, deletable: false },
     ...sortedTabs.map(tab => {
       const set = tabGamesMap[tab.id] || new Set();
       const isTrash = isTrashLabel(tab.label);
@@ -4891,6 +4895,18 @@ function renderTabs() {
         deletable: !isTrash && !isApproved && !isPlayedTab, // lixo, aprovados e jogados não são apagáveis
       };
     }),
+    // Pseudo-tab "Escondidos" — client-side, não está no Firebase.
+    // Fica sempre em último (abaixo de Reprovados). Só aparece se o
+    // utilizador estiver logado. Mostra apenas jogos que o utilizador
+    // deu down-vote (NÃO inclui jogos marcados como jogados — esses
+    // estão na tab "Jogados"). Reprovados é global (>= 2 down-votes de
+    // qualquer utilizador); Escondidos é pessoal (down-votes do próprio).
+    ...(currentUser ? [{
+      id: "escondidos",
+      label: t("Escondidos"),
+      count: gamesData.filter(g => hiddenGames.has(g.firebaseId) && !isPlayed(g.firebaseId)).length,
+      deletable: false,
+    }] : []),
   ];
 
   const activeOption = options.find(o => o.id === activeTab) || options[0];
@@ -6160,16 +6176,10 @@ function initSettings() {
   if ($settingsMenu) trapScroll($settingsMenu);
 
   // 5. Ligar checkboxes de opções
-  const showHiddenChk = document.getElementById("option-show-hidden");
-  if (showHiddenChk) {
-    showHiddenChk.checked = showHiddenGames;
-    showHiddenChk.addEventListener("change", e => {
-      e.stopPropagation();
-      showHiddenGames = showHiddenChk.checked;
-      try { localStorage.setItem("jce_show_hidden", showHiddenGames ? "1" : "0"); } catch (_) {}
-      renderGameList(gamesData);
-    });
-  }
+  // NOTA: "Mostrar jogos escondidos" foi removido — agora existe a pseudo-tab
+  // "Escondidos" que mostra os jogos escondidos. A variável showHiddenGames
+  // fica sempre false (jogos escondidos não aparecem na lista "Todos").
+  showHiddenGames = false;
 
   const ytAutoplayChk = document.getElementById("option-yt-autoplay");
   if (ytAutoplayChk) {
