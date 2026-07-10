@@ -412,6 +412,10 @@
       if (!content) return;
       content.classList.remove("booting");
       content.classList.add("on");
+      // Esconde o logo — sem isto, o logo fica visível por baixo do desktop
+      // e pode aparecer por cima em certas condições (ex: abrir apps rápido).
+      if (logoEl) logoEl.classList.remove("logo-active");
+      if (termEl) termEl.style.display = "none";
     }, readyDelay);
   }
 
@@ -442,6 +446,8 @@
     // Pré-carrega as imagens do lixo para que apareçam instantaneamente
     // quando o utilizador abrir o Recycle Bin (sem ficar em branco).
     if (window.trashPreload) { try { window.trashPreload(); } catch (_) {} }
+    // Pré-carrega as imagens dos bookmarks do browser também.
+    if (window.browserPreload) { try { window.browserPreload(); } catch (_) {} }
   }
 
   function close() {
@@ -675,25 +681,20 @@
     startClock();
     // Carrega padrão de fundo guardado (Display Properties)
     try {
-      const savedBg = localStorage.getItem("jce_desktop_bg");
-      if (savedBg) {
-        const BG_PATTERNS = {
-          "Teal (Default)": "#008080",
-          "Clouds": "radial-gradient(ellipse 60px 30px at 15% 25%, #fff 0%, transparent 70%), radial-gradient(ellipse 80px 40px at 65% 55%, #fff 0%, transparent 70%), radial-gradient(ellipse 50px 25px at 85% 15%, #fff 0%, transparent 70%), radial-gradient(ellipse 70px 35px at 40% 80%, #fff 0%, transparent 70%), #008080",
-          "Hexagons": "radial-gradient(circle at 50% 0%, transparent 12px, #006060 13px, #006060 14px, transparent 15px), #008080",
-          "Stars": "radial-gradient(2px 2px at 20px 30px, #fff, transparent), radial-gradient(2px 2px at 60px 70px, #fff, transparent), radial-gradient(1px 1px at 90px 40px, #fff, transparent), radial-gradient(2px 2px at 130px 80px, #fff, transparent), radial-gradient(1px 1px at 170px 30px, #fff, transparent), #004040",
-          "Bricks": "repeating-linear-gradient(0deg, #704020 0px, #704020 20px, #80502a 20px, #80502a 22px), repeating-linear-gradient(90deg, transparent 0px, transparent 40px, #603010 40px, #603010 42px)",
-          "Matrix": "repeating-linear-gradient(0deg, transparent 0px, transparent 18px, rgba(0,255,0,0.15) 18px, rgba(0,255,0,0.15) 20px), #001000",
-        };
-        const bg = BG_PATTERNS[savedBg];
-        const desktop = document.getElementById("crt-desktop");
-        if (desktop && bg) {
-          desktop.style.background = bg;
-          let size = "auto";
-          if (savedBg === "Stars" || savedBg === "Matrix") size = "200px 200px";
-          else if (savedBg === "Hexagons") size = "60px 60px";
-          else if (savedBg === "Bricks") size = "42px 42px";
-          desktop.style.backgroundSize = size;
+      let savedBg = localStorage.getItem("jce_desktop_bg");
+      // Migra nomes antigos para os novos
+      const MIG = { "Hexagons": "Aurora", "Bricks": "Meadow" };
+      if (MIG[savedBg]) { savedBg = MIG[savedBg]; try { localStorage.setItem("jce_desktop_bg", savedBg); } catch (_) {} }
+      if (savedBg && savedBg !== "Teal (Default)") {
+        // Usa Canvas 2D API para desenhar o background (alta qualidade)
+        if (window.renderDesktopBg) {
+          const dataUrl = window.renderDesktopBg(savedBg);
+          const desktop = document.getElementById("crt-desktop");
+          if (desktop) {
+            desktop.style.backgroundImage = "url(" + dataUrl + ")";
+            desktop.style.backgroundSize = "100% 100%";
+            desktop.style.backgroundRepeat = "no-repeat";
+          }
         }
       }
     } catch (_) {}
