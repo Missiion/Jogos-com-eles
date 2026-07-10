@@ -371,6 +371,7 @@
     "Reciclagem": "Recycle Bin",
     "A Reciclagem está vazia.": "The Recycle Bin is empty.",
     "0 objeto(s)": "0 object(s)",
+    "objeto(s)": "object(s)",
 
     // ── Media Player (apps.js) ──
     "Reprodutor CN Media": "CN Media Player",
@@ -466,7 +467,7 @@
     "Velocidade:": "Speed:",
     "Aumenta a cada nível, cap no nível 10": "Rises each level, caps at level 10",
     "Moedas:": "Coins:",
-    "Ganhas com a pontuação (150 pts = 1 moeda) — gasta na LOJA": "Earned from score (150 pts = 1 coin) — spend in the SHOP",
+    "Ganhas com a pontuação (130 pts = 1 moeda) — gasta na LOJA": "Earned from score (130 pts = 1 coin) — spend in the SHOP",
     "Loja:": "Shop:",
     "Compra e equipa skins para tijolos, bola, plataforma e fundo": "Buy & equip skins for bricks, ball, paddle, and background",
     "Limpa todos os tijolos": "Clear all bricks",
@@ -525,6 +526,10 @@
 
     // ── Game over coins ──
     "(regista-te para guardar)": "(register to save)",
+
+    // ── Game over: linha do combo máximo + coluna Combo do leaderboard ──
+    "COMBO MÁXIMO": "MAX COMBO",
+    "COMBO": "COMBO",
   };
 
   // ─────────────────────────────────────────────
