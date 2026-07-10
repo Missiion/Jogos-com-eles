@@ -149,6 +149,8 @@
     mpNote: '<svg width="22" height="22" viewBox="0 0 22 22" fill="#000"><path d="M9 3 H16 V4.5 H10.5 V13.2 A2.5 2.5 0 1 1 9 11 Z"/><circle cx="7.5" cy="14.5" r="2.5"/></svg>',
     // ── Brick Breaker (CN Arcade) — ícone retro 16×16 ──
     brickbreaker: '<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="16" height="16" rx="1" fill="#000080"/><rect x="2" y="3" width="3.2" height="2.2" fill="#ff4040"/><rect x="6" y="3" width="3.2" height="2.2" fill="#ffd23f"/><rect x="10" y="3" width="3.2" height="2.2" fill="#4dd964"/><rect x="2" y="6" width="3.2" height="2.2" fill="#3fb8d4"/><rect x="6" y="6" width="3.2" height="2.2" fill="#b06be0"/><rect x="10" y="6" width="3.2" height="2.2" fill="#ff8c1a"/><rect x="5.5" y="12" width="5" height="1.6" rx="0.3" fill="#c8c8c8"/><circle cx="8" cy="10" r="1.2" fill="#fff"/></svg>',
+    // ── CN Browser — ícone retro 16×16 (monitor com globo centrado, sem barra azul) ──
+    browser: '<svg width="16" height="16" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="3" width="28" height="22" rx="1" fill="#c8c8c8" stroke="#000"/><rect x="4" y="5" width="24" height="18" fill="#008080"/><circle cx="16" cy="14" r="7" fill="#3fb8d4" stroke="#fff" stroke-width="1"/><path d="M9 14 H23 M16 7 V21 M12 10 Q16 14 12 18 M20 10 Q16 14 20 18" fill="none" stroke="#fff" stroke-width="0.8"/><rect x="11" y="25" width="10" height="2" fill="#c8c8c8"/><rect x="8" y="27" width="16" height="3" rx="1" fill="#c8c8c8"/></svg>',
   };
 
   // ─────────────────────────────────────────────
@@ -399,6 +401,323 @@
           });
         });
 
+        return wrap;
+      },
+    },
+
+    // ── CN Browser ── browser fake estilo Win95 com homepage de atalhos.
+    // Os atalhos abrem websites reais numa nova aba. 3 atalhos default
+    // + atalhos personalizados (localStorage). Menu Edit: dropdown de
+    // colunas (3/4/5). Botão "Restaurar" com confirmação.
+    browser: {
+      title: "CN Browser",
+      icon: ICONS.browser,
+      width: 560, height: 440,
+      render: function () {
+        const wrap = document.createElement("div");
+        wrap.className = "app-browser";
+
+        const STORAGE_KEY = "jce_browser_bookmarks";
+        const SETTINGS_KEY = "jce_browser_settings";
+
+        // ── Settings: apenas colunas por linha (3 default) ──
+        function loadSettings() {
+          try {
+            const raw = localStorage.getItem(SETTINGS_KEY);
+            if (raw) { const s = JSON.parse(raw); return { columns: s.columns || 3 }; }
+          } catch (_) {}
+          return { columns: 3 };
+        }
+        function saveSettings(s) {
+          try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (_) {}
+        }
+        let settings = loadSettings();
+
+        // ── Bookmarks ──
+        function loadBookmarks() {
+          try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) return JSON.parse(raw);
+          } catch (_) {}
+          saveBookmarks(DEFAULT_BROWSER_BOOKMARKS);
+          return DEFAULT_BROWSER_BOOKMARKS.slice();
+        }
+        function saveBookmarks(bm) {
+          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(bm)); } catch (_) {}
+        }
+        let bookmarks = loadBookmarks();
+
+        // ── Helper: obter favicon do Google ──
+        // Para bookmarks sem imagem, usa o favicon do site via Google.
+        function faviconUrl(url) {
+          try {
+            const u = new URL(url);
+            return "https://www.google.com/s2/favicons?domain=" + u.hostname + "&sz=128";
+          } catch (_) { return ""; }
+        }
+
+        // ── Toolbar do browser ──
+        wrap.innerHTML =
+          '<div class="app-browser-menubar">' +
+            '<span class="app-browser-menuitem" data-menu="file">' + t("Ficheiro") + '</span>' +
+            '<span class="app-browser-menuitem" data-menu="edit">' + t("Editar") + '</span>' +
+            '<span class="app-browser-menuitem">' + t("Ver") + '</span>' +
+            '<span class="app-browser-menuitem">' + t("Favoritos") + '</span>' +
+            '<span class="app-browser-menuitem">' + t("Ajuda") + '</span>' +
+          '</div>' +
+          '<div class="app-browser-toolbar">' +
+            '<button class="app-browser-btn" type="button" data-act="back" title="' + t("Voltar") + '">' +
+              '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#000" stroke-width="1.5"><path d="M9 2 L4 7 L9 12"/></svg></button>' +
+            '<button class="app-browser-btn" type="button" data-act="forward" title="' + t("Avançar") + '">' +
+              '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#000" stroke-width="1.5"><path d="M5 2 L10 7 L5 12"/></svg></button>' +
+            '<button class="app-browser-btn" type="button" data-act="reload" title="' + t("Recarregar") + '">' +
+              '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#000" stroke-width="1.5"><path d="M11 4 A4 4 0 1 0 12 8 M11 2 V5 H8"/></svg></button>' +
+            '<button class="app-browser-btn" type="button" data-act="home" title="' + t("Início") + '">' +
+              '<svg width="14" height="14" viewBox="0 0 14 14" fill="#000"><path d="M7 1 L1 6 V12 H5 V8 H9 V12 H13 V6 Z"/></svg></button>' +
+            '<div class="app-browser-urlwrap">' +
+              '<span class="app-browser-urlprefix">' + t("Endereço:") + '</span>' +
+              '<input type="text" class="app-browser-url" value="cn://home" readonly />' +
+            '</div>' +
+            '<button class="app-browser-btn app-browser-add" type="button" data-act="add" title="' + t("Adicionar atalho") + '">' +
+              '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#000" stroke-width="1.8"><line x1="7" y1="2" x2="7" y2="12"/><line x1="2" y1="7" x2="12" y2="7"/></svg></button>' +
+            '<button class="app-browser-btn app-browser-restore" type="button" data-act="restore" title="' + t("Restaurar padrão") + '">' +
+              '<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#000" stroke-width="1.3"><path d="M2 7 A5 5 0 1 1 7 12 M2 3 V7 H6"/></svg></button>' +
+          '</div>' +
+          '<div class="app-browser-content">' +
+            '<div class="app-browser-homepage" data-hud="browser-homepage"></div>' +
+          '</div>' +
+          '<div class="app-browser-statusbar">' +
+            '<span class="app-browser-status" data-hud="browser-status">' + t("Pronto") + '</span>' +
+          '</div>';
+
+        const homepageEl = wrap.querySelector('[data-hud="browser-homepage"]');
+        const statusEl = wrap.querySelector('[data-hud="browser-status"]');
+        const urlInput = wrap.querySelector(".app-browser-url");
+
+        function setStatus(msg) { if (statusEl) statusEl.textContent = msg; }
+
+        // ── Renderiza a homepage com os tiles dos bookmarks ──
+        function renderHomepage() {
+          if (!homepageEl) return;
+          if (bookmarks.length === 0) {
+            homepageEl.innerHTML =
+              '<div class="app-browser-empty">' + t("Sem atalhos. Clica em + para adicionar ou em ↺ para restaurar os padrão.") + '</div>';
+            return;
+          }
+          let html = '<div class="app-browser-tiles">';
+          bookmarks.forEach(function (bm, idx) {
+            const initial = (bm.name || "?").charAt(0).toUpperCase();
+            // Lógica de imagem:
+            //   1. Se o bookmark tem img (URL do utilizador) → usa essa
+            //   2. Se não tem img → tenta favicon do Google
+            //   3. Se o favicon falha → mostra a inicial do nome
+            const hasUserImg = bm.img && bm.img.length > 0;
+            const favUrl = hasUserImg ? bm.img : faviconUrl(bm.url);
+            html +=
+              '<div class="app-browser-tile" data-idx="' + idx + '">' +
+                '<div class="app-browser-tile-thumb">' +
+                  '<img src="' + escapeHtml(favUrl) + '" alt="' + escapeHtml(bm.name) + '"' +
+                  ' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'" />' +
+                  '<div class="app-browser-tile-fallback" style="display:none">' + initial + '</div>' +
+                  '<button class="app-browser-tile-remove" data-remove="' + idx + '" title="' + t("Remover") + '" type="button">' +
+                    '<svg width="8" height="8" viewBox="0 0 8 8"><line x1="1" y1="1" x2="7" y2="7" stroke="#000" stroke-width="1.2"/><line x1="7" y1="1" x2="1" y2="7" stroke="#000" stroke-width="1.2"/></svg>' +
+                  '</button>' +
+                '</div>' +
+                '<div class="app-browser-tile-name">' + escapeHtml(bm.name) + '</div>' +
+                '<div class="app-browser-tile-url">' + escapeHtml(bm.url.replace(/^https?:\/\//, "").replace(/\/$/, "")) + '</div>' +
+              '</div>';
+          });
+          html += '</div>';
+          homepageEl.innerHTML = html;
+          // Aplica as colunas via JS inline
+          const tiles = homepageEl.querySelector(".app-browser-tiles");
+          if (tiles) {
+            tiles.style.gridTemplateColumns = "repeat(" + settings.columns + ", 1fr)";
+          }
+
+          // Click num tile → abre o URL
+          homepageEl.querySelectorAll(".app-browser-tile").forEach(function (tile) {
+            tile.addEventListener("click", function (e) {
+              if (e.target.closest(".app-browser-tile-remove")) return;
+              const idx = parseInt(tile.dataset.idx, 10);
+              const bm = bookmarks[idx];
+              if (!bm || !bm.url) return;
+              setStatus(t("A abrir...") + " " + bm.url);
+              try { window.open(bm.url, "_blank", "noopener,noreferrer"); } catch (_) {}
+              setTimeout(function () { setStatus(t("Pronto")); }, 1500);
+            });
+          });
+
+          // Remove bookmark
+          homepageEl.querySelectorAll(".app-browser-tile-remove").forEach(function (btn) {
+            btn.addEventListener("click", function (e) {
+              e.stopPropagation();
+              const idx = parseInt(btn.dataset.remove, 10);
+              bookmarks.splice(idx, 1);
+              saveBookmarks(bookmarks);
+              renderHomepage();
+              setStatus(t("Atalho removido."));
+            });
+          });
+        }
+
+        // ── Adicionar atalho (form inline) ──
+        function showAddForm() {
+          const existing = homepageEl.querySelector(".app-browser-addform");
+          if (existing) { existing.remove(); return; }
+          const form = document.createElement("div");
+          form.className = "app-browser-addform";
+          form.innerHTML =
+            '<div class="app-browser-addform-title">' + t("Adicionar atalho") + '</div>' +
+            '<label>' + t("Nome") + '</label>' +
+            '<input type="text" class="app-browser-add-name" placeholder="' + t("Nome do site") + '" />' +
+            '<label>' + t("URL") + '</label>' +
+            '<input type="text" class="app-browser-add-url" placeholder="https://..." />' +
+            '<label>' + t("Imagem (URL) — opcional") + '</label>' +
+            '<input type="text" class="app-browser-add-img" placeholder="' + t("Deixa vazio para usar o logo do site") + '" />' +
+            '<div class="app-browser-addform-buttons">' +
+              '<button class="app-browser-addform-save" type="button">' + t("Guardar") + '</button>' +
+              '<button class="app-browser-addform-cancel" type="button">' + t("Cancelar") + '</button>' +
+            '</div>';
+          homepageEl.insertBefore(form, homepageEl.firstChild);
+          const nameInput = form.querySelector(".app-browser-add-name");
+          const urlInput2 = form.querySelector(".app-browser-add-url");
+          const imgInput = form.querySelector(".app-browser-add-img");
+          nameInput.focus();
+          form.querySelector(".app-browser-addform-save").addEventListener("click", function () {
+            const name = nameInput.value.trim();
+            const url = urlInput2.value.trim();
+            const img = imgInput.value.trim();
+            if (!name || !url) { setStatus(t("Nome e URL são obrigatórios.")); return; }
+            let finalUrl = url;
+            if (!/^https?:\/\//.test(finalUrl)) finalUrl = "https://" + finalUrl;
+            // img vazia = "" → o render usa favicon do Google
+            bookmarks.push({ name: name, url: finalUrl, img: img || "" });
+            saveBookmarks(bookmarks);
+            renderHomepage();
+            setStatus(t("Atalho adicionado."));
+          });
+          form.querySelector(".app-browser-addform-cancel").addEventListener("click", function () {
+            form.remove();
+          });
+        }
+
+        // ── Pop-up de confirmação (modal Win95) ──
+        function showConfirmDialog(title, message, onConfirm) {
+          const backdrop = document.createElement("div");
+          backdrop.className = "app-browser-modal-backdrop";
+          const dialog = document.createElement("div");
+          dialog.className = "app-browser-modal";
+          dialog.innerHTML =
+            '<div class="app-browser-modal-titlebar">' +
+              '<span class="app-browser-modal-title">' + escapeHtml(title) + '</span>' +
+              '<button class="app-browser-modal-close" type="button" title="' + t("Cancelar") + '" style="background:#c0c0c0;border:1px solid;border-color:#dfdfdf #808080 #808080 #dfdfdf;width:18px;height:18px;font-size:11px;font-weight:bold;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1;color:#000;">×</button>' +
+            '</div>' +
+            '<div class="app-browser-modal-body">' +
+              '<div class="app-browser-modal-icon">' +
+                '<svg width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="none" stroke="#ffd23f" stroke-width="3"/><line x1="16" y1="8" x2="16" y2="18" stroke="#ffd23f" stroke-width="3" stroke-linecap="round"/><circle cx="16" cy="23" r="1.5" fill="#ffd23f"/></svg>' +
+              '</div>' +
+              '<div class="app-browser-modal-msg">' + escapeHtml(message) + '</div>' +
+            '</div>' +
+            '<div class="app-browser-modal-buttons">' +
+              '<button class="app-browser-modal-yes" type="button" style="background:#c0c0c0;border:1px solid;border-color:#dfdfdf #808080 #808080 #dfdfdf;font-size:12px;font-family:Tahoma,sans-serif;padding:4px 20px;cursor:pointer;min-width:70px;font-weight:bold;color:#000;">' + t("Sim") + '</button>' +
+              '<button class="app-browser-modal-no" type="button" style="background:#c0c0c0;border:1px solid;border-color:#dfdfdf #808080 #808080 #dfdfdf;font-size:12px;font-family:Tahoma,sans-serif;padding:4px 20px;cursor:pointer;min-width:70px;color:#000;">' + t("Não") + '</button>' +
+            '</div>';
+          backdrop.appendChild(dialog);
+          wrap.appendChild(backdrop);
+          function close() { backdrop.remove(); }
+          backdrop.addEventListener("click", function (e) { if (e.target === backdrop) close(); });
+          dialog.querySelector(".app-browser-modal-close").addEventListener("click", close);
+          dialog.querySelector(".app-browser-modal-no").addEventListener("click", close);
+          dialog.querySelector(".app-browser-modal-yes").addEventListener("click", function () {
+            close();
+            if (typeof onConfirm === "function") onConfirm();
+          });
+        }
+
+        // ── Restaurar padrão (com confirmação) ──
+        function restoreDefaults() {
+          showConfirmDialog(
+            t("Restaurar padrão"),
+            t("Isto vai apagar todos os teus atalhos personalizados e restaurar apenas os 3 websites padrão. Queres continuar?"),
+            function () {
+              bookmarks = DEFAULT_BROWSER_BOOKMARKS.slice();
+              saveBookmarks(bookmarks);
+              renderHomepage();
+              setStatus(t("Atalhos restaurados para o padrão."));
+            }
+          );
+        }
+
+        // ── Menu Edit: dropdown de colunas (estilo Win95) ──
+        // Abre um dropdown abaixo do menu "Editar" com as opções 3/4/5.
+        // Ao clicar numa opção, aplica imediatamente (sem botão Aplicar).
+        function showEditDropdown(anchorEl) {
+          // Se já existe um dropdown aberto, fecha
+          const existing = wrap.querySelector(".app-browser-edit-dropdown");
+          if (existing) { existing.remove(); return; }
+          const dd = document.createElement("div");
+          dd.className = "app-browser-edit-dropdown";
+          dd.innerHTML =
+            '<div class="app-browser-edit-dropdown-label">' + t("Websites por linha") + '</div>' +
+            [3, 4, 5].map(function (n) {
+              return '<div class="app-browser-edit-dropdown-item' + (settings.columns === n ? " active" : "") + '" data-cols="' + n + '">' +
+                (settings.columns === n ? "✓ " : "&nbsp;&nbsp;") + n +
+              '</div>';
+            }).join("");
+          // Posiciona o dropdown abaixo do menu item
+          const rect = anchorEl.getBoundingClientRect();
+          const wrapRect = wrap.getBoundingClientRect();
+          dd.style.position = "absolute";
+          dd.style.left = (rect.left - wrapRect.left) + "px";
+          dd.style.top = (rect.bottom - wrapRect.top) + "px";
+          dd.style.zIndex = "50";
+          wrap.appendChild(dd);
+          // Click numa opção → aplica imediatamente
+          dd.querySelectorAll(".app-browser-edit-dropdown-item").forEach(function (item) {
+            item.addEventListener("click", function () {
+              settings.columns = parseInt(item.dataset.cols, 10);
+              saveSettings(settings);
+              renderHomepage();
+              dd.remove();
+              setStatus(t("Definições aplicadas."));
+            });
+          });
+          // Fecha ao clicar fora
+          setTimeout(function () {
+            document.addEventListener("mousedown", function closeDD(e) {
+              if (!dd.contains(e.target)) {
+                dd.remove();
+                document.removeEventListener("mousedown", closeDD);
+              }
+            });
+          }, 0);
+        }
+
+        // ── Menu items ──
+        wrap.querySelectorAll(".app-browser-menuitem[data-menu]").forEach(function (item) {
+          item.addEventListener("click", function (e) {
+            e.stopPropagation();
+            const menu = item.dataset.menu;
+            if (menu === "edit") { showEditDropdown(item); }
+          });
+        });
+
+        // ── Toolbar buttons ──
+        wrap.querySelectorAll(".app-browser-btn").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            const act = btn.dataset.act;
+            if (act === "add") { showAddForm(); }
+            else if (act === "restore") { restoreDefaults(); }
+            else if (act === "home") { urlInput.value = "cn://home"; renderHomepage(); setStatus(t("Pronto")); }
+            else if (act === "back" || act === "forward" || act === "reload") {
+              setStatus(t("Pronto"));
+            }
+          });
+        });
+
+        // Render inicial
+        renderHomepage();
         return wrap;
       },
     },
@@ -1802,21 +2121,31 @@
         const wrap = document.createElement("div");
         wrap.className = "app-settings";
 
-        // ── PADRÕES DE FUNDO (temáticos, não cores sólidas) ──
-        // As keys dos padrões servem simultaneamente de ID persistido em
-        // localStorage (DESKTOP_BG_KEY) e de label visível no <select>.
-        // Por isso NÃO são traduzidas (traduzir quebraria prefs guardadas).
+        // ── PADRÕES DE FUNDO ──
+        // As keys servem de ID persistido em localStorage e de label no select.
+        // NOTA: os nomes antigos ("Hexagons", "Bricks") são migrados para os
+        // novos ("Aurora", "Meadow") automaticamente no load.
         const BG_PATTERNS = {
           "Teal (Default)": "#008080",
-          "Clouds": "radial-gradient(ellipse 60px 30px at 15% 25%, #fff 0%, transparent 70%), radial-gradient(ellipse 80px 40px at 65% 55%, #fff 0%, transparent 70%), radial-gradient(ellipse 50px 25px at 85% 15%, #fff 0%, transparent 70%), radial-gradient(ellipse 70px 35px at 40% 80%, #fff 0%, transparent 70%), #008080",
-          "Hexagons": "radial-gradient(circle at 50% 0%, transparent 12px, #006060 13px, #006060 14px, transparent 15px), #008080",
-          "Stars": "radial-gradient(2px 2px at 20px 30px, #fff, transparent), radial-gradient(2px 2px at 60px 70px, #fff, transparent), radial-gradient(1px 1px at 90px 40px, #fff, transparent), radial-gradient(2px 2px at 130px 80px, #fff, transparent), radial-gradient(1px 1px at 170px 30px, #fff, transparent), #004040",
-          "Bricks": "repeating-linear-gradient(0deg, #704020 0px, #704020 20px, #80502a 20px, #80502a 22px), repeating-linear-gradient(90deg, transparent 0px, transparent 40px, #603010 40px, #603010 42px)",
-          "Matrix": "repeating-linear-gradient(0deg, transparent 0px, transparent 18px, rgba(0,255,0,0.15) 18px, rgba(0,255,0,0.15) 20px), #001000",
+          "Clouds": "linear-gradient(180deg, #4a90d9, #b0d8f0)",
+          "Aurora": "linear-gradient(180deg, #020210, #061830)",
+          "Stars": "linear-gradient(180deg, #000510, #000515)",
+          "Meadow": "linear-gradient(180deg, #5ba8e0 0%, #5ba8e0 55%, #5aa030 55%, #387018 100%)",
+          "Matrix": "linear-gradient(180deg, #000800, #000300)",
+        };
+        // Migração de nomes antigos
+        const BG_NAME_MIGRATION = {
+          "Hexagons": "Aurora",
+          "Bricks": "Meadow",
         };
         const DESKTOP_BG_KEY = "jce_desktop_bg";
         let savedBg = "Teal (Default)";
         try { savedBg = localStorage.getItem(DESKTOP_BG_KEY) || "Teal (Default)"; } catch (_) {}
+        // Migra nomes antigos para os novos
+        if (BG_NAME_MIGRATION[savedBg]) {
+          savedBg = BG_NAME_MIGRATION[savedBg];
+          try { localStorage.setItem(DESKTOP_BG_KEY, savedBg); } catch (_) {}
+        }
         const prevBg = savedBg;
 
         wrap.innerHTML =
@@ -1883,17 +2212,28 @@
         const preview = wrap.querySelector(".app-settings-preview");
 
         function applyBg(name) {
-          const bg = BG_PATTERNS[name] || "#008080";
-          preview.style.background = bg;
-          let size = "auto";
-          if (name === "Stars" || name === "Matrix") size = "200px 200px";
-          else if (name === "Hexagons") size = "60px 60px";
-          else if (name === "Bricks") size = "42px 42px";
-          preview.style.backgroundSize = size;
-          const desktop = document.getElementById("crt-desktop");
-          if (desktop) {
-            desktop.style.background = bg;
-            desktop.style.backgroundSize = size;
+          // Usa Canvas 2D API para desenhar o background (muito mais qualidade
+          // que CSS gradients). Converte para data URL e aplica como background-image.
+          if (window.renderDesktopBg) {
+            const dataUrl = window.renderDesktopBg(name);
+            // Preview (miniatura na janela de settings)
+            preview.style.backgroundImage = "url(" + dataUrl + ")";
+            preview.style.backgroundSize = "100% 100%";
+            preview.style.backgroundRepeat = "no-repeat";
+            // Só aplica ao desktop se o computador já estiver ligado
+            const content = document.getElementById("crt-content");
+            if (content && content.classList.contains("on")) {
+              const desktop = document.getElementById("crt-desktop");
+              if (desktop) {
+                desktop.style.backgroundImage = "url(" + dataUrl + ")";
+                desktop.style.backgroundSize = "100% 100%";
+                desktop.style.backgroundRepeat = "no-repeat";
+              }
+            }
+          } else {
+            // Fallback: CSS gradient (se renderDesktopBg não estiver disponível)
+            const bg = BG_PATTERNS[name] || "#008080";
+            preview.style.background = bg;
           }
         }
         applyBg(savedBg);
@@ -2153,6 +2493,7 @@
           { label: "Linha de comandos CN-DOS", icon: ICONS.dos, action: function () { openApp("dos"); } },
           { label: "Reprodutor CN Media", icon: ICONS.media, action: function () { openApp("media"); } },
           { label: "Brick Breaker", icon: ICONS.brickbreaker, action: function () { openApp("brickbreaker"); } },
+          { label: "CN Browser", icon: ICONS.browser, action: function () { openApp("browser"); } },
           { label: "Bloco de Notas", icon: ICONS.notepad, action: function () { openApp("notepad"); } },
           { label: "O Meu Computador", icon: ICONS.mycomputer, action: function () { openApp("mycomputer"); } },
         ],
@@ -2342,4 +2683,493 @@
   // Pré-carregamento das imagens do lixo — chamado pelo computer.js
   // quando o CRT abre, para que as fotos apareçam instantaneamente.
   window.trashPreload = preloadTrashImages;
+  window.browserPreload = preloadBrowserImages;
+
+  // ─────────────────────────────────────────────
+  //  DESKTOP BACKGROUNDS — Canvas 2D API
+  //  Desenha cada padrão proceduralmente num canvas offscreen,
+  //  converte para data URL e aplica como background-image.
+  //  Isto dá controlo total ao nível do pixel: formas reais,
+  //  texturas, profundidade, ruído, etc.
+  //  API: window.renderDesktopBg(patternName) → dataURL
+  // ─────────────────────────────────────────────
+  function renderDesktopBg(name) {
+    const W = 512, H = 384; // 4:3 ratio, good balance of quality/performance
+    const cv = document.createElement("canvas");
+    cv.width = W; cv.height = H;
+    const c = cv.getContext("2d");
+
+    if (name === "Teal (Default)" || !name) {
+      c.fillStyle = "#008080";
+      c.fillRect(0, 0, W, H);
+      return cv.toDataURL();
+    }
+
+    if (name === "Clouds") {
+      // Céu gradient
+      const sky = c.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, "#3a7bd5");
+      sky.addColorStop(0.4, "#5b9be8");
+      sky.addColorStop(0.7, "#8ec5ef");
+      sky.addColorStop(1, "#b8d8f0");
+      c.fillStyle = sky;
+      c.fillRect(0, 0, W, H);
+
+      // Nuvens: cada nuvem é um cluster de círculos sobrepostos com gradient
+      function drawCloud(cx, cy, scale) {
+        const puffs = [
+          { dx: 0, dy: 0, r: 30 },
+          { dx: 25, dy: -8, r: 25 },
+          { dx: -25, dy: -5, r: 22 },
+          { dx: 45, dy: 5, r: 20 },
+          { dx: -45, dy: 8, r: 18 },
+          { dx: 15, dy: -18, r: 20 },
+          { dx: -15, dy: -15, r: 18 },
+          { dx: 35, dy: -15, r: 16 },
+        ];
+        puffs.forEach(function (p) {
+          const x = cx + p.dx * scale, y = cy + p.dy * scale, r = p.r * scale;
+          const g = c.createRadialGradient(x, y - r * 0.3, 0, x, y, r);
+          g.addColorStop(0, "rgba(255,255,255,0.95)");
+          g.addColorStop(0.6, "rgba(255,255,255,0.6)");
+          g.addColorStop(1, "rgba(255,255,255,0)");
+          c.fillStyle = g;
+          c.beginPath();
+          c.arc(x, y, r, 0, Math.PI * 2);
+          c.fill();
+        });
+        // Sombra na base
+        c.save();
+        c.globalCompositeOperation = "multiply";
+        puffs.forEach(function (p) {
+          const r = p.r * scale;
+          const x = cx + p.dx * scale;
+          const y = cy + p.dy * scale + r * 0.3;
+          const g = c.createRadialGradient(x, y, 0, x, y, r);
+          g.addColorStop(0, "rgba(180,200,220,0.3)");
+          g.addColorStop(1, "rgba(180,200,220,0)");
+          c.fillStyle = g;
+          c.beginPath();
+          c.arc(x, y, r, 0, Math.PI * 2);
+          c.fill();
+        });
+        c.restore();
+      }
+
+      drawCloud(80, 80, 1.2);
+      drawCloud(280, 60, 1.5);
+      drawCloud(420, 120, 1.0);
+      drawCloud(150, 200, 1.3);
+      drawCloud(380, 250, 1.1);
+      drawCloud(60, 300, 0.9);
+      drawCloud(250, 320, 1.0);
+      drawCloud(450, 180, 0.8);
+
+      // Sol difuso
+      const sun = c.createRadialGradient(400, 50, 0, 400, 50, 80);
+      sun.addColorStop(0, "rgba(255,250,200,0.4)");
+      sun.addColorStop(1, "rgba(255,250,200,0)");
+      c.fillStyle = sun;
+      c.fillRect(0, 0, W, H);
+
+      return cv.toDataURL();
+    }
+
+    if (name === "Aurora") {
+      // AURORA BOREALIS — céu noturno com auroras verde/roxo/cyan sobre
+      // montanhas silhueta e lago reflexivo. Canvas 2D pixel-a-pixel.
+
+      // Céu noturno
+      const sky = c.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, "#020210");
+      sky.addColorStop(0.4, "#041020");
+      sky.addColorStop(0.7, "#061830");
+      sky.addColorStop(1, "#020812");
+      c.fillStyle = sky;
+      c.fillRect(0, 0, W, H);
+
+      // Estrelas (50 subtis)
+      for (let i = 0; i < 80; i++) {
+        const sx = Math.random() * W;
+        const sy = Math.random() * H * 0.55;
+        const sr = Math.random() * 1.2 + 0.3;
+        c.fillStyle = "rgba(255,255,255," + (0.3 + Math.random() * 0.5) + ")";
+        c.beginPath();
+        c.arc(sx, sy, sr, 0, Math.PI * 2);
+        c.fill();
+      }
+
+      // Auroras: 4 faixas que ondulam, cada com cor diferente
+      const auroraBands = [
+        { hue: 140, baseY: 60, amp: 40, alpha: 0.18, freq: 0.012, phase: 0 },
+        { hue: 180, baseY: 90, amp: 50, alpha: 0.15, freq: 0.009, phase: 1.5 },
+        { hue: 280, baseY: 50, amp: 35, alpha: 0.12, freq: 0.015, phase: 3 },
+        { hue: 160, baseY: 120, amp: 45, alpha: 0.10, freq: 0.008, phase: 4.5 },
+      ];
+      auroraBands.forEach(function (band) {
+        c.save();
+        c.globalCompositeOperation = "screen";
+        // Desenha a faixa com gradiente vertical (topo transparente → meio brilhante → base transparente)
+        for (let x = 0; x <= W; x += 2) {
+          const wave = Math.sin(x * band.freq + band.phase) * band.amp;
+          const wave2 = Math.sin(x * band.freq * 2.3 + band.phase) * band.amp * 0.3;
+          const yTop = band.baseY + wave + wave2 - 60;
+          const yMid = band.baseY + wave + wave2;
+          const yBot = band.baseY + wave + wave2 + 60;
+          // Coluna vertical com gradiente
+          const g = c.createLinearGradient(x, yTop, x, yBot);
+          g.addColorStop(0, "hsla(" + band.hue + ",90%,55%,0)");
+          g.addColorStop(0.4, "hsla(" + band.hue + ",90%,60%," + band.alpha + ")");
+          g.addColorStop(0.6, "hsla(" + band.hue + ",90%,60%," + band.alpha + ")");
+          g.addColorStop(1, "hsla(" + band.hue + ",90%,55%,0)");
+          c.fillStyle = g;
+          c.fillRect(x, yTop, 2, yBot - yTop);
+        }
+        c.restore();
+      });
+
+      // Montanhas silhueta (3 camadas: fundo, meio, frente)
+      function drawMountainRange(baseY, peaks, color) {
+        c.fillStyle = color;
+        c.beginPath();
+        c.moveTo(0, H);
+        c.lineTo(0, baseY);
+        for (let i = 0; i < peaks.length; i++) {
+          c.lineTo(peaks[i].x, peaks[i].y);
+        }
+        c.lineTo(W, baseY);
+        c.lineTo(W, H);
+        c.closePath();
+        c.fill();
+      }
+
+      // Montanha de fundo (mais clara)
+      drawMountainRange(H * 0.55, [
+        { x: 0, y: H * 0.55 }, { x: 60, y: H * 0.42 }, { x: 120, y: H * 0.50 },
+        { x: 180, y: H * 0.38 }, { x: 250, y: H * 0.48 }, { x: 320, y: H * 0.35 },
+        { x: 390, y: H * 0.45 }, { x: 460, y: H * 0.40 }, { x: W, y: H * 0.50 },
+      ], "#0a1525");
+
+      // Montanha do meio
+      drawMountainRange(H * 0.68, [
+        { x: 0, y: H * 0.68 }, { x: 50, y: H * 0.55 }, { x: 110, y: H * 0.62 },
+        { x: 170, y: H * 0.50 }, { x: 230, y: H * 0.60 }, { x: 300, y: H * 0.48 },
+        { x: 370, y: H * 0.58 }, { x: 440, y: H * 0.52 }, { x: W, y: H * 0.62 },
+      ], "#050d18");
+
+      // Montanha da frente (mais escura)
+      drawMountainRange(H * 0.78, [
+        { x: 0, y: H * 0.78 }, { x: 40, y: H * 0.68 }, { x: 90, y: H * 0.75 },
+        { x: 150, y: H * 0.65 }, { x: 210, y: H * 0.72 }, { x: 280, y: H * 0.62 },
+        { x: 350, y: H * 0.70 }, { x: 420, y: H * 0.66 }, { x: W, y: H * 0.74 },
+      ], "#020610");
+
+      // Lago reflexivo (base do ecrã)
+      const lake = c.createLinearGradient(0, H * 0.78, 0, H);
+      lake.addColorStop(0, "#020610");
+      lake.addColorStop(0.5, "#031018");
+      lake.addColorStop(1, "#010408");
+      c.fillStyle = lake;
+      c.fillRect(0, H * 0.78, W, H * 0.22);
+
+      // Reflexo da aurora no lago (subtil)
+      c.save();
+      c.globalCompositeOperation = "screen";
+      for (let x = 0; x <= W; x += 4) {
+        const wave = Math.sin(x * 0.012) * 40;
+        const g = c.createLinearGradient(x, H * 0.78, x, H);
+        g.addColorStop(0, "rgba(0,255,100,0.04)");
+        g.addColorStop(0.5, "rgba(0,180,120,0.02)");
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        c.fillStyle = g;
+        c.fillRect(x, H * 0.78, 4, H * 0.22);
+      }
+      c.restore();
+
+      return cv.toDataURL();
+    }
+
+    if (name === "Stars") {
+      // Espaço profundo
+      const space = c.createLinearGradient(0, 0, 0, H);
+      space.addColorStop(0, "#000208");
+      space.addColorStop(0.5, "#000a18");
+      space.addColorStop(1, "#000510");
+      c.fillStyle = space;
+      c.fillRect(0, 0, W, H);
+
+      // Nebulosa (roxo/azul)
+      const neb1 = c.createRadialGradient(W * 0.3, H * 0.35, 0, W * 0.3, H * 0.35, 180);
+      neb1.addColorStop(0, "rgba(80,30,120,0.25)");
+      neb1.addColorStop(0.5, "rgba(40,20,80,0.15)");
+      neb1.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = neb1;
+      c.fillRect(0, 0, W, H);
+
+      const neb2 = c.createRadialGradient(W * 0.75, H * 0.6, 0, W * 0.75, H * 0.6, 150);
+      neb2.addColorStop(0, "rgba(20,60,120,0.2)");
+      neb2.addColorStop(0.5, "rgba(10,30,60,0.1)");
+      neb2.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = neb2;
+      c.fillRect(0, 0, W, H);
+
+      // Estrelas: 300+ com tamanhos e brilhos variados
+      for (let i = 0; i < 350; i++) {
+        const x = Math.random() * W;
+        const y = Math.random() * H;
+        const size = Math.random();
+        let r, alpha, color;
+
+        if (size > 0.97) {
+          // Estrelas brilhantes com diffraction spikes
+          r = 2 + Math.random();
+          alpha = 0.9 + Math.random() * 0.1;
+          color = Math.random() > 0.5 ? "255,255,255" : "200,220,255";
+
+          // Glow
+          const g = c.createRadialGradient(x, y, 0, x, y, r * 4);
+          g.addColorStop(0, "rgba(" + color + "," + (alpha * 0.5) + ")");
+          g.addColorStop(1, "rgba(" + color + ",0)");
+          c.fillStyle = g;
+          c.beginPath();
+          c.arc(x, y, r * 4, 0, Math.PI * 2);
+          c.fill();
+
+          // Spike horizontal
+          c.strokeStyle = "rgba(" + color + "," + (alpha * 0.4) + ")";
+          c.lineWidth = 0.5;
+          c.beginPath();
+          c.moveTo(x - r * 5, y);
+          c.lineTo(x + r * 5, y);
+          c.stroke();
+          // Spike vertical
+          c.beginPath();
+          c.moveTo(x, y - r * 5);
+          c.lineTo(x, y + r * 5);
+          c.stroke();
+        } else if (size > 0.7) {
+          r = 1.2 + Math.random() * 0.8;
+          alpha = 0.6 + Math.random() * 0.3;
+          color = Math.random() > 0.5 ? "255,255,255" : (Math.random() > 0.5 ? "200,220,255" : "255,250,200");
+        } else {
+          r = 0.5 + Math.random() * 0.7;
+          alpha = 0.3 + Math.random() * 0.4;
+          color = "255,255,255";
+        }
+
+        c.fillStyle = "rgba(" + color + "," + alpha + ")";
+        c.beginPath();
+        c.arc(x, y, r, 0, Math.PI * 2);
+        c.fill();
+      }
+
+      // Galáxia espiral (subtil)
+      c.save();
+      c.translate(W * 0.5, H * 0.5);
+      c.rotate(0.3);
+      for (let arm = 0; arm < 2; arm++) {
+        for (let i = 0; i < 80; i++) {
+          const t = i / 80;
+          const ang = t * Math.PI * 2 + arm * Math.PI;
+          const r = t * 120;
+          const x = Math.cos(ang) * r;
+          const y = Math.sin(ang) * r * 0.4;
+          c.fillStyle = "rgba(200,180,255," + (0.04 * (1 - t)) + ")";
+          c.beginPath();
+          c.arc(x, y, 2, 0, Math.PI * 2);
+          c.fill();
+        }
+      }
+      c.restore();
+
+      return cv.toDataURL();
+    }
+
+    if (name === "Meadow") {
+      // MEADOW — campo de relva simples com flores coloridas.
+      // Simples e limpo: céu azul claro, relva verde, flores espalhadas.
+
+      // Céu
+      const sky = c.createLinearGradient(0, 0, 0, H * 0.55);
+      sky.addColorStop(0, "#5ba8e0");
+      sky.addColorStop(1, "#a0d0f0");
+      c.fillStyle = sky;
+      c.fillRect(0, 0, W, H * 0.55);
+
+      // Relva
+      const grass = c.createLinearGradient(0, H * 0.55, 0, H);
+      grass.addColorStop(0, "#5aa030");
+      grass.addColorStop(0.5, "#4a9020");
+      grass.addColorStop(1, "#387018");
+      c.fillStyle = grass;
+      c.fillRect(0, H * 0.55, W, H * 0.45);
+
+      // Linha do horizonte suave
+      const horizon = c.createLinearGradient(0, H * 0.52, 0, H * 0.58);
+      horizon.addColorStop(0, "rgba(255,255,255,0)");
+      horizon.addColorStop(0.5, "rgba(255,255,255,0.15)");
+      horizon.addColorStop(1, "rgba(255,255,255,0)");
+      c.fillStyle = horizon;
+      c.fillRect(0, H * 0.52, W, H * 0.06);
+
+      // Flores: simples, 5 pétalas + centro amarelo
+      const flowerColors = [
+        ["#ff6080", "#ffe040"], // rosa + amarelo
+        ["#8050ff", "#ffe040"], // roxo + amarelo
+        ["#ff8030", "#ffe040"], // laranja + amarelo
+        ["#40b0ff", "#ffe040"], // azul + amarelo
+        ["#ff4040", "#ffe040"], // vermelho + amarelo
+        ["#ffffff", "#ffe040"], // branco + amarelo
+      ];
+
+      for (let i = 0; i < 40; i++) {
+        const fx = Math.random() * W;
+        const fy = H * 0.58 + Math.random() * H * 0.38;
+        const fr = 3 + Math.random() * 3;
+        const col = flowerColors[Math.floor(Math.random() * flowerColors.length)];
+
+        // Caule (linha verde fina)
+        c.strokeStyle = "#2a6010";
+        c.lineWidth = 1;
+        c.beginPath();
+        c.moveTo(fx, fy + fr);
+        c.lineTo(fx + (Math.random() - 0.5) * 4, fy + fr + 8 + Math.random() * 6);
+        c.stroke();
+
+        // 5 pétalas
+        c.fillStyle = col[0];
+        for (let p = 0; p < 5; p++) {
+          const ang = (p / 5) * Math.PI * 2;
+          const px = fx + Math.cos(ang) * fr;
+          const py = fy + Math.sin(ang) * fr;
+          c.beginPath();
+          c.arc(px, py, fr * 0.7, 0, Math.PI * 2);
+          c.fill();
+        }
+
+        // Centro amarelo
+        c.fillStyle = col[1];
+        c.beginPath();
+        c.arc(fx, fy, fr * 0.5, 0, Math.PI * 2);
+        c.fill();
+      }
+
+      // Tufos de relva (pequenos traços verdes escuros)
+      c.strokeStyle = "rgba(30,80,10,0.4)";
+      c.lineWidth = 1;
+      for (let i = 0; i < 60; i++) {
+        const gx = Math.random() * W;
+        const gy = H * 0.57 + Math.random() * H * 0.4;
+        const gh = 3 + Math.random() * 5;
+        c.beginPath();
+        c.moveTo(gx, gy);
+        c.lineTo(gx + (Math.random() - 0.5) * 3, gy - gh);
+        c.stroke();
+      }
+
+      // Sol simples no céu
+      c.fillStyle = "rgba(255,250,200,0.5)";
+      c.beginPath();
+      c.arc(W * 0.8, H * 0.15, 20, 0, Math.PI * 2);
+      c.fill();
+
+      return cv.toDataURL();
+    }
+
+    if (name === "Matrix") {
+      // Fundo preto
+      c.fillStyle = "#000300";
+      c.fillRect(0, 0, W, H);
+
+      // Caracteres katakana
+      const katakana = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜｦﾝ0123456789";
+      const fontSize = 14;
+      c.font = "bold " + fontSize + "px monospace";
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+
+      const colW = fontSize;
+      const cols = Math.floor(W / colW);
+
+      for (let col = 0; col < cols; col++) {
+        const x = col * colW + colW / 2;
+        // Cada coluna tem um comprimento aleatório
+        const colLen = 5 + Math.floor(Math.random() * 25);
+        const colStart = Math.random() * H - colLen * fontSize;
+
+        for (let i = 0; i < colLen; i++) {
+          const y = colStart + i * fontSize;
+          if (y < -fontSize || y > H + fontSize) continue;
+
+          const char = katakana[Math.floor(Math.random() * katakana.length)];
+          const isLead = i === colLen - 1; // último caractere = brilhante
+
+          if (isLead) {
+            // Caractere líder: branco com glow verde
+            c.shadowColor = "#00ff41";
+            c.shadowBlur = 8;
+            c.fillStyle = "#e0ffe0";
+          } else {
+            c.shadowBlur = 0;
+            // Fade de verde brilhante para verde escuro
+            const fade = i / colLen;
+            const green = Math.floor(255 * (1 - fade * 0.7));
+            c.fillStyle = "rgb(0," + green + ",65)";
+          }
+
+          c.fillText(char, x, y);
+        }
+      }
+      c.shadowBlur = 0;
+
+      // Glow geral subtil
+      const glow = c.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.7);
+      glow.addColorStop(0, "rgba(0,255,65,0.02)");
+      glow.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = glow;
+      c.fillRect(0, 0, W, H);
+
+      return cv.toDataURL();
+    }
+
+    // Fallback
+    c.fillStyle = "#008080";
+    c.fillRect(0, 0, W, H);
+    return cv.toDataURL();
+  }
+  window.renderDesktopBg = renderDesktopBg;
+
+  // ─────────────────────────────────────────────
+  //  BROWSER BOOKMARKS DEFAULTS + pré-carregamento
+  //  Definidos no top-level para poderem ser pré-carregados quando
+  //  o computador abre (não só quando o browser abre).
+  // ─────────────────────────────────────────────
+  const DEFAULT_BROWSER_BOOKMARKS = [
+    { name: "Rafael caravela",
+      url: "https://www.youtube.com/@RafaelDeCaravela/videos",
+      img: "https://github.com/Missiion/Jogos-com-eles/blob/main/youtube.jpg?raw=true" },
+    { name: "Caravela HUB",
+      url: "https://missiion.github.io/Caravela/",
+      img: "https://github.com/Missiion/Jogos-com-eles/blob/main/paginadoleo.png?raw=true" },
+    { name: "Chaturbate",
+      url: "https://chaturbate.com/female-cams/",
+      img: "https://github.com/Missiion/Jogos-com-eles/blob/main/Chatturbate.jpg?raw=true" },
+  ];
+  // Pré-carrega as imagens dos bookmarks do browser em cache do browser.
+  let browserPreloaded = false;
+  function preloadBrowserImages() {
+    if (browserPreloaded) return;
+    browserPreloaded = true;
+    // Lê os bookmarks do localStorage (inclui os do utilizador)
+    let bms = DEFAULT_BROWSER_BOOKMARKS.slice();
+    try {
+      const raw = localStorage.getItem("jce_browser_bookmarks");
+      if (raw) bms = JSON.parse(raw);
+    } catch (_) {}
+    bms.forEach(function (bm) {
+      if (!bm.img) return; // sem imagem = usa logo/letra
+      const img = new Image();
+      img.src = bm.img;
+    });
+  }
 })();
