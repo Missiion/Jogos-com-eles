@@ -5798,6 +5798,46 @@ textarea:focus-visible,
   color: #808080;
   font-size: 12px;
 }
+/* Corpo do lixo com ficheiros — igual ao .app-explorer-body mas com
+   fundo branco e padding adequado para os ícones maiores (48px). */
+.app-recycle-body {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-content: flex-start;
+  background: #fff;
+  overflow: auto;
+}
+.recycle-item {
+  width: 84px;
+  cursor: pointer;
+}
+.recycle-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto;
+}
+.recycle-item-img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 3px;
+  border: 1px solid #808080;
+  image-rendering: auto;
+}
+/* Label dos ficheiros do lixo — quebra de linha para nomes longos
+   (ex: Nudes_do_Claudio.zip) não cortarem pela borda da janela. */
+.recycle-item .explorer-item-label {
+  word-break: break-word;
+  hyphens: auto;
+  line-height: 1.2;
+  max-width: 84px;
+}
 .app-recycle-status {
   height: 20px;
   background: #c0c0c0;
@@ -6892,8 +6932,27 @@ textarea:focus-visible,
   pointer-events: none;
   z-index: 2;
 }
-.bb-hud-score { color: #4dd964; }
-.bb-hud-level { color: #ffd23f; }
+.bb-hud-score {
+  color: #4dd964;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  min-width: 56px;
+}
+.bb-hud-level {
+  color: #ffd23f;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  min-width: 40px;
+}
+.bb-hud-label {
+  font-size: 0.78em;
+  letter-spacing: 1.5px;
+  opacity: 0.85;
+}
 .bb-hud-lives { display: flex; gap: 3px; }
 .bb-life { display: inline-flex; filter: drop-shadow(1px 1px 0 #000); }
 .bb-hud-num { font-variant-numeric: tabular-nums; }
@@ -7261,10 +7320,10 @@ textarea:focus-visible,
 }
 .bb-lb-listhead {
   display: grid;
-  grid-template-columns: 32px 1fr 56px 80px;
+  grid-template-columns: 32px 1fr 52px 60px 80px;
   gap: 4px;
   width: 100%;
-  max-width: 420px;
+  max-width: 460px;
   padding: 4px 8px;
   font-size: 14px;
   letter-spacing: 1px;
@@ -7275,17 +7334,17 @@ textarea:focus-visible,
 .bb-lb-list {
   flex: 1;
   width: 100%;
-  max-width: 420px;
+  max-width: 460px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 4px;
+  padding: 0;
 }
 .bb-lb-list::-webkit-scrollbar { width: 8px; }
 .bb-lb-list::-webkit-scrollbar-track { background: #0a0a14; }
 .bb-lb-list::-webkit-scrollbar-thumb { background: #3a3a52; border-radius: 4px; }
 .bb-lb-row {
   display: grid;
-  grid-template-columns: 32px 1fr 56px 80px;
+  grid-template-columns: 32px 1fr 52px 60px 80px;
   gap: 4px;
   padding: 4px 8px;
   font-family: 'VT323', 'Courier New', monospace;
@@ -7335,4 +7394,160 @@ textarea:focus-visible,
   margin-top: 4px;
   width: min(60%, 200px);
   align-self: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BRICK BREAKER — Coluna Combo do leaderboard
+   + Linhas de estatísticas do game over (combo + power-ups inline)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Cabeçalho da leaderboard — alinhamento por coluna ── */
+/* Os text-align têm de bater com os das rows (.bb-lb-rank, .bb-lb-level,
+   .bb-lb-combo, .bb-lb-score) para que o texto do header fique diretamente
+   acima dos valores. NAME fica left (nomes são left-aligned nas rows). */
+.bb-lb-h-rank { text-align: center; }
+.bb-lb-h-name { text-align: left; }
+.bb-lb-h-level { text-align: center; }
+.bb-lb-h-combo { text-align: center; }
+.bb-lb-h-score { text-align: center; }
+
+/* ── Coluna Combo nas rows da leaderboard ── */
+/* Cyan arcade — distinto do verde do score, coerente com o tema do jogo. */
+.bb-lb-combo {
+  text-align: center;
+  color: #3fb8d4;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 4px rgba(63, 184, 212, 0.35);
+}
+.bb-lb-row-me .bb-lb-combo { color: #5fd4e8; }
+
+/* ── Game over: linha do combo máximo ── */
+/* Mesmo tamanho e cor do .bb-go-score para consistência visual. */
+.bb-go-maxcombo-line {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(16px, 2.8vh, 22px);
+  letter-spacing: 2px;
+  color: #fff;
+}
+/* Apenas o número fica cyan arcade (destaque). */
+.bb-go-maxcombo-line .bb-hud-num,
+.bb-go-maxcombo {
+  color: #3fb8d4;
+  text-shadow: 0 0 6px rgba(63, 184, 212, 0.5);
+}
+
+/* ── Game over: linha dos power-ups apanhados (inline) ── */
+/* Linha flex centrada com chips: [ícone][n] [ícone][n] ... */
+.bb-go-powerups-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: min(80%, 260px);
+  min-height: 1px;
+}
+.bb-go-powerups-line:empty { display: none; }
+.bb-go-pu-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(15px, 2.3vh, 18px);
+  line-height: 1;
+  color: #fff;
+}
+.bb-go-pu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--c, #3fb8d4);
+  color: #000;
+  font-weight: 700;
+  font-size: 12px;
+  text-shadow: none;
+  box-shadow: 0 0 5px var(--c, #3fb8d4);
+  flex-shrink: 0;
+}
+.bb-go-pu-count {
+  color: #fff;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+
+/* ── Pequenos ecrãs: linhas encolhem ── */
+@media (max-height: 420px) {
+  .bb-go-maxcombo-line { font-size: 13px; letter-spacing: 1px; }
+  .bb-go-powerups-line { gap: 5px; }
+  .bb-go-pu-chip { font-size: 13px; }
+  .bb-go-pu-icon { width: 15px; height: 15px; font-size: 10px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   IMAGE VIEWER (Visualizador de imagens do lixo)
+   Janela Win95 que mostra a foto em ponto grande, centrada num
+   fundo cinza escuro (estilo "Windows 98 Image Preview").
+   ═══════════════════════════════════════════════════════════════ */
+.app-imageviewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #808080;
+}
+.app-imageviewer-toolbar {
+  height: 20px;
+  background: #c0c0c0;
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #000;
+  border-bottom: 1px solid #808080;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+}
+.app-imageviewer-filename {
+  font-weight: bold;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-imageviewer-stage {
+  flex: 1;
+  background: #404040;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 12px;
+  position: relative;
+}
+.app-imageviewer-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  image-rendering: auto;
+}
+.app-imageviewer-loading,
+.app-imageviewer-error {
+  color: #c0c0c0;
+  font-family: 'Tahoma', 'MS Sans Serif', sans-serif;
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+}
+.app-imageviewer-error.hidden { display: none; }
+
+/* ═══════════════════════════════════════════════════════════════
+   BRICK BREAKER — Leaderboard: centralizar coluna SCORE
+   O score estava right-aligned; agora centered como as outras colunas.
+   ═══════════════════════════════════════════════════════════════ */
+.bb-lb-score {
+  text-align: center !important;
 }
