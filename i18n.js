@@ -215,6 +215,7 @@
     // ── Down-vote & Up-vote system ──────────────
     "Reprovados": "Rejected",
     "Aprovados": "Approved",
+    "Escondidos": "Hidden",
     "Criar Reprovados": "Create Rejected",
     "Limpar Reprovados": "Clear Rejected",
     "Confirmar limpeza do lixo?": "Confirm cleanup?",
@@ -430,6 +431,49 @@
     "Executar...": "Run...",
     "Desligar...": "Shut Down...",
     "Ajuda": "Help",
+
+    // ── CN Browser (apps.js) ──
+    "Ficheiro": "File",
+    "Editar": "Edit",
+    "Ver": "View",
+    "Favoritos": "Favorites",
+    "Voltar": "Back",
+    "Avançar": "Forward",
+    "Recarregar": "Reload",
+    "Início": "Home",
+    "Endereço:": "Address:",
+    "Adicionar atalho": "Add shortcut",
+    "Restaurar padrão": "Restore defaults",
+    "Pronto": "Done",
+    "A abrir...": "Opening...",
+    "Remover": "Remove",
+    "Sem atalhos. Clica em + para adicionar ou em ↺ para restaurar os padrão.":
+      "No shortcuts. Click + to add or ↺ to restore defaults.",
+    "Nome": "Name",
+    "URL": "URL",
+    "Imagem (URL)": "Image (URL)",
+    "Imagem (URL) — opcional": "Image (URL) — optional",
+    "Deixa vazio para usar o logo do site": "Leave empty to use the site's logo",
+    "Nome do site": "Site name",
+    "URL da imagem": "Image URL",
+    "Guardar": "Save",
+    "Nome e URL são obrigatórios.": "Name and URL are required.",
+    "Atalho adicionado.": "Shortcut added.",
+    "Atalho removido.": "Shortcut removed.",
+    "Atalhos restaurados para o padrão.": "Shortcuts restored to defaults.",
+
+    // ── CN Browser: Edit + confirmação ──
+    "Sim": "Yes",
+    "Não": "No",
+    "Isto vai apagar todos os teus atalhos personalizados e restaurar apenas os 3 websites padrão. Queres continuar?":
+      "This will erase all your custom shortcuts and restore only the 3 default websites. Do you want to continue?",
+    "Definições de visualização": "Display settings",
+    "Tamanho dos ícones": "Icon size",
+    "Pequeno": "Small",
+    "Médio": "Medium",
+    "Grande": "Large",
+    "Websites por linha": "Websites per row",
+    "Definições aplicadas.": "Settings applied.",
 
     // ── Botões OK/Cancel/Apply ──
     "OK": "OK",
