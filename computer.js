@@ -439,6 +439,9 @@
     setTimeout(startAmbient, 250);
     // Boot sequence: começa após o overlay abrir (escala do monitor)
     setTimeout(startBootSequence, 350);
+    // Pré-carrega as imagens do lixo para que apareçam instantaneamente
+    // quando o utilizador abrir o Recycle Bin (sem ficar em branco).
+    if (window.trashPreload) { try { window.trashPreload(); } catch (_) {} }
   }
 
   function close() {
