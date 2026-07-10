@@ -430,35 +430,63 @@ import {
     // ─────────────────────────────────────────────
 
     // Submete um score no leaderboard.
-    // Estratégia: guarda UM documento por score (não por utilizador) para
-    // permitir múltiplas entradas do mesmo jogador (os seus melhores jogos).
-    // O getLeaderboard faz query orderBy score desc + limit, e agrupa por
-    // userId no cliente para mostrar só o melhor de cada um.
-    // Documento: bb_scores/{autoId} = { userId, name, score, level, ts }
-    submitScore: async function (userId, name, score, level) {
+    // Estratégia: guarda UM documento por utilizador (docId = userId).
+    // Só atualiza se o novo score for MELHOR que o existente.
+    //
+    // Documento: bb_scores/{userId} = {
+    //   userId, name, score, level, ts,
+    //   maxCombo,         // combo máximo alcançado nesta partida (detalhe)
+    //   powerupCounts     // { nuke: 2, laser: 5, ... } — power-ups apanhados (detalhe)
+    // }
+    //
+    // O rating do leaderboard continua a ser a PONTUAÇÃO (score).
+    // maxCombo + powerupCounts são guardados apenas como detalhe estatístico
+    // (mostrados no ecrã de game over + na aba "Combo" do leaderboard).
+    //
+    // IMPORTANTE: mesmo quando o score NÃO bate o recorde, atualizamos o
+    // maxCombo se o novo jogo tiver alcançado um combo mais alto. Isto
+    // permite que a aba Combo reflita o melhor combo de sempre do jogador,
+    // independentemente de ter sido no seu melhor jogo em pontuação.
+    submitScore: async function (userId, name, score, level, stats) {
       if (!userId || score <= 0) return false;
+      stats = stats || {};
       try {
-        // Usa userId como ID do documento (1 doc por utilizador).
-        // Antes usava doc(colRef) que gera ID automático → criava um novo
-        // doc a cada submissão, mesmo para o mesmo utilizador. Agora, com
-        // setDoc(ref, data, {merge:true}) só atualiza se o novo score for
-        // melhor (lê o existente primeiro para comparar).
         const ref = doc(db, SCORES_COLLECTION, userId);
         const existing = await getDoc(ref);
-        if (existing.exists()) {
-          const prev = existing.data();
-          if ((prev.score || 0) >= score) {
-            // Score existente é melhor ou igual — não atualiza
-            return true;
-          }
+        const prev = existing.exists() ? existing.data() : null;
+        const prevScore = prev ? (prev.score || 0) : 0;
+        const prevMaxCombo = prev ? (prev.maxCombo || 0) : 0;
+        const newMaxCombo = stats.maxCombo || 0;
+
+        // Decide se atualiza o documento:
+        //   • Score novo é melhor → atualiza tudo (score, level, maxCombo, powerupCounts)
+        //   • Score novo é igual/menor MAS maxCombo novo é maior → atualiza APENAS
+        //     o maxCombo (mantém score/level/powerupCounts do recorde)
+        const scoreImproved = !prev || score > prevScore;
+        const comboImproved = newMaxCombo > prevMaxCombo;
+
+        if (!scoreImproved && !comboImproved) {
+          // Nem score nem combo batem o recorde — não faz nada
+          return true;
         }
-        await setDoc(ref, {
-          userId: userId,
-          name: name || "Anonymous",
-          score: score,
-          level: level || 1,
-          ts: Date.now(),
-        });
+
+        if (scoreImproved) {
+          // Novo recorde de pontuação — grava tudo
+          await setDoc(ref, {
+            userId: userId,
+            name: name || "Anonymous",
+            score: score,
+            level: level || 1,
+            maxCombo: newMaxCombo,
+            powerupCounts: stats.powerupCounts || {},
+            ts: Date.now(),
+          });
+        } else {
+          // Só o combo melhorou — atualiza apenas o maxCombo (merge)
+          await setDoc(ref, {
+            maxCombo: newMaxCombo,
+          }, { merge: true });
+        }
         return true;
       } catch (e) {
         console.warn("[BBData] submitScore failed:", e);
@@ -468,7 +496,12 @@ import {
 
     // Lê o top N do leaderboard. Retorna array ordenado (desc por score),
     // com apenas o MELHOR score de cada utilizador (dedup por userId).
-    // Cada item: { userId, name, score, level, ts, rank }
+    // Cada item: { userId, name, score, level, ts, maxCombo, rank }
+    //
+    // maxCombo vem do documento do utilizador (bb_scores/{userId}).
+    // Nota: o maxCombo pode ter sido alcançado numa partida diferente da
+    // que estabeleceu o melhor score — o submitScore atualiza o maxCombo
+    // independentemente quando um novo combo recorde é alcançado.
     getLeaderboard: async function (topN) {
       topN = topN || 10;
       try {
@@ -486,6 +519,7 @@ import {
             score: data.score || 0,
             level: data.level || 1,
             ts: data.ts || 0,
+            maxCombo: data.maxCombo || 0,
           };
           if (!seen.has(userId) || seen.get(userId).score < entry.score) {
             seen.set(userId, entry);
@@ -506,21 +540,26 @@ import {
     },
 
     // Lê o melhor score de um utilizador específico.
-    // Retorna { score, level, ts } ou null se não houver scores.
+    // Retorna { score, level, ts, maxCombo } ou null se não houver score.
+    //
+    // Como o documento bb_scores/{userId} já contém APENAS o melhor score
+    // do utilizador (submitScore só grava quando o score melhora), basta
+    // ler diretamente o doc — sem necessidade de query + filtro.
+    // Isto corrige o bug anterior onde getUserBestScore lia o top 50 e
+    // falhava para utilizadores ranked 51+.
     getUserBestScore: async function (userId) {
       if (!userId) return null;
       try {
-        const q = query(collection(db, SCORES_COLLECTION), orderBy("score", "desc"), limit(50));
-        const snap = await getDocs(q);
-        let best = null;
-        snap.forEach(function (d) {
-          const data = d.data();
-          if (data.userId !== userId) return;
-          if (!best || (data.score || 0) > best.score) {
-            best = { score: data.score || 0, level: data.level || 1, ts: data.ts || 0 };
-          }
-        });
-        return best;
+        const ref = doc(db, SCORES_COLLECTION, userId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) return null;
+        const data = snap.data();
+        return {
+          score: data.score || 0,
+          level: data.level || 1,
+          ts: data.ts || 0,
+          maxCombo: data.maxCombo || 0,
+        };
       } catch (e) {
         console.warn("[BBData] getUserBestScore failed:", e);
         return null;
