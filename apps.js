@@ -33,6 +33,90 @@
   }
 
   // ─────────────────────────────────────────────
+  //  FICHEIROS DO LIXO (Recycle Bin)
+  //  Definidos no top-level para que possam ser pré-carregados assim
+  //  que o computador abre (não só quando o utilizador abre o lixo).
+  //  Isto evita que as fotos apareçam em branco enquanto carregam.
+  //
+  //  Cada ficheiro: { name, iconType, iconSrc?, iconSvg?, fullSrc? }
+  //    • iconType "img"  → foto como ícone (32px no lixo, grande no viewer)
+  //    • iconType "svg"  → ícone SVG desenhado (ZIP)
+  //    • fullSrc → URL da imagem em tamanho grande (para o visualizador)
+  // ─────────────────────────────────────────────
+  const TRASH_FILES = [
+    { name: "Claudio.u", iconType: "img",
+      iconSrc: "https://github.com/Missiion/Jogos-com-eles/blob/main/claudio.png?raw=true",
+      fullSrc: "https://github.com/Missiion/Jogos-com-eles/blob/main/claudio.png?raw=true" },
+    { name: "Miguel.u", iconType: "img",
+      iconSrc: "https://github.com/Missiion/Jogos-com-eles/blob/main/miguel.png?raw=true",
+      fullSrc: "https://github.com/Missiion/Jogos-com-eles/blob/main/miguel.png?raw=true" },
+    { name: "Leo.u", iconType: "img",
+      iconSrc: "https://github.com/Missiion/Jogos-com-eles/blob/main/leo.png?raw=true",
+      fullSrc: "https://github.com/Missiion/Jogos-com-eles/blob/main/leo.png?raw=true" },
+    { name: "Nudes_do_Claudio.zip", iconType: "zip" },
+  ];
+
+  // Pré-carrega as imagens do lixo em cache do browser.
+  // Chamado quando o computador CRT abre (computer.js open()) para que,
+  // ao abrir o lixo, as fotos já estejam em cache e apareçam instantaneamente.
+  // As imagens são guardadas num Map para reuso imediato no visualizador.
+  const trashImageCache = new Map();
+  let trashPreloaded = false;
+  function preloadTrashImages() {
+    if (trashPreloaded) return;
+    trashPreloaded = true;
+    TRASH_FILES.forEach(function (f) {
+      if (f.iconType !== "img" || !f.iconSrc) return;
+      const img = new Image();
+      img.onload = function () { trashImageCache.set(f.iconSrc, img); };
+      img.onerror = function () { /* fallback SVG trata */ };
+      img.src = f.iconSrc;
+    });
+  }
+
+  // ─────────────────────────────────────────────
+  //  VISUALIZADOR DE IMAGENS (image viewer)
+  //  Abre uma janela Win95 com a imagem em ponto grande.
+  //  Estilo "Windows 98 Image Preview" — fundo cinza, imagem centrada,
+  //  título com o nome do ficheiro.
+  // ─────────────────────────────────────────────
+  function openImageViewer(src, name) {
+    if (!window.wm) return;
+    const content = document.createElement("div");
+    content.className = "app-imageviewer";
+    content.innerHTML =
+      '<div class="app-imageviewer-toolbar">' +
+        '<span class="app-imageviewer-filename">' + escapeHtml(name) + '</span>' +
+      '</div>' +
+      '<div class="app-imageviewer-stage">' +
+        '<img class="app-imageviewer-img" alt="' + escapeHtml(name) + '" />' +
+        '<div class="app-imageviewer-loading">' + t("A carregar...") + '</div>' +
+        '<div class="app-imageviewer-error hidden">' + t("Não foi possível carregar a imagem.") + '</div>' +
+      '</div>';
+    const img = content.querySelector(".app-imageviewer-img");
+    const loading = content.querySelector(".app-imageviewer-loading");
+    const errorEl = content.querySelector(".app-imageviewer-error");
+    img.style.display = "none";
+    img.onload = function () {
+      img.style.display = "";
+      if (loading) loading.style.display = "none";
+    };
+    img.onerror = function () {
+      if (loading) loading.style.display = "none";
+      if (errorEl) errorEl.classList.remove("hidden");
+      img.style.display = "none";
+    };
+    img.src = src;
+    window.wm.open({
+      id: "imageviewer-" + Date.now(),
+      title: name,
+      icon: ICONS.media,
+      width: 520, height: 440,
+      content: content,
+    });
+  }
+
+  // ─────────────────────────────────────────────
   //  ÍCONES SVG (partilhados)
   // ─────────────────────────────────────────────
   const ICONS = {
@@ -249,14 +333,72 @@
     recycle: {
       title: "Reciclagem",
       icon: ICONS.recycle,
-      width: 300, height: 180,
+      width: 440, height: 320,
       render: function () {
         const wrap = document.createElement("div");
         wrap.className = "app-recycle";
+
+        // Ícone SVG de ficheiro ZIP clássico (estilo Win95/Win98).
+        // Página branca com dobra, faixa lateral com "pixels" azuis (o
+        // padrão clássico do ícone de ZIP/compressão), e 3 X vermelhos
+        // em LINHA HORIZONTAL (XXX) sobrepostos a indicar NSFW.
+        const ZIP_ICON_SVG =
+          '<svg width="48" height="48" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">' +
+            // Página com dobra (canto sup. direito)
+            '<path d="M7 2 H20 L25 7 V28 a2 2 0 0 1-2 2 H7 a2 2 0 0 1-2-2 V4 a2 2 0 0 1 2-2 z" fill="#fff" stroke="#404040" stroke-width="1"/>' +
+            '<path d="M20 2 V7 H25 z" fill="#c0c0c0" stroke="#404040" stroke-width="1"/>' +
+            // Faixa lateral esquerda — padrão de "compressão" clássico de ZIP
+            '<rect x="7" y="9" width="5" height="19" fill="#5a78e8"/>' +
+            '<rect x="8" y="10" width="3" height="2" fill="#3fb8d4"/>' +
+            '<rect x="8" y="13" width="3" height="2" fill="#3fb8d4"/>' +
+            '<rect x="8" y="16" width="3" height="2" fill="#3fb8d4"/>' +
+            '<rect x="8" y="19" width="3" height="2" fill="#3fb8d4"/>' +
+            '<rect x="8" y="22" width="3" height="2" fill="#3fb8d4"/>' +
+            '<rect x="8" y="25" width="3" height="2" fill="#3fb8d4"/>' +
+            // 3 X vermelhos em LINHA HORIZONTAL (XXX) — NSFW warning
+            '<text x="14" y="22" font-size="6" font-family="Tahoma, Arial, sans-serif" font-weight="bold" text-anchor="start" fill="#c00">X</text>' +
+            '<text x="18" y="22" font-size="6" font-family="Tahoma, Arial, sans-serif" font-weight="bold" text-anchor="start" fill="#c00">X</text>' +
+            '<text x="22" y="22" font-size="6" font-family="Tahoma, Arial, sans-serif" font-weight="bold" text-anchor="start" fill="#c00">X</text>' +
+          '</svg>';
+
+        let itemsHtml = "";
+        TRASH_FILES.forEach(function (f) {
+          let iconHtml;
+          if (f.iconType === "img") {
+            // Foto como ícone (48px) com fallback SVG se o load falhar.
+            iconHtml =
+              '<img class="recycle-item-img" src="' + f.iconSrc + '" alt="' + f.name +
+              '" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'\'" />' +
+              '<svg class="recycle-item-fallback" width="48" height="48" viewBox="0 0 32 32" style="display:none">' +
+                '<rect x="5" y="4" width="22" height="24" rx="1" fill="#c8c8c8" stroke="#000"/>' +
+                '<rect x="5" y="4" width="22" height="4" fill="#000080"/>' +
+                '<circle cx="16" cy="16" r="5" fill="#ffd23f"/>' +
+                '<circle cx="16" cy="16" r="3" fill="#b8860b"/>' +
+              '</svg>';
+          } else if (f.iconType === "zip") {
+            iconHtml = ZIP_ICON_SVG;
+          }
+          itemsHtml +=
+            '<div class="explorer-item recycle-item" data-trash-name="' + f.name + '"' +
+              (f.iconType === "img" && f.fullSrc ? ' data-trash-img="' + f.fullSrc + '"' : "") + '>' +
+              '<div class="recycle-item-icon">' + iconHtml + '</div>' +
+              '<div class="explorer-item-label">' + f.name + '</div>' +
+            '</div>';
+        });
+
         wrap.innerHTML =
           '<div class="app-explorer-toolbar">' + t("Ficheiro  Editar  Ver  Ajuda") + '</div>' +
-          '<div class="app-recycle-empty">' + t("A Reciclagem está vazia.") + '</div>' +
-          '<div class="app-recycle-status">' + t("0 objeto(s)") + '</div>';
+          '<div class="app-recycle-body">' + itemsHtml + '</div>' +
+          '<div class="app-recycle-status">' + TRASH_FILES.length + " " + t("objeto(s)") + '</div>';
+
+        // Duplo-clique num ficheiro de imagem abre o visualizador.
+        wrap.querySelectorAll(".recycle-item[data-trash-img]").forEach(function (item) {
+          item.addEventListener("dblclick", function (e) {
+            e.stopPropagation();
+            openImageViewer(item.dataset.trashImg, item.dataset.trashName);
+          });
+        });
+
         return wrap;
       },
     },
@@ -326,7 +468,7 @@
         let shuffle = false;
         let repeat = "off"; // "off" | "all" | "one"
         let isPlaying = false;
-        let currentVizId = "ambience";
+        let currentVizId = "neon";
         let vizState = null;
         let rafId = null;
         let lastTs = 0;
@@ -467,8 +609,55 @@
             freqData = new Uint8Array(analyser.frequencyBinCount);
             waveData = new Uint8Array(analyser.frequencyBinCount);
             analyserReady = true;
-          } catch (e) { /* contexto indisponível — fallback sintético */ }
+            // Aplica o volume atual ao mediaGain assim que o analyser fica pronto.
+            applyVolume();
+          } catch (e) {
+            // createMediaElementSource só pode ser chamado UMA vez por elemento.
+            // Se falhar (ex: já foi chamado), limpa o estado para que o fallback
+            // sintético seja usado — o visualizer continua a funcionar.
+            audioCtx = null; source = null; analyser = null; mediaGain = null;
+            analyserReady = false;
+          }
         }
+
+        // Pré-aquece o AudioContext no primeiro gesto do utilizador dentro
+        // do media player. Isto é necessário porque os browsers bloqueiam
+        // AudioContext até haver user activation. Sem isto, o setupAnalyser
+        // cria o contexto em estado "suspended" e o analyser não devolve
+        // dados reais até ao resume() — que só acontecia no play().
+        // Agora o contexto fica ready cedo, e o analyser passa a ter dados
+        // reais assim que o audio começa a tocar.
+        function primeAudioContext() {
+          if (analyserReady) {
+            if (audioCtx && audioCtx.state === "suspended") {
+              audioCtx.resume().catch(function () {});
+            }
+            return;
+          }
+          // Cria o AudioContext (suspended) no primeiro gesto. O
+          // createMediaElementSource pode ser feito agora — o audio
+          // ainda não está a tocar, mas a ligação fica estabelecida.
+          try {
+            setupAnalyser();
+            if (audioCtx && audioCtx.state === "suspended") {
+              audioCtx.resume().catch(function () {});
+            }
+          } catch (_) {}
+          // Só remove os listeners se o analyser ficou pronto. Se falhou
+          // (ex: browser bloqueou), mantém os listeners para tentar novamente
+          // no próximo gesto — o browser pode permitir na 2ª tentativa.
+          if (analyserReady) {
+            wrap.removeEventListener("pointerdown", primeAudioContext);
+            wrap.removeEventListener("keydown", primeAudioContext);
+          }
+        }
+        wrap.addEventListener("pointerdown", primeAudioContext);
+        wrap.addEventListener("keydown", primeAudioContext);
+
+        // Tenta criar o AudioContext imediatamente (alguns browsers permitem
+        // criar em estado suspended sem user gesture). Se falhar, o
+        // primeAudioContext tenta novamente no primeiro gesto.
+        try { setupAnalyser(); } catch (_) {}
 
         // Verifica se o analyser está a devolver dados reais (CORS pode bloquear)
         // — verificação feita inline no vizFrame para evitar chamada duplicada.
@@ -657,10 +846,19 @@
             loadCurrent(true); return;
           }
           setupAnalyser();
-          if (audioCtx && audioCtx.state === "suspended") audioCtx.resume().catch(function () {});
           applyVolume();
-          audio.play().then(function () { isPlaying = true; updatePlayBtn(); startVizLoop(); })
-            .catch(function () { /* autoplay bloqueado */ });
+          // Garante que o audioCtx está running ANTES de tocar. Se estiver
+          // suspenso, o som passa pelo mediaGain (suspenso) e não se ouve,
+          // e o analyser não recebe dados reais. O resume() é async.
+          const startPlay = function () {
+            audio.play().then(function () { isPlaying = true; updatePlayBtn(); startVizLoop(); })
+              .catch(function () { /* autoplay bloqueado */ });
+          };
+          if (audioCtx && audioCtx.state === "suspended") {
+            audioCtx.resume().then(startPlay).catch(startPlay);
+          } else {
+            startPlay();
+          }
         }
         function pause() {
           if (mode === "youtube") {
@@ -1316,6 +1514,7 @@
             queueOrder = tracks.map(function (_, i) { return i; });
             queueIdx = 0;
             useSyntheticFallback = false;
+            corsZeroStreak = 0; // reset: dá nova oportunidade ao analyser real
             progressRow.style.display = "";
             renderPlaylists();
             loadCurrent(false);
@@ -1432,22 +1631,29 @@
             waveData[i] = Math.max(0, Math.min(255, v));
           }
         }
+        // Contador de frames consecutivos com freqData tudo zero enquanto toca.
+        // Só ativa o fallback sintético se houver muitos zeros seguidos (CORS
+        // taint real) — não basta um frame de silêncio (início/mudança de faixa).
+        let corsZeroStreak = 0;
+
         function vizFrame(ts) {
           rafId = requestAnimationFrame(vizFrame);
           const dt = Math.min(0.05, (ts - lastTs) / 1000);
           lastTs = ts;
           const w = canvas.width, h = canvas.height;
-          // Tenta dados reais; se bloqueados por CORS, usa fallback sintético
-          if (analyserReady && analyser && !useSyntheticFallback) {
+          // Em modo MP3 (playlist default) usamos SEMPRE o AnalyserNode real.
+          // O CORS do raw.githubusercontent.com envia Access-Control-Allow-Origin: *,
+          // e o <audio> tem crossorigin="anonymous", pelo que o analyser funciona.
+          // Não ativamos fallback sintético em modo MP3 — mesmo que haja silêncio
+          // legítimo (início de faixa, pausa), o visualizer mostra zeros reais.
+          //
+          // Em modo YouTube (playlists customizadas) o <audio> não está a tocar
+          // (o YouTube IFrame é que produz som), por isso usamos fallback sintético.
+          if (mode === "mp3" && analyserReady && analyser) {
             analyser.getByteFrequencyData(freqData);
             analyser.getByteTimeDomainData(waveData);
-            // Deteta CORS taint: se a tocar mas freqData tudo zero, ativa fallback
-            if (isPlaying) {
-              let sum = 0;
-              for (let i = 0; i < freqData.length; i++) sum += freqData[i];
-              if (sum === 0) useSyntheticFallback = true;
-            }
-          } else if (useSyntheticFallback || !analyserReady) {
+          } else if (mode === "youtube" || !analyserReady || useSyntheticFallback) {
+            // Fallback sintético: YouTube, analyser não pronto, ou CORS bloqueado.
             fillSynthetic();
           } else {
             if (freqData) freqData.fill(0);
@@ -2133,4 +2339,7 @@
   // ─────────────────────────────────────────────
   window.apps = { open: openApp, APPS: APPS };
   window.startmenu = { toggle: toggleStartMenu, open: openStartMenu, close: closeStartMenu };
+  // Pré-carregamento das imagens do lixo — chamado pelo computer.js
+  // quando o CRT abre, para que as fotos apareçam instantaneamente.
+  window.trashPreload = preloadTrashImages;
 })();
