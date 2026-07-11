@@ -7,6 +7,7 @@
 //  Etapa 2.5: velocidade progressiva (cap nível 5), drop 10%, debug panel
 //  Etapa 3: sistema de moedas + Firebase (window.BBData) + anti-tamper
 //  Etapa 4: loja de skins (20 skins, 4 categorias, tiers 1-5)
+//  Etapa 6: tracking de tempo de partida + aba "Tempo" no leaderboard
 //
 //  API: window.BrickBreaker.create() → devolve nó DOM da app.
 // ═══════════════════════════════════════════════════════════════
@@ -88,6 +89,11 @@
   // Moedas = Math.floor(score / COIN_DIVISOR).
   // 130 pts = 1 moeda.
   const COIN_DIVISOR = 130;
+
+  // ── Anti-inatividade ──
+  // Se a bola estiver colada à paddle (ainda não lançada) e a paddle não
+  // se mover durante este tempo, o jogo entra em pausa automática.
+  const INACTIVITY_TIMEOUT_MS = 5000;
 
   // ─────────────────────────────────────────────
   //  ÍCONE SVG
@@ -321,6 +327,19 @@
       comboPunch: 0,    // animação de "murro" no texto do combo (1=acabou de levar murro, 0=repouso)
       comboFade: 0,     // fade-out do combo (1=visível, 0=invisível). Quando combo expira, fade decai.
       maxCombo: 0,      // combo máximo alcançado nesta partida (para o ecrã de game over + leaderboard)
+      // ── Tracking de tempo de partida (Etapa 6) ──
+      // O tempo só conta durante jogo ativo (não em pausa/menu).
+      // gameAccumMs acumula o tempo ativo; lastResumeTs marca o início do
+      // período ativo atual. finalTimeMs é definido no game over.
+      gameAccumMs: 0,   // tempo acumulado ativo (ms)
+      lastResumeTs: 0,  // timestamp do último resume (0 = não ativo)
+      finalTimeMs: 0,   // tempo finalizado no game over (0 = em jogo ou não jogado)
+      lbTab: "score",   // aba ativa do leaderboard: "score" | "details"
+      // ── Anti-inatividade (Etapa 6) ──
+      // Se a bola estiver colada à paddle e a paddle não se mover durante
+      // INACTIVITY_TIMEOUT_MS, o jogo entra em pausa automática.
+      lastPaddleMoveTs: 0,  // timestamp do último movimento da paddle
+      _prevPaddleX: null,   // posição anterior da paddle (para detetar movimento)
       shake: 0,         // intensidade do screen shake (decai ao longo do tempo)
       paddleHitTime: 0, // timestamp do último hit da bola na paddle (para animação tier 5/6)
       // Contagem de power-ups apanhados nesta partida, por tipo (ex: { nuke: 2, laser: 5, ... }).
@@ -339,6 +358,28 @@
   }
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  // ─────────────────────────────────────────────
+  //  TEMPO DE PARTIDA (Etapa 6)
+  //  Formata ms → "M:SS" (ex: 65000 → "1:05").
+  //  Para tempos ≥ 1h → "H:MM:SS" (ex: "1:02:34").
+  // ─────────────────────────────────────────────
+  function formatTime(ms) {
+    if (!ms || ms < 0) ms = 0;
+    var totalSec = Math.floor(ms / 1000);
+    var h = Math.floor(totalSec / 3600);
+    var m = Math.floor((totalSec % 3600) / 60);
+    var s = totalSec % 60;
+    if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    return m + ":" + String(s).padStart(2, "0");
+  }
+
+  // Devolve o tempo decorrido atual (ms) — soma o acumulado + período ativo.
+  function getElapsedMs(state) {
+    if (state.finalTimeMs > 0) return state.finalTimeMs;
+    if (state.lastResumeTs > 0) return state.gameAccumMs + (Date.now() - state.lastResumeTs);
+    return state.gameAccumMs;
+  }
 
   function buildBricks(state, layoutFn) {
     const grid = layoutFn();
@@ -518,6 +559,13 @@
     if (state.keys.right) state.paddle.x += PADDLE_SPEED * k;
     if (state.mouseX != null) state.paddle.x = state.mouseX - state.paddle.w / 2;
     state.paddle.x = clamp(state.paddle.x, 0, W - state.paddle.w);
+    // Anti-inatividade: regista o timestamp se a paddle se moveu (>0.5px).
+    // Isto apanha todos os inputs (teclado, rato, touch) num só sítio.
+    if (state._prevPaddleX === null) state._prevPaddleX = state.paddle.x;
+    if (Math.abs(state.paddle.x - state._prevPaddleX) > 0.5) {
+      state.lastPaddleMoveTs = Date.now();
+    }
+    state._prevPaddleX = state.paddle.x;
     updateLasers(state, k);
     updatePowerups(state, k);
 
@@ -844,12 +892,14 @@
     // Canhões laser (independente da skin)
     if (state.effects.laser) { ctx.fillStyle = "#ff4040"; ctx.fillRect(p.x + 3, p.y - 3, 5, 3); ctx.fillRect(p.x + p.w - 8, p.y - 3, 5, 3); }
 
-    // Bolas (Pierce = roxa com glow sobrepõe-se à skin)
+    // Bolas (Pierce = sobrepõe a skin Nuclear com glow verde radioativo)
+    // O efeito through força a skin ball-plasma (Nuclear) para indicar que a
+    // bola atravessa tijolos. O glow acompanha a cor da skin (verde radioativo).
     const through = !!state.effects.through;
     const ballSkin = through ? "ball-plasma" : state.equippedSkins.ball;
     for (let i = 0; i < state.balls.length; i++) {
       const b = state.balls[i];
-      if (through) { ctx.fillStyle = "rgba(176,107,224,0.35)"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, 0, Math.PI * 2); ctx.fill(); }
+      if (through) { ctx.fillStyle = "rgba(80,255,80,0.35)"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, 0, Math.PI * 2); ctx.fill(); }
       if (skins) skins.drawBall(ctx, b.x, b.y, b.r, ballSkin);
     }
 
@@ -900,7 +950,15 @@
   }
   function gameOver(state) {
     const ui = state._ui; stopLoop(state); sfx.over(); state.screen = "gameover";
+    // Finaliza o timer: acumula o último período ativo.
+    if (state.lastResumeTs > 0) {
+      state.gameAccumMs += Date.now() - state.lastResumeTs;
+      state.lastResumeTs = 0;
+    }
+    state.finalTimeMs = state.gameAccumMs;
     if (ui && ui.finalScore) ui.finalScore.textContent = String(state.score);
+    // Mostra o tempo final no ecrã de game over.
+    if (ui && ui.goTime) ui.goTime.textContent = formatTime(state.finalTimeMs);
     // Popula as estatísticas finais: combo máximo + power-ups apanhados.
     renderGameOverStats(state);
     awardCoinsOnGameOver(state);
@@ -987,11 +1045,12 @@
     // Fallback: se não conseguir obter o nome, usa "Anonymous"
     if (!name) name = "Anonymous";
     try {
-      // Envia score + maxCombo + powerupCounts ao Firebase.
+      // Envia score + maxCombo + timeMs + powerupCounts ao Firebase.
       // O rating do leaderboard continua a ser a PONTUAÇÃO (score) —
-      // o maxCombo é guardado apenas como detalhe adicional (nova aba).
+      // maxCombo e timeMs são guardados como detalhe (abas Combo/Tempo).
       await window.BBData.submitScore(userId, name, state.score, state.level, {
         maxCombo: state.maxCombo,
+        timeMs: state.finalTimeMs,
         powerupCounts: state.powerupCounts || {},
       });
     } catch (e) { /* silencioso — não bloqueia o fluxo */ }
@@ -1083,14 +1142,41 @@
     if (state.comboPunch > 0) state.comboPunch = Math.max(0, state.comboPunch - dt * 6);
     // Screen shake: decai ao longo do tempo
     if (state.shake > 0) state.shake = Math.max(0, state.shake - dt * 40);
+    // Anti-inatividade: se a bola está colada à paddle e a paddle não se
+    // move há INACTIVITY_TIMEOUT_MS, o jogo entra em pausa automática.
+    if (state.screen === "game" && state.lastPaddleMoveTs > 0) {
+      let anyAttached = false;
+      for (let i = 0; i < state.balls.length; i++) {
+        if (state.balls[i].attached) { anyAttached = true; break; }
+      }
+      if (anyAttached && Date.now() - state.lastPaddleMoveTs > INACTIVITY_TIMEOUT_MS) {
+        pauseGame(state);
+      }
+    }
     try { step(state, dt); } catch (e) { console.error("[bb] step:", e); }
     try { draw(ui.ctx, state); } catch (e) { console.error("[bb] draw:", e); }
     updateEffectsHud(state);
   }
   function startLoop(state, ui) { if (state.running) return; state.running = true; state.lastTs = performance.now(); state.raf = requestAnimationFrame(function (t) { loop(t, state, ui); }); }
   function stopLoop(state) { state.running = false; if (state.raf) { cancelAnimationFrame(state.raf); state.raf = null; } }
-  function pauseGame(state) { const ui = state._ui; if (state.screen !== "game") return; stopLoop(state); state.screen = "pause"; if (ui && ui.pauseOverlay) ui.pauseOverlay.classList.remove("bb-hidden"); }
-  function resumeGame(state) { const ui = state._ui; if (state.screen !== "pause") return; state.screen = "game"; if (ui && ui.pauseOverlay) ui.pauseOverlay.classList.add("bb-hidden"); startLoop(state, ui); }
+  function pauseGame(state) {
+    const ui = state._ui; if (state.screen !== "game") return;
+    // Pausa o timer: acumula o período ativo no gameAccumMs.
+    if (state.lastResumeTs > 0) {
+      state.gameAccumMs += Date.now() - state.lastResumeTs;
+      state.lastResumeTs = 0;
+    }
+    stopLoop(state); state.screen = "pause"; if (ui && ui.pauseOverlay) ui.pauseOverlay.classList.remove("bb-hidden");
+  }
+  function resumeGame(state) {
+    const ui = state._ui; if (state.screen !== "pause") return;
+    // Retoma o timer: marca o início do novo período ativo.
+    state.lastResumeTs = Date.now();
+    // Anti-inatividade: reset do timer de movimento ao retomar (dá 5s de grace).
+    state.lastPaddleMoveTs = Date.now();
+    state._prevPaddleX = null;  // força re-inicialização no próximo step
+    state.screen = "game"; if (ui && ui.pauseOverlay) ui.pauseOverlay.classList.add("bb-hidden"); startLoop(state, ui);
+  }
 
   function startGame(state, ui) {
     // Preserva meta-state (coins, skins, debug) através do reset de gameplay
@@ -1107,6 +1193,13 @@
     // Re-sincroniza do BBData se disponível (sobre-escreve com dados authoritative)
     // MAS só se NÃO estiver em modo debug unlock (session-only prevalece)
     if (!prevDebugUnlocked && window.BBData && window.BBData.isReady()) { state.coins = window.BBData.getCoins(); state.coinsReady = true; state.ownedSkins = window.BBData.getOwnedSkins(); state.equippedSkins = window.BBData.getEquippedSkins(); }
+    // Inicia o timer da partida (Etapa 6)
+    state.gameAccumMs = 0;
+    state.lastResumeTs = Date.now();
+    state.finalTimeMs = 0;
+    // Anti-inatividade: inicializa o timer de movimento da paddle.
+    state.lastPaddleMoveTs = Date.now();
+    state._prevPaddleX = null;
     // startGame: jogo novo — layout procedural (sempre diferente)
     buildBricks(state, generateLayout); resetBalls(state); updateHud(state); updateCoinsHud(state);
     showScreen(state, "game"); draw(ui.ctx, state); if (ui.wrap) ui.wrap.focus(); startLoop(state, ui);
@@ -1319,69 +1412,175 @@
   }
 
   // ─────────────────────────────────────────────
-  //  LEADERBOARD (Etapa 5 + coluna Combo)
+  //  LEADERBOARD (Etapa 5 + coluna Combo + coluna Tempo + aba Detalhes)
   //
-  //  Lista única com 5 colunas: #, NOME, NÍVEL, COMBO, PONTUAÇÃO.
-  //  O rating oficial continua a ser a PONTUAÇÃO (ordenado por score desc).
-  //  A coluna COMBO mostra o combo máximo de cada jogador — apenas detalhe.
+  //  Duas abas:
+  //    • "PONTUAÇÃO" — lista top 10 ordenada por score desc.
+  //      Colunas: #, NOME, TEMPO, NÍVEL, COMBO, PONTUAÇÃO.
+  //      TEMPO = tempo da partida que estabeleceu o melhor score (timeMs).
   //
-  //  Nota: o getLeaderboard lê scores PÚBLICOS (não precisa de login).
-  //  Só o "MELHOR:" (getUserBestScore) precisa de login.
-  //  Isto garante que a leaderboard aparece mesmo para utilizadores
-  //  não registados — só o destaque pessoal é que fica "—".
+  //    • "DETALHES" — 3 cards horizontais (top 3 jogadores, 1º à esquerda).
+  //      Cada card mostra: lista de poderes acumulados (totalPowerups),
+  //      tempo máximo de sempre (maxTimeMs), partidas completadas (gamesPlayed),
+  //      combo máximo (maxCombo), nível máximo (maxLevel), e a posição atual.
+  //
+  //  A aba ativa está em state.lbTab ("score" | "details").
+  //  O conteúdo é injetado em ui.lbContent (div único que serve de container
+  //  para ambas as abas — o HTML interno é totalmente reconstruído a cada render).
   // ─────────────────────────────────────────────
   async function renderLeaderboard(state) {
-    const ui = state._ui; if (!ui || !ui.lbList) return;
+    const ui = state._ui; if (!ui || !ui.lbContent) return;
+    const tab = state.lbTab || "score";
+
+    // Atualiza o estado ativo das tabs
+    if (ui.lbTabs) {
+      ui.lbTabs.querySelectorAll(".bb-lb-tab").forEach(function (btn) {
+        btn.classList.toggle("active", btn.dataset.lbtab === tab);
+      });
+    }
+
     // Estado de loading
-    ui.lbList.innerHTML = '<div class="bb-lb-loading">' + t("A carregar...") + '</div>';
+    ui.lbContent.innerHTML = '<div class="bb-lb-loading">' + t("A carregar...") + '</div>';
     if (ui.lbMyBest) ui.lbMyBest.textContent = "—";
+
+    // Busca dados (sempre top 10 por score — a aba DETALHES usa os top 3)
     let entries = [];
     let myBest = null;
-    // getLeaderboard é público — funciona com ou sem login.
     if (window.BBData) {
-      try {
-        entries = await window.BBData.getLeaderboard(10);
-      } catch (e) { /* fallback vazio */ }
+      try { entries = await window.BBData.getLeaderboard(10); } catch (e) { /* fallback vazio */ }
     }
-    // getUserBestScore precisa de login (userId).
     if (window.BBData && window.BBData.isReady()) {
-      try {
-        myBest = await window.BBData.getUserBestScore(window.BBData.getUserId());
-      } catch (e) { /* sem destaque pessoal */ }
+      try { myBest = await window.BBData.getUserBestScore(window.BBData.getUserId()); } catch (e) { /* sem destaque */ }
     }
+
     if (!entries || entries.length === 0) {
-      ui.lbList.innerHTML = '<div class="bb-lb-empty">' + t("Sem pontuações ainda. Sê o primeiro!") + '</div>';
+      ui.lbContent.innerHTML = '<div class="bb-lb-empty">' + t("Sem pontuações ainda. Sê o primeiro!") + '</div>';
       if (ui.lbMyBest) ui.lbMyBest.textContent = "—";
       return;
     }
-    // Renderiza top 10 — 5 colunas: #, NOME, NÍVEL, COMBO, PONTUAÇÃO
-    // Combo 0 (docs antigos sem maxCombo) mostra "—" em vez de "×0".
+
     const currentUserId = (window.BBData && window.BBData.isReady()) ? window.BBData.getUserId() : null;
-    ui.lbList.innerHTML = "";
+
+    if (tab === "details") {
+      renderLeaderboardDetails(state, ui, entries, currentUserId);
+    } else {
+      renderLeaderboardScore(state, ui, entries, currentUserId);
+    }
+
+    // "Meu melhor" — mostra o score principal + detalhes da partida recorde
+    if (ui.lbMyBest) {
+      if (myBest) {
+        const mc = myBest.maxCombo || 0;
+        const comboStr = mc > 0 ? ("×" + mc) : "—";
+        const timeStr = myBest.timeMs > 0 ? formatTime(myBest.timeMs) : "—";
+        ui.lbMyBest.textContent = myBest.score + " (LV " + myBest.level + " · " + timeStr + " · " + comboStr + ")";
+      } else {
+        ui.lbMyBest.textContent = "—";
+      }
+    }
+  }
+
+  // ── Aba PONTUAÇÃO: lista top 10 com 6 colunas ──
+  // Colunas: #, NOME, TEMPO, NÍVEL, COMBO, PONTUAÇÃO
+  function renderLeaderboardScore(state, ui, entries, currentUserId) {
+    ui.lbContent.innerHTML =
+      '<div class="bb-lb-listhead">' +
+        '<span class="bb-lb-h-rank">#</span>' +
+        '<span class="bb-lb-h-name">' + t("NOME") + '</span>' +
+        '<span class="bb-lb-h-time">' + t("TEMPO") + '</span>' +
+        '<span class="bb-lb-h-level">' + t("NÍVEL") + '</span>' +
+        '<span class="bb-lb-h-combo">' + t("COMBO") + '</span>' +
+        '<span class="bb-lb-h-score">' + t("PONTUAÇÃO") + '</span>' +
+      '</div>' +
+      '<div class="bb-lb-list"></div>';
+    const list = ui.lbContent.querySelector(".bb-lb-list");
     entries.forEach(function (entry) {
       const row = document.createElement("div");
       row.className = "bb-lb-row" + (entry.userId === currentUserId ? " bb-lb-row-me" : "");
       const medal = entry.rank === 1 ? "#ffd23f" : entry.rank === 2 ? "#c0c0c0" : entry.rank === 3 ? "#cd7f32" : null;
       const mc = entry.maxCombo || 0;
       const comboStr = mc > 0 ? ("×" + mc) : "—";
+      const timeStr = entry.timeMs > 0 ? formatTime(entry.timeMs) : "—";
       row.innerHTML =
         '<span class="bb-lb-rank"' + (medal ? ' style="color:' + medal + '"' : "") + '>' + entry.rank + '</span>' +
         '<span class="bb-lb-name">' + escapeHtml(entry.name) + '</span>' +
+        '<span class="bb-lb-time">' + timeStr + '</span>' +
         '<span class="bb-lb-level">LV ' + entry.level + '</span>' +
         '<span class="bb-lb-combo">' + comboStr + '</span>' +
         '<span class="bb-lb-score">' + entry.score + '</span>';
-      ui.lbList.appendChild(row);
+      list.appendChild(row);
     });
-    // "Meu melhor" — score (rating) + combo (detalhe) numa linha compacta.
-    // Combo 0 mostra "—" (docs antigos ou sem combo).
-    if (ui.lbMyBest) {
-      if (myBest) {
-        const mc = myBest.maxCombo || 0;
-        const comboStr = mc > 0 ? ("×" + mc) : "—";
-        ui.lbMyBest.textContent = myBest.score + " (LV " + myBest.level + " · " + comboStr + ")";
-      } else {
-        ui.lbMyBest.textContent = "—";
-      }
+  }
+
+  // ── Aba DETALHES: 3 cards horizontais (top 3, 1º à esquerda) ──
+  // Cada card mostra: posição, nome, poderes acumulados (chips), e stats
+  // de sempre (tempo máx, partidas, combo máx, nível máx).
+  function renderLeaderboardDetails(state, ui, entries, currentUserId) {
+    const top3 = entries.slice(0, 3);
+    if (top3.length === 0) {
+      ui.lbContent.innerHTML = '<div class="bb-lb-empty">' + t("Sem pontuações ainda. Sê o primeiro!") + '</div>';
+      return;
+    }
+    const medals = ["#ffd23f", "#c0c0c0", "#cd7f32"];
+    const ranks = [t("1º"), t("2º"), t("3º")];
+    const POWERUP_ORDER = ["wide", "slow", "shield", "laser", "through", "multi", "extra", "grenade", "nuke"];
+
+    ui.lbContent.innerHTML = '<div class="bb-details-cards"></div>';
+    const cardsWrap = ui.lbContent.querySelector(".bb-details-cards");
+
+    top3.forEach(function (entry, idx) {
+      const card = document.createElement("div");
+      card.className = "bb-detail-card bb-detail-card-" + (idx + 1) + (entry.userId === currentUserId ? " bb-detail-card-me" : "");
+
+      // ── Posição + nome ──
+      const medal = medals[idx];
+      var html =
+        '<div class="bb-detail-header">' +
+          '<span class="bb-detail-rank" style="color:' + medal + '">' + ranks[idx] + '</span>' +
+          '<span class="bb-detail-name">' + escapeHtml(entry.name) + '</span>' +
+        '</div>';
+
+      // ── Poderes acumulados (chips como no game over) ──
+      // Mostra SEMPRE todos os 9 power-ups, com contagem 0 se o utilizador
+      // ainda não apanhou nenhum (após o update, todos começam a 0).
+      const tp = entry.totalPowerups || {};
+      html += '<div class="bb-detail-powerups">';
+      POWERUP_ORDER.forEach(function (k) {
+        const pu = POWERUPS[k];
+        const count = tp[k] || 0;
+        html += '<span class="bb-go-pu-chip' + (count === 0 ? ' bb-go-pu-chip-zero' : '') + '" style="--c:' + pu.color + '" title="' + pu.name + ' ×' + count + '">' +
+          '<span class="bb-go-pu-icon">' + pu.label + '</span>' +
+          '<span class="bb-go-pu-count">' + count + '</span>' +
+        '</span>';
+      });
+      html += '</div>';
+
+      // ── Stats de sempre ──
+      // Valores 0 mostram "0" em vez de "—" — os utilizadores sem partidas
+      // pós-update têm 0 em tudo, e isso deve ser visível (não em-dash).
+      const maxTimeStr = entry.maxTimeMs > 0 ? formatTime(entry.maxTimeMs) : "0:00";
+      const maxComboStr = "×" + (entry.maxCombo || 0);
+      const maxLevelStr = String(entry.maxLevel || 0);
+      const gamesStr = String(entry.gamesPlayed || 0);
+      html +=
+        '<div class="bb-detail-stats">' +
+          '<div class="bb-detail-stat"><span class="bb-detail-stat-label">' + t("TEMPO MÁX") + '</span><span class="bb-detail-stat-val bb-detail-stat-time">' + maxTimeStr + '</span></div>' +
+          '<div class="bb-detail-stat"><span class="bb-detail-stat-label">' + t("PARTIDAS") + '</span><span class="bb-detail-stat-val">' + gamesStr + '</span></div>' +
+          '<div class="bb-detail-stat"><span class="bb-detail-stat-label">' + t("COMBO MÁX") + '</span><span class="bb-detail-stat-val bb-detail-stat-combo">' + maxComboStr + '</span></div>' +
+          '<div class="bb-detail-stat"><span class="bb-detail-stat-label">' + t("NÍVEL MÁX") + '</span><span class="bb-detail-stat-val bb-detail-stat-level">' + maxLevelStr + '</span></div>' +
+        '</div>';
+
+      card.innerHTML = html;
+      cardsWrap.appendChild(card);
+    });
+
+    // Se houver menos de 3 jogadores, mostra placeholders
+    for (var i = top3.length; i < 3; i++) {
+      var ph = document.createElement("div");
+      ph.className = "bb-detail-card bb-detail-card-placeholder";
+      ph.innerHTML = '<div class="bb-detail-rank" style="color:' + medals[i] + '">' + ranks[i] + '</div>' +
+        '<div class="bb-detail-placeholder-text">' + t("Aguarda jogador...") + '</div>';
+      cardsWrap.appendChild(ph);
     }
   }
 
@@ -1485,7 +1684,9 @@
       '<div class="bb-screen bb-gameover-screen bb-hidden">' +
         '<div class="bb-go-title">' + t("FIM DE JOGO") + '</div>' +
         '<div class="bb-go-score">' + t("PONTUAÇÃO FINAL") + '&nbsp;<span class="bb-hud-num" data-hud="final">0</span></div>' +
-        // Combo máximo — linha simples entre o score e as moedas.
+        // Tempo da partida (Etapa 6) — entre o score e o combo máximo.
+        '<div class="bb-go-time-line">' + t("TEMPO") + '&nbsp;<span class="bb-hud-num bb-go-time" data-hud="go-time">0:00</span></div>' +
+        // Combo máximo — linha simples entre o tempo e as moedas.
         '<div class="bb-go-maxcombo-line">' + t("COMBO MÁXIMO") + '&nbsp;<span class="bb-hud-num bb-go-maxcombo" data-hud="go-maxcombo">0</span></div>' +
         '<div class="bb-go-coins">' + t("MOEDAS GANHAS") + '&nbsp;<span class="bb-hud-num bb-go-coins-num" data-hud="coins-earned">+0</span></div>' +
         // Power-ups apanhados — linha inline abaixo das moedas.
@@ -1504,16 +1705,15 @@
           '<span class="bb-lb-title">' + t("TABELA DE PONTUAÇÕES") + '</span>' +
           '<span class="bb-lb-mybest-wrap">' + t("MELHOR:") + ' <span class="bb-lb-mybest" data-hud="lb-mybest">—</span></span>' +
         '</div>' +
-        // Cabeçalho da lista — 5 colunas: #, NOME, NÍVEL, COMBO, PONTUAÇÃO.
-        // COMBO é apenas um detalhe (o rating continua a ser a PONTUAÇÃO).
-        '<div class="bb-lb-listhead">' +
-          '<span class="bb-lb-h-rank">#</span>' +
-          '<span class="bb-lb-h-name">' + t("NOME") + '</span>' +
-          '<span class="bb-lb-h-level">' + t("NÍVEL") + '</span>' +
-          '<span class="bb-lb-h-combo">' + t("COMBO") + '</span>' +
-          '<span class="bb-lb-h-score">' + t("PONTUAÇÃO") + '</span>' +
+        // Tabs — alterna entre PONTUAÇÃO (lista ordenada por score) e DETALHES (cards dos top 3).
+        '<div class="bb-lb-tabs" data-hud="lb-tabs">' +
+          '<button class="bb-lb-tab active" type="button" data-lbtab="score">' + t("PONTUAÇÃO") + '</button>' +
+          '<button class="bb-lb-tab" type="button" data-lbtab="details">' + t("DETALHES") + '</button>' +
         '</div>' +
-        '<div class="bb-lb-list" data-hud="lb-list"></div>' +
+        // Conteúdo do leaderboard — injetado dinamicamente por renderLeaderboard.
+        // Na aba PONTUAÇÃO: listhead + list (6 colunas: #, NOME, TEMPO, NÍVEL, COMBO, PONTUAÇÃO).
+        // Na aba DETALHES: 3 cards horizontais com stats acumuladas dos top 3.
+        '<div class="bb-lb-content" data-hud="lb-content"></div>' +
         '<button class="bb-btn bb-btn-primary bb-lb-back" type="button" data-act="back">' + t("VOLTAR") + '</button>' +
       '</div>' +
 
@@ -1561,11 +1761,14 @@
       finalScore: wrap.querySelector('[data-hud="final"]'),
       // ── Estatísticas do game over: combo máximo + power-ups ──
       goMaxCombo: wrap.querySelector('[data-hud="go-maxcombo"]'),
+      goTime: wrap.querySelector('[data-hud="go-time"]'),
       goPowerups: wrap.querySelector('[data-hud="go-powerups"]'),
       shopGrid: wrap.querySelector('[data-hud="shop-grid"]'),
       shopTabs: wrap.querySelector('[data-hud="shop-tabs"]'),
       shopCoins: wrap.querySelector('[data-hud="shop-coins"]'),
       lbList: wrap.querySelector('[data-hud="lb-list"]'),
+      lbContent: wrap.querySelector('[data-hud="lb-content"]'),
+      lbTabs: wrap.querySelector('[data-hud="lb-tabs"]'),
       lbMyBest: wrap.querySelector('[data-hud="lb-mybest"]'),
       soundChk: wrap.querySelector("#bb-opt-sound"),
     };
@@ -1754,6 +1957,20 @@
         const tab = e.target.closest(".bb-shop-tab");
         if (!tab) return;
         setShopCategory(state, tab.dataset.cat);
+      });
+    }
+
+    // ── Leaderboard tabs (Etapa 6) ──
+    // Alterna entre PONTUAÇÃO (lista top 10) e DETALHES (cards top 3).
+    if (ui.lbTabs) {
+      ui.lbTabs.addEventListener("click", function (e) {
+        const tab = e.target.closest(".bb-lb-tab");
+        if (!tab) return;
+        const tabName = tab.dataset.lbtab;
+        if (state.lbTab === tabName) return; // já ativo
+        state.lbTab = tabName;
+        sfx.menu();
+        renderLeaderboard(state);
       });
     }
 
