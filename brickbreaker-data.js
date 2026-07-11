@@ -11,6 +11,7 @@
 //    • equipSkin(): equipa skin (grava em equippedSkins)
 //    • submitScore(): grava score no leaderboard (Etapa 5)
 //    • getLeaderboard(): lê top 10 scores (Etapa 5)
+//    • getLeaderboardByTime(): lê top 10 por tempo de partida (Etapa 6)
 //    • getUserBestScore(): lê melhor score do utilizador (Etapa 5)
 //
 //  ANTI-TAMPER (proteção contra "Inspecionar"):
@@ -431,22 +432,27 @@ import {
 
     // Submete um score no leaderboard.
     // Estratégia: guarda UM documento por utilizador (docId = userId).
-    // Só atualiza se o novo score for MELHOR que o existente.
     //
     // Documento: bb_scores/{userId} = {
-    //   userId, name, score, level, ts,
-    //   maxCombo,         // combo máximo alcançado nesta partida (detalhe)
-    //   powerupCounts     // { nuke: 2, laser: 5, ... } — power-ups apanhados (detalhe)
+    //   userId, name, score, level, ts,           // campos do leaderboard (score = melhor)
+    //   timeMs,                                    // tempo da partida recorde (coluna TEMPO)
+    //   powerupCounts,                             // power-ups da partida recorde (detalhe)
+    //   maxCombo,                                  // combo máximo de sempre
+    //   maxTimeMs,                                 // tempo da partida mais longa de sempre
+    //   maxLevel,                                  // nível máximo alcançado de sempre
+    //   gamesPlayed,                               // partidas completadas (chegaram ao game over)
+    //   totalPowerups                              // power-ups acumulados de TODAS as partidas
     // }
     //
-    // O rating do leaderboard continua a ser a PONTUAÇÃO (score).
-    // maxCombo + powerupCounts são guardados apenas como detalhe estatístico
-    // (mostrados no ecrã de game over + na aba "Combo" do leaderboard).
+    // Lógica de atualização:
+    //   • Se o score NOVO for melhor → atualiza score, level, timeMs, powerupCounts
+    //     (campos da partida recorde) + acumula stats (maxCombo, maxTimeMs, etc.)
+    //   • Se o score NÃO for melhor → mantém campos da partida recorde, mas
+    //     acumula stats de sempre (maxCombo, maxTimeMs, maxLevel, gamesPlayed,
+    //     totalPowerups) via merge seletivo.
     //
-    // IMPORTANTE: mesmo quando o score NÃO bate o recorde, atualizamos o
-    // maxCombo se o novo jogo tiver alcançado um combo mais alto. Isto
-    // permite que a aba Combo reflita o melhor combo de sempre do jogador,
-    // independentemente de ter sido no seu melhor jogo em pontuação.
+    // Isto separa claramente "stats da partida recorde" (mostradas na coluna
+    // TEMPO da aba PONTUAÇÃO) de "stats de sempre" (mostradas na aba DETALHES).
     submitScore: async function (userId, name, score, level, stats) {
       if (!userId || score <= 0) return false;
       stats = stats || {};
@@ -454,37 +460,58 @@ import {
         const ref = doc(db, SCORES_COLLECTION, userId);
         const existing = await getDoc(ref);
         const prev = existing.exists() ? existing.data() : null;
+
+        // Valores anteriores (defaults se não houver doc)
         const prevScore = prev ? (prev.score || 0) : 0;
         const prevMaxCombo = prev ? (prev.maxCombo || 0) : 0;
+        const prevMaxTimeMs = prev ? (prev.maxTimeMs || 0) : 0;
+        const prevMaxLevel = prev ? (prev.maxLevel || 0) : 0;
+        const prevGamesPlayed = prev ? (prev.gamesPlayed || 0) : 0;
+        const prevTotalPowerups = prev ? (prev.totalPowerups || {}) : {};
+
+        // Valores do jogo atual
         const newMaxCombo = stats.maxCombo || 0;
+        const newTimeMs = stats.timeMs || 0;
+        const newLevel = level || 1;
+        const newPowerupCounts = stats.powerupCounts || {};
 
-        // Decide se atualiza o documento:
-        //   • Score novo é melhor → atualiza tudo (score, level, maxCombo, powerupCounts)
-        //   • Score novo é igual/menor MAS maxCombo novo é maior → atualiza APENAS
-        //     o maxCombo (mantém score/level/powerupCounts do recorde)
-        const scoreImproved = !prev || score > prevScore;
-        const comboImproved = newMaxCombo > prevMaxCombo;
-
-        if (!scoreImproved && !comboImproved) {
-          // Nem score nem combo batem o recorde — não faz nada
-          return true;
+        // Acumula totalPowerups (soma prev + new para cada tipo de power-up)
+        const mergedTotalPowerups = Object.assign({}, prevTotalPowerups);
+        for (const k in newPowerupCounts) {
+          mergedTotalPowerups[k] = (mergedTotalPowerups[k] || 0) + newPowerupCounts[k];
         }
 
+        // Stats de sempre — sempre atualizam (acumulam), independentemente do score
+        const scoreImproved = !prev || score > prevScore;
+        const newGamesPlayed = prevGamesPlayed + 1;
+        const newMaxTimeMs = Math.max(prevMaxTimeMs, newTimeMs);
+        const newMaxLevel = Math.max(prevMaxLevel, newLevel);
+        const newMaxComboFinal = Math.max(prevMaxCombo, newMaxCombo);
+
         if (scoreImproved) {
-          // Novo recorde de pontuação — grava tudo
+          // Novo recorde de pontuação — grava tudo (campos recorde + stats acumuladas)
           await setDoc(ref, {
             userId: userId,
             name: name || "Anonymous",
             score: score,
             level: level || 1,
-            maxCombo: newMaxCombo,
-            powerupCounts: stats.powerupCounts || {},
+            timeMs: newTimeMs,               // tempo da partida recorde
+            powerupCounts: newPowerupCounts,  // power-ups da partida recorde
+            maxCombo: newMaxComboFinal,
+            maxTimeMs: newMaxTimeMs,
+            maxLevel: newMaxLevel,
+            gamesPlayed: newGamesPlayed,
+            totalPowerups: mergedTotalPowerups,
             ts: Date.now(),
           });
         } else {
-          // Só o combo melhorou — atualiza apenas o maxCombo (merge)
+          // Score não melhorou — acumula apenas stats de sempre (merge seletivo)
           await setDoc(ref, {
-            maxCombo: newMaxCombo,
+            maxCombo: newMaxComboFinal,
+            maxTimeMs: newMaxTimeMs,
+            maxLevel: newMaxLevel,
+            gamesPlayed: newGamesPlayed,
+            totalPowerups: mergedTotalPowerups,
           }, { merge: true });
         }
         return true;
@@ -496,19 +523,17 @@ import {
 
     // Lê o top N do leaderboard. Retorna array ordenado (desc por score),
     // com apenas o MELHOR score de cada utilizador (dedup por userId).
-    // Cada item: { userId, name, score, level, ts, maxCombo, rank }
+    // Cada item: { userId, name, score, level, ts, maxCombo, timeMs,
+    //              maxTimeMs, maxLevel, gamesPlayed, totalPowerups, powerupCounts, rank }
     //
-    // maxCombo vem do documento do utilizador (bb_scores/{userId}).
-    // Nota: o maxCombo pode ter sido alcançado numa partida diferente da
-    // que estabeleceu o melhor score — o submitScore atualiza o maxCombo
-    // independentemente quando um novo combo recorde é alcançado.
+    // timeMs = tempo da partida recorde (para a coluna TEMPO da aba PONTUAÇÃO).
+    // maxTimeMs/maxLevel/gamesPlayed/totalPowerups = stats de sempre (aba DETALHES).
     getLeaderboard: async function (topN) {
       topN = topN || 10;
       try {
-        // Query: top 50 scores (para garantir que após dedup temos ≥ topN únicos)
         const q = query(collection(db, SCORES_COLLECTION), orderBy("score", "desc"), limit(50));
         const snap = await getDocs(q);
-        const seen = new Map(); // userId → best entry
+        const seen = new Map();
         snap.forEach(function (d) {
           const data = d.data();
           const userId = data.userId;
@@ -520,12 +545,17 @@ import {
             level: data.level || 1,
             ts: data.ts || 0,
             maxCombo: data.maxCombo || 0,
+            timeMs: data.timeMs || 0,
+            maxTimeMs: data.maxTimeMs || 0,
+            maxLevel: data.maxLevel || 0,
+            gamesPlayed: data.gamesPlayed || 0,
+            totalPowerups: data.totalPowerups || {},
+            powerupCounts: data.powerupCounts || {},
           };
           if (!seen.has(userId) || seen.get(userId).score < entry.score) {
             seen.set(userId, entry);
           }
         });
-        // Converte para array, ordena por score desc, adiciona rank
         const list = Array.from(seen.values()).sort(function (a, b) {
           return b.score - a.score;
         }).slice(0, topN).map(function (entry, idx) {
@@ -540,13 +570,8 @@ import {
     },
 
     // Lê o melhor score de um utilizador específico.
-    // Retorna { score, level, ts, maxCombo } ou null se não houver score.
-    //
-    // Como o documento bb_scores/{userId} já contém APENAS o melhor score
-    // do utilizador (submitScore só grava quando o score melhora), basta
-    // ler diretamente o doc — sem necessidade de query + filtro.
-    // Isto corrige o bug anterior onde getUserBestScore lia o top 50 e
-    // falhava para utilizadores ranked 51+.
+    // Retorna { score, level, ts, maxCombo, timeMs, maxTimeMs, maxLevel,
+    //           gamesPlayed, totalPowerups, powerupCounts } ou null.
     getUserBestScore: async function (userId) {
       if (!userId) return null;
       try {
@@ -559,6 +584,12 @@ import {
           level: data.level || 1,
           ts: data.ts || 0,
           maxCombo: data.maxCombo || 0,
+          timeMs: data.timeMs || 0,
+          maxTimeMs: data.maxTimeMs || 0,
+          maxLevel: data.maxLevel || 0,
+          gamesPlayed: data.gamesPlayed || 0,
+          totalPowerups: data.totalPowerups || {},
+          powerupCounts: data.powerupCounts || {},
         };
       } catch (e) {
         console.warn("[BBData] getUserBestScore failed:", e);
