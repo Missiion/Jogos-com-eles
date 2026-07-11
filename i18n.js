@@ -574,6 +574,19 @@
     // ── Game over: linha do combo máximo + coluna Combo do leaderboard ──
     "COMBO MÁXIMO": "MAX COMBO",
     "COMBO": "COMBO",
+
+    // ── Etapa 6: tempo de partida (HUD + game over + aba do leaderboard) ──
+    "TEMPO": "TIME",
+
+    // ── Etapa 6: aba DETALHES do leaderboard ──
+    "DETALHES": "DETAILS",
+    "TEMPO MÁX": "MAX TIME",
+    "PARTIDAS": "GAMES",
+    "NÍVEL MÁX": "MAX LV",
+    "1º": "1st",
+    "2º": "2nd",
+    "3º": "3rd",
+    "Aguarda jogador...": "Awaiting player...",
   };
 
   // ─────────────────────────────────────────────
