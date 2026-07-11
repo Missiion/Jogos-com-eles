@@ -892,14 +892,16 @@
     // Canhões laser (independente da skin)
     if (state.effects.laser) { ctx.fillStyle = "#ff4040"; ctx.fillRect(p.x + 3, p.y - 3, 5, 3); ctx.fillRect(p.x + p.w - 8, p.y - 3, 5, 3); }
 
-    // Bolas (Pierce = sobrepõe a skin Nuclear com glow verde radioativo)
-    // O efeito through força a skin ball-plasma (Nuclear) para indicar que a
-    // bola atravessa tijolos. O glow acompanha a cor da skin (verde radioativo).
+    // Bolas (Pierce = roxa com glow sobrepõe-se à skin)
+    // O efeito through usa um renderer interno (ball-pierce-effect) que mantém
+    // o visual roxo original, independentemente da skin Nuclear (verde) que
+    // substituiu o ball-plasma no catálogo. Isto garante que o efeito Pierce
+    // mantém a sua identidade visual roxa consistente.
     const through = !!state.effects.through;
-    const ballSkin = through ? "ball-plasma" : state.equippedSkins.ball;
+    const ballSkin = through ? "ball-pierce-effect" : state.equippedSkins.ball;
     for (let i = 0; i < state.balls.length; i++) {
       const b = state.balls[i];
-      if (through) { ctx.fillStyle = "rgba(80,255,80,0.35)"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, 0, Math.PI * 2); ctx.fill(); }
+      if (through) { ctx.fillStyle = "rgba(176,107,224,0.35)"; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, 0, Math.PI * 2); ctx.fill(); }
       if (skins) skins.drawBall(ctx, b.x, b.y, b.r, ballSkin);
     }
 
@@ -1156,6 +1158,8 @@
     try { step(state, dt); } catch (e) { console.error("[bb] step:", e); }
     try { draw(ui.ctx, state); } catch (e) { console.error("[bb] draw:", e); }
     updateEffectsHud(state);
+    // Atualiza o contador de tempo no HUD (lado direito do score)
+    if (ui.time) ui.time.textContent = formatTime(getElapsedMs(state));
   }
   function startLoop(state, ui) { if (state.running) return; state.running = true; state.lastTs = performance.now(); state.raf = requestAnimationFrame(function (t) { loop(t, state, ui); }); }
   function stopLoop(state) { state.running = false; if (state.raf) { cancelAnimationFrame(state.raf); state.raf = null; } }
@@ -1666,6 +1670,7 @@
         '<canvas class="bb-canvas" width="' + W + '" height="' + H + '"></canvas>' +
         '<div class="bb-hud">' +
           '<div class="bb-hud-score"><span class="bb-hud-label">' + t("PONTOS") + '</span><span class="bb-hud-num" data-hud="score">0</span></div>' +
+          '<div class="bb-hud-time"><span class="bb-hud-label">' + t("TEMPO") + '</span><span class="bb-hud-num" data-hud="time">0:00</span></div>' +
           '<div class="bb-hud-level"><span class="bb-hud-label">' + t("NÍVEL") + '</span><span class="bb-hud-num" data-hud="level">1</span></div>' +
           '<div class="bb-hud-coins" data-hud="coins-wrap">' +
             '<svg class="bb-coin-icon" width="11" height="11" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="#ffd23f" stroke="#b8860b" stroke-width="1.5"/><text x="8" y="11" font-size="8" text-anchor="middle" fill="#8b6914" font-family="serif" font-weight="bold">$</text></svg>' +
@@ -1752,6 +1757,7 @@
       debugPanel: wrap.querySelector('[data-hud="debug"]'),
       canvas: wrap.querySelector(".bb-canvas"),
       score: wrap.querySelector('[data-hud="score"]'),
+      time: wrap.querySelector('[data-hud="time"]'),
       level: wrap.querySelector('[data-hud="level"]'),
       lives: wrap.querySelector('[data-hud="lives"]'),
       effects: wrap.querySelector('[data-hud="effects"]'),
