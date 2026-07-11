@@ -7323,12 +7323,13 @@ textarea:focus-visible,
 }
 .bb-lb-listhead {
   display: grid;
-  grid-template-columns: 32px 1fr 52px 60px 80px;
-  gap: 4px;
+  /* 6 colunas: #, NOME, TEMPO, NÍVEL, COMBO, PONTUAÇÃO */
+  grid-template-columns: 28px 1fr 48px 44px 52px 64px;
+  gap: 3px;
   width: 100%;
   max-width: 460px;
   padding: 4px 8px;
-  font-size: 14px;
+  font-size: 13px;
   letter-spacing: 1px;
   color: #6a6f90;
   font-family: 'VT323', 'Courier New', monospace;
@@ -7347,11 +7348,12 @@ textarea:focus-visible,
 .bb-lb-list::-webkit-scrollbar-thumb { background: #3a3a52; border-radius: 4px; }
 .bb-lb-row {
   display: grid;
-  grid-template-columns: 32px 1fr 52px 60px 80px;
-  gap: 4px;
+  /* 6 colunas: #, NOME, TEMPO, NÍVEL, COMBO, PONTUAÇÃO */
+  grid-template-columns: 28px 1fr 48px 44px 52px 64px;
+  gap: 3px;
   padding: 4px 8px;
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(15px, 2.3vh, 19px);
+  font-size: clamp(14px, 2.2vh, 18px);
   color: #c8c8e0;
   border-bottom: 1px dotted #1a1a28;
   align-items: center;
@@ -7488,6 +7490,235 @@ textarea:focus-visible,
   .bb-go-powerups-line { gap: 5px; }
   .bb-go-pu-chip { font-size: 13px; }
   .bb-go-pu-icon { width: 17px; height: 17px; font-size: 12px; }
+  .bb-go-time-line { font-size: 13px; letter-spacing: 1px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BRICK BREAKER — Etapa 6: Tempo de partida + aba Detalhes
+   • Linha de tempo no game over
+   • Tabs do leaderboard (PONTUAÇÃO | DETALHES)
+   • Coluna TEMPO na lista (aba PONTUAÇÃO)
+   • Cards de detalhes (aba DETALHES) — top 3 jogadores
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Game over: linha do tempo ── */
+/* Mesmo tamanho e cor do .bb-go-score / .bb-go-maxcombo-line para consistência. */
+.bb-go-time-line {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(16px, 2.8vh, 22px);
+  letter-spacing: 2px;
+  color: #fff;
+}
+/* Apenas o número fica cyan arcade (destaque). */
+.bb-go-time-line .bb-hud-num,
+.bb-go-time {
+  color: #3fb8d4;
+  text-shadow: 0 0 6px rgba(63, 184, 212, 0.5);
+}
+
+/* ── Leaderboard: tabs (PONTUAÇÃO | DETALHES) ── */
+/* Mesmo estilo visual das tabs da loja (.bb-shop-tab) para consistência. */
+.bb-lb-tabs {
+  display: flex;
+  gap: 3px;
+  width: 100%;
+  max-width: 460px;
+}
+.bb-lb-tab {
+  flex: 1;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(13px, 2vh, 16px);
+  letter-spacing: 1px;
+  padding: 4px 4px;
+  color: #9aa0c0;
+  background: linear-gradient(180deg, #1c1c28 0%, #14141e 100%);
+  border: 1px solid #3a3a52;
+  border-top-color: #4a4a68;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 0.12s;
+}
+.bb-lb-tab:hover { color: #e8e8f0; background: linear-gradient(180deg, #28283a 0%, #1c1c28 100%); }
+.bb-lb-tab.active {
+  color: #fff;
+  background: linear-gradient(180deg, #2a5fd0 0%, #1a3fa0 100%);
+  border-color: #4a7fe0;
+}
+
+/* ── Container do conteúdo do leaderboard ── */
+/* Serve de container para ambas as abas (listhead+list ou cards). */
+.bb-lb-content {
+  flex: 1;
+  width: 100%;
+  max-width: 460px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ── Cabeçalho da coluna TEMPO ── */
+.bb-lb-h-time { text-align: center; }
+
+/* ── Coluna TEMPO nas rows ── */
+/* Cyan arcade — coerente com a cor do tempo no game over. */
+.bb-lb-time {
+  text-align: center;
+  font-weight: 400;
+  color: #3fb8d4;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 4px rgba(63, 184, 212, 0.35);
+  font-size: 0.92em;
+}
+.bb-lb-row-me .bb-lb-time { color: #5fd4e8; }
+
+/* ═══════════════════════════════════════════════════════════════
+   BRICK BREAKER — Aba DETALHES: Cards dos top 3 jogadores
+   3 cards horizontais (1º à esquerda). Cada card mostra:
+   posição, nome, poderes acumulados (chips), e stats de sempre.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Container dos cards ── */
+/* align-items: flex-start — os cards não esticam até ao fundo; têm
+   a altura perfeita para caber o conteúdo (header + poderes + stats). */
+.bb-details-cards {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  max-width: 460px;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+/* ── Card individual ── */
+.bb-detail-card {
+  flex: 1;
+  min-width: 0;
+  background: linear-gradient(180deg, #14141e 0%, #0a0a14 100%);
+  border: 1px solid #2a2a40;
+  border-radius: 4px;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.12s;
+}
+
+/* Destaque do 1º lugar — borda dourada */
+.bb-detail-card-1 { border-color: rgba(255, 210, 63, 0.5); }
+.bb-detail-card-2 { border-color: rgba(192, 192, 192, 0.4); }
+.bb-detail-card-3 { border-color: rgba(205, 127, 50, 0.4); }
+
+/* Card do utilizador atual — destaque amarelo */
+.bb-detail-card-me {
+  box-shadow: 0 0 8px rgba(255, 210, 63, 0.25);
+}
+
+/* ── Placeholder (quando há menos de 3 jogadores) ── */
+.bb-detail-card-placeholder {
+  opacity: 0.4;
+  border-style: dashed;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.bb-detail-placeholder-text {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 13px;
+  color: #6a6f90;
+  letter-spacing: 1px;
+  margin-top: 4px;
+}
+
+/* ── Header do card: posição + nome ── */
+.bb-detail-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 1px solid #2a2a40;
+  padding-bottom: 4px;
+}
+.bb-detail-rank {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(20px, 3vh, 26px);
+  font-weight: 700;
+  line-height: 1;
+  text-shadow: 0 0 8px currentColor;
+}
+.bb-detail-name {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(14px, 2.2vh, 17px);
+  font-weight: 700;
+  color: #e8e8f0;
+  letter-spacing: 0.5px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ── Poderes acumulados (chips) ── */
+/* Reusa .bb-go-pu-chip do game over para consistência total.
+   Mostra SEMPRE todos os 9 power-ups; os com contagem 0 ficam muted. */
+.bb-detail-powerups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+  align-content: flex-start;
+  min-height: 24px;
+}
+
+/* Chips com contagem 0 — muted (opacidade reduzida) para indicar
+   que o utilizador ainda não apanhou esse power-up. */
+.bb-go-pu-chip-zero {
+  opacity: 0.35;
+}
+
+/* ── Stats de sempre (grid 2×2) ── */
+.bb-detail-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.bb-detail-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  background: rgba(0, 0, 16, 0.4);
+  border-radius: 3px;
+  padding: 3px 2px;
+}
+.bb-detail-stat-label {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #6a6f90;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.bb-detail-stat-val {
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: clamp(14px, 2.2vh, 17px);
+  font-weight: 700;
+  color: #e8e8f0;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+/* Destaques coloridos por stat */
+.bb-detail-stat-time { color: #3fb8d4; text-shadow: 0 0 4px rgba(63, 184, 212, 0.35); }
+.bb-detail-stat-combo { color: #3fb8d4; }
+.bb-detail-stat-level { color: #ffd23f; }
+
+/* ── Pequenos ecrãs: cards encolhem ── */
+@media (max-height: 420px) {
+  .bb-detail-card { padding: 5px 4px; gap: 4px; }
+  .bb-detail-rank { font-size: 18px; }
+  .bb-detail-name { font-size: 13px; }
+  .bb-detail-stat-label { font-size: 9px; }
+  .bb-detail-stat-val { font-size: 13px; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
