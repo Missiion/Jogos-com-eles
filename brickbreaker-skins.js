@@ -2,11 +2,11 @@
 //  brickbreaker-skins.js — Catálogo de skins + render procedural
 //  Jogos com Eles · Brick Breaker (Etapa 4)
 //
-//  4 categorias, 5 skins cada (20 total), tiers 1-5:
-//    • Bricks:  Classic, Neon, Ice, Lava, Circuit
-//    • Ball:    Classic, Fire, Ice, Plasma, Void
-//    • Paddle:  Classic, Chrome, Wood, Neon, Royal
-//    • BG:      Void, Starfield, Grid, Sunset, Matrix
+//  4 categorias, 6 skins cada (24 total), tiers 1-6:
+//    • Bricks:  Dirt Block, Neon, Ice, Lava, Circuit, Gold
+//    • Ball:    Tadpole Egg, Pizza, Ice Sphere, Nuclear, Fireball, Prism
+//    • Paddle:  Dirt Block, Chrome, Wood, Neon, Circuit, Royal Gold
+//    • BG:      Blue Sky, Ocean, Matrix, Crystal, Aurora, Neon Metropolis
 //
 //  Render 100% procedural (Canvas2D) — sem imagens externas.
 //  Cada skin tem funções draw otimizadas para 60fps.
@@ -39,9 +39,9 @@
     ],
     ball: [
       { id: "ball-comet",    name: "Tadpole Egg", tier: 1, desc: "Living egg" },
-      { id: "ball-blackhole",name: "Black Hole", tier: 2, desc: "Event horizon" },
+      { id: "ball-blackhole",name: "Pizza",      tier: 2, desc: "Fresh slice" },
       { id: "ball-frost",    name: "Ice Sphere", tier: 3, desc: "Frozen crystal" },
-      { id: "ball-plasma",   name: "Plasma Core",tier: 4, desc: "Purple energy" },
+      { id: "ball-plasma",   name: "Nuclear",    tier: 4, desc: "Radioactive core" },
       { id: "ball-fire",     name: "Fireball",   tier: 5, desc: "Living flames" },
       { id: "ball-prism",    name: "Prism",      tier: 6, desc: "Refracting crystal" },
     ],
@@ -622,30 +622,136 @@
       ctx.lineWidth = 0.8;
       ctx.beginPath(); ctx.arc(x, y, r * 0.6, Math.PI * 0.2, Math.PI * 0.8); ctx.stroke();
     },
-    "ball-plasma": function (ctx, x, y, r) {
-      ctx.fillStyle = "rgba(176,107,224,0.35)";
-      ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2); ctx.fill();
-      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, "#f0c0ff"); g.addColorStop(0.4, "#b06be0"); g.addColorStop(1, "#4a1a70");
+    "ball-plasma": function (ctx, x, y, r, t) {
+      // Nuclear — núcleo radioativo com símbolo nuclear a rodar (Tier 4)
+      // Tema verde radioativo. O símbolo nuclear (3 pétalas + centro) gira
+      // suavemente a velocidade moderada dentro da bola.
+      if (t === undefined) t = performance.now() / 1000;
+
+      // ── 1. Glow exterior radioativo (pulsa lentamente) ──
+      const glowPulse = 0.2 + 0.1 * Math.sin(t * 2);
+      ctx.fillStyle = "rgba(80,255,80," + glowPulse.toFixed(2) + ")";
+      ctx.beginPath(); ctx.arc(x, y, r + 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(120,255,120,0.15)";
+      ctx.beginPath(); ctx.arc(x, y, r + 3, 0, Math.PI * 2); ctx.fill();
+
+      // ── 2. Body — gradiente radial verde (centro brilhante → verde escuro) ──
+      const g = ctx.createRadialGradient(x - r * 0.25, y - r * 0.25, 0, x, y, r);
+      g.addColorStop(0, "#e0ffe0");
+      g.addColorStop(0.3, "#80ff80");
+      g.addColorStop(0.7, "#40c040");
+      g.addColorStop(1, "#1a4a1a");
       ctx.fillStyle = g;
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-      // energy swirl
-      ctx.strokeStyle = "rgba(255,200,255,0.5)";
+
+      // ── 3. Símbolo nuclear no centro (gira suavemente) ──
+      // O símbolo nuclear clássico: 3 pétalas (setores de 60°) equidistantes
+      // + círculo central. Velocidade moderada (~1 rotação a cada 4s).
+      const rot = t * 1.5;  // radianos por segundo (moderado)
+      const symbolR = r * 0.62;  // raio do símbolo (cabe dentro da bola)
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot);
+
+      // 3 pétalas (setores de 60° cada, espaçadas de 120°)
+      ctx.fillStyle = "#1a3a1a";  // verde muito escuro (contraste com o body verde)
+      for (let i = 0; i < 3; i++) {
+        const a0 = (i / 3) * Math.PI * 2 - Math.PI / 6;
+        const a1 = a0 + Math.PI / 3;  // 60°
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, symbolR, a0, a1);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Círculo central do símbolo (amarelo radioativo)
+      ctx.fillStyle = "#ffd23f";
+      ctx.beginPath(); ctx.arc(0, 0, symbolR * 0.28, 0, Math.PI * 2); ctx.fill();
+      // Anel central (contorno do círculo)
+      ctx.strokeStyle = "#1a3a1a";
       ctx.lineWidth = 0.8;
-      ctx.beginPath(); ctx.arc(x, y, r * 0.5, 0, Math.PI * 1.5); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, symbolR * 0.28, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+
+      // ── 4. Borda exterior (anel verde brilhante) ──
+      ctx.strokeStyle = "rgba(180,255,180,0.6)";
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(x, y, r - 0.5, 0, Math.PI * 2); ctx.stroke();
+
+      // ── 5. Brilho specular (reflexo de luz no canto superior esquerdo) ──
+      ctx.fillStyle = "rgba(255,255,255,0.25)";
+      ctx.beginPath(); ctx.arc(x - r * 0.35, y - r * 0.35, r * 0.2, 0, Math.PI * 2); ctx.fill();
     },
     "ball-blackhole": function (ctx, x, y, r) {
-      // accretion ring
-      ctx.strokeStyle = "rgba(180,80,220,0.6)";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2); ctx.stroke();
-      // black hole body
-      ctx.fillStyle = "#0a0010";
+      // Pizza — fatia de pizza simples e simpática (Tier 2)
+      // A bola é uma pizza redonda vista de cima: massa dourada, molho vermelho,
+      // queijo derretido com manchas, e pepperoni distribuído por cima.
+      // Não animada (simples, consistente com o tier 2).
+
+      // ── 1. Borda da massa (dourada/crosta) ──
+      ctx.fillStyle = "#d4a04c";  // crosta dourada
       ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-      // event horizon glow
-      ctx.strokeStyle = "rgba(200,100,255,0.8)";
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(x, y, r - 1, 0, Math.PI * 2); ctx.stroke();
+
+      // ── 2. Queijo (camada amarela pálida, ligeiramente menor que a massa) ──
+      const cheeseR = r * 0.88;
+      const g = ctx.createRadialGradient(x - r * 0.2, y - r * 0.2, 0, x, y, cheeseR);
+      g.addColorStop(0, "#fff4c4");  // queijo derretido brilhante
+      g.addColorStop(0.6, "#ffe88a");
+      g.addColorStop(1, "#e8c860");  // queijo mais tostado na borda
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, cheeseR, 0, Math.PI * 2); ctx.fill();
+
+      // ── 3. Manchas de molho (vermelho) — 3 pingos distribuídos ──
+      const sauceSpots = [
+        { dx: -r * 0.35, dy: -r * 0.2, sz: r * 0.18 },
+        { dx: r * 0.3, dy: r * 0.1, sz: r * 0.15 },
+        { dx: -r * 0.1, dy: r * 0.4, sz: r * 0.12 },
+      ];
+      ctx.fillStyle = "#c43030";  // molho vermelho
+      for (let i = 0; i < sauceSpots.length; i++) {
+        const s = sauceSpots[i];
+        ctx.beginPath();
+        ctx.arc(x + s.dx, y + s.dy, s.sz, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // ── 4. Pepperoni (4 fatias vermelhas distribuídas) ──
+      // Posições em padrão assimétrico (parece real, não simétrico demais)
+      const pepperoni = [
+        { dx: r * 0.25, dy: -r * 0.35, sz: r * 0.22 },
+        { dx: -r * 0.4, dy: r * 0.15, sz: r * 0.2 },
+        { dx: r * 0.05, dy: r * 0.3, sz: r * 0.18 },
+        { dx: r * 0.45, dy: r * 0.35, sz: r * 0.16 },
+      ];
+      for (let i = 0; i < pepperoni.length; i++) {
+        const p = pepperoni[i];
+        const px = x + p.dx, py = y + p.dy, psz = p.sz;
+        // Pepperoni — vermelho escuro com borda ligeiramente mais escura
+        ctx.fillStyle = "#a82828";
+        ctx.beginPath(); ctx.arc(px, py, psz, 0, Math.PI * 2); ctx.fill();
+        // Brilho interior (mais claro — parece gordura/óleo)
+        ctx.fillStyle = "#c84040";
+        ctx.beginPath(); ctx.arc(px - psz * 0.2, py - psz * 0.2, psz * 0.6, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // ── 5. Orégano (pequenos pontos verdes escuros espalhados) ──
+      ctx.fillStyle = "#2a5a2a";
+      const oregano = [
+        { dx: -r * 0.2, dy: -r * 0.45 },
+        { dx: r * 0.15, dy: -r * 0.5 },
+        { dx: -r * 0.5, dy: -r * 0.1 },
+        { dx: r * 0.5, dy: -r * 0.15 },
+        { dx: -r * 0.35, dy: r * 0.35 },
+        { dx: r * 0.35, dy: r * 0.5 },
+        { dx: 0, dy: -r * 0.1 },
+      ];
+      for (let i = 0; i < oregano.length; i++) {
+        const o = oregano[i];
+        ctx.beginPath();
+        ctx.arc(x + o.dx, y + o.dy, 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
     },
     "ball-prism": function (ctx, x, y, r, t) {
       // Prism — cristal prismático supremo (Tier 6, 1000 moedas).
