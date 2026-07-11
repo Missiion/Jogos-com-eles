@@ -507,6 +507,23 @@
       ctx.fillStyle = "rgba(255,255,255,0.5)";
       ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.4, 0, Math.PI * 2); ctx.fill();
     },
+    // ball-pierce-effect: NÃO aparece na loja — usado internamente pelo efeito
+    // Pierce (power-up "through"). Mantém o visual roxo original do antigo
+    // Plasma Core, independentemente da skin Nuclear (verde) ter substituído
+    // o ball-plasma no catálogo. Isto garante que o efeito Pierce mantém a
+    // sua identidade visual roxa consistente.
+    "ball-pierce-effect": function (ctx, x, y, r) {
+      ctx.fillStyle = "rgba(176,107,224,0.35)";
+      ctx.beginPath(); ctx.arc(x, y, r + 4, 0, Math.PI * 2); ctx.fill();
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, "#f0c0ff"); g.addColorStop(0.4, "#b06be0"); g.addColorStop(1, "#4a1a70");
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+      // energy swirl
+      ctx.strokeStyle = "rgba(255,200,255,0.5)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath(); ctx.arc(x, y, r * 0.5, 0, Math.PI * 1.5); ctx.stroke();
+    },
     // ball-comet: ovo translúcido com girino dentro (substitui o antigo cometa)
     // Casca semi-transparente (oval, mais alto que largo), girino que se mexe com t.
     "ball-comet": function (ctx, x, y, r, t) {
