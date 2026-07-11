@@ -7221,7 +7221,13 @@ textarea:focus-visible,
   width: 100%;
   max-width: clamp(360px, 60vh, 760px);
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(clamp(110px, 20vh, 240px), 1fr));
+  /* minmax calibrado para garantir EXATAMENTE 3 colunas tanto a 1080p como
+     a 1440p. Cálculo: a 1080p o container é ~648px, a 1440p ~760px.
+       - 1080p: min=170px → 648/170=3.8 → 3 colunas (4*170=680>648 não cabe)
+       - 1440p: min=210px → 760/210=3.6 → 3 colunas (4*210=840>760 não cabe)
+     Antes o min era demasiado alto (20vh→216px a 1080p, só cabiam 2) ou
+     demasiado baixo (13vh→140px, cabiam 4). 15vh é o ponto de equilíbrio. */
+  grid-template-columns: repeat(auto-fill, minmax(clamp(170px, 15vh, 210px), 1fr));
   gap: clamp(4px, 0.8vh, 8px);
   overflow-y: auto;
   overflow-x: hidden;
