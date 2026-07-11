@@ -6951,6 +6951,17 @@ textarea:focus-visible,
   line-height: 1.1;
   min-width: 40px;
 }
+/* ── HUD: contador de tempo ── */
+/* Cyan arcade — distinto do verde do score e do amarelo do nível/coins.
+   Posiciona-se à direita do score, antes do nível. */
+.bb-hud-time {
+  color: #3fb8d4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  min-width: 52px;
+}
 .bb-hud-label {
   font-size: 0.78em;
   letter-spacing: 1.5px;
