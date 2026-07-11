@@ -7170,12 +7170,12 @@ textarea:focus-visible,
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  max-width: 460px;
+  max-width: clamp(360px, 60vh, 760px);
   padding: 0 4px;
 }
 .bb-shop-title {
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(20px, 3.4vh, 28px);
+  font-size: clamp(20px, 3.4vh, 44px);
   letter-spacing: 3px;
   color: #fff;
   font-weight: 400;
@@ -7186,7 +7186,7 @@ textarea:focus-visible,
   align-items: center;
   gap: 4px;
   color: #ffd23f;
-  font-size: clamp(16px, 2.6vh, 22px);
+  font-size: clamp(16px, 2.6vh, 34px);
   font-weight: 400;
   font-family: 'VT323', 'Courier New', monospace;
 }
@@ -7194,14 +7194,14 @@ textarea:focus-visible,
   display: flex;
   gap: 3px;
   width: 100%;
-  max-width: 460px;
+  max-width: clamp(360px, 60vh, 760px);
 }
 .bb-shop-tab {
   flex: 1;
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(13px, 2vh, 16px);
+  font-size: clamp(13px, 2vh, 26px);
   letter-spacing: 1px;
-  padding: 4px 4px;
+  padding: clamp(3px, 0.6vh, 6px) 4px;
   color: #9aa0c0;
   background: linear-gradient(180deg, #1c1c28 0%, #14141e 100%);
   border: 1px solid #3a3a52;
@@ -7219,10 +7219,10 @@ textarea:focus-visible,
 .bb-shop-grid {
   flex: 1;
   width: 100%;
-  max-width: 460px;
+  max-width: clamp(360px, 60vh, 760px);
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(clamp(110px, 20vh, 240px), 1fr));
+  gap: clamp(4px, 0.8vh, 8px);
   overflow-y: auto;
   overflow-x: hidden;
   padding: 4px;
@@ -7235,10 +7235,10 @@ textarea:focus-visible,
   background: linear-gradient(180deg, #14141e 0%, #0a0a14 100%);
   border: 1px solid #2a2a40;
   border-radius: 4px;
-  padding: 6px;
+  padding: clamp(4px, 0.8vh, 8px);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: clamp(3px, 0.6vh, 6px);
   transition: border-color 0.12s;
 }
 .bb-shop-card.owned { border-color: #3a5a3a; }
@@ -7260,7 +7260,7 @@ textarea:focus-visible,
   gap: 1px;
 }
 .bb-shop-name {
-  font-size: 16px;
+  font-size: clamp(14px, 2.2vh, 28px);
   font-weight: 400;
   color: #e8e8f0;
   font-family: 'VT323', 'Courier New', monospace;
@@ -7268,20 +7268,20 @@ textarea:focus-visible,
   line-height: 1.1;
 }
 .bb-shop-tier {
-  font-size: 13px;
+  font-size: clamp(11px, 1.7vh, 22px);
   font-weight: 400;
   letter-spacing: 1px;
   font-family: 'VT323', 'Courier New', monospace;
 }
 .bb-shop-desc {
-  font-size: 13px;
+  font-size: clamp(11px, 1.7vh, 22px);
   color: #6a6f90;
   line-height: 1.15;
   font-family: 'VT323', 'Courier New', monospace;
 }
 .bb-shop-btn {
-  font-size: 15px;
-  padding: 2px 6px;
+  font-size: clamp(13px, 2vh, 26px);
+  padding: clamp(2px, 0.4vh, 4px) clamp(5px, 1vh, 8px);
   letter-spacing: 0.5px;
   margin-top: 2px;
 }
@@ -7295,7 +7295,7 @@ textarea:focus-visible,
 }
 .bb-shop-back {
   margin-top: 4px;
-  width: min(60%, 200px);
+  width: min(60%, clamp(160px, 30vh, 340px));
   align-self: center;
 }
 
@@ -7310,19 +7310,19 @@ textarea:focus-visible,
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  max-width: 420px;
+  max-width: clamp(360px, 60vh, 760px);
   padding: 0 4px;
 }
 .bb-lb-title {
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(20px, 3.4vh, 28px);
+  font-size: clamp(20px, 3.4vh, 44px);
   letter-spacing: 3px;
   color: #fff;
   font-weight: 400;
   text-shadow: 0 0 8px rgba(80,150,255,0.5);
 }
 .bb-lb-mybest-wrap {
-  font-size: clamp(13px, 2vh, 16px);
+  font-size: clamp(13px, 2vh, 26px);
   color: #9aa0c0;
   letter-spacing: 1px;
   font-family: 'VT323', 'Courier New', monospace;
@@ -7334,13 +7334,13 @@ textarea:focus-visible,
 }
 .bb-lb-listhead {
   display: grid;
-  /* 6 colunas: #, NOME, TEMPO, NÍVEL, COMBO, PONTUAÇÃO */
-  grid-template-columns: 28px 1fr 48px 44px 52px 64px;
-  gap: 3px;
+  /* 6 colunas: #, NOME, TEMPO, NÍVEL, COMBO, PONTUAÇÃO — escalam com vh */
+  grid-template-columns: clamp(24px, 4vh, 44px) 1fr clamp(40px, 7vh, 76px) clamp(36px, 6vh, 64px) clamp(44px, 7vh, 76px) clamp(52px, 9vh, 96px);
+  gap: clamp(2px, 0.4vh, 4px);
   width: 100%;
-  max-width: 460px;
-  padding: 4px 8px;
-  font-size: 13px;
+  max-width: clamp(360px, 60vh, 760px);
+  padding: clamp(3px, 0.6vh, 6px) clamp(6px, 1vh, 10px);
+  font-size: clamp(11px, 1.8vh, 22px);
   letter-spacing: 1px;
   color: #6a6f90;
   font-family: 'VT323', 'Courier New', monospace;
@@ -7349,7 +7349,7 @@ textarea:focus-visible,
 .bb-lb-list {
   flex: 1;
   width: 100%;
-  max-width: 460px;
+  max-width: clamp(360px, 60vh, 760px);
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0;
@@ -7359,12 +7359,12 @@ textarea:focus-visible,
 .bb-lb-list::-webkit-scrollbar-thumb { background: #3a3a52; border-radius: 4px; }
 .bb-lb-row {
   display: grid;
-  /* 6 colunas: #, NOME, TEMPO, NÍVEL, COMBO, PONTUAÇÃO */
-  grid-template-columns: 28px 1fr 48px 44px 52px 64px;
-  gap: 3px;
-  padding: 4px 8px;
+  /* 6 colunas: #, NOME, TEMPO, NÍVEL, COMBO, PONTUAÇÃO — escalam com vh */
+  grid-template-columns: clamp(24px, 4vh, 44px) 1fr clamp(40px, 7vh, 76px) clamp(36px, 6vh, 64px) clamp(44px, 7vh, 76px) clamp(52px, 9vh, 96px);
+  gap: clamp(2px, 0.4vh, 4px);
+  padding: clamp(3px, 0.6vh, 6px) clamp(6px, 1vh, 10px);
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(14px, 2.2vh, 18px);
+  font-size: clamp(14px, 2.2vh, 28px);
   color: #c8c8e0;
   border-bottom: 1px dotted #1a1a28;
   align-items: center;
@@ -7389,7 +7389,7 @@ textarea:focus-visible,
 .bb-lb-row-me .bb-lb-name { color: #ffd23f; }
 .bb-lb-level {
   color: #9aa0c0;
-  font-size: 14px;
+  font-size: clamp(12px, 1.9vh, 24px);
   text-align: center;
 }
 .bb-lb-score {
@@ -7402,13 +7402,13 @@ textarea:focus-visible,
   text-align: center;
   color: #6a6f90;
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: 16px;
-  padding: 20px;
+  font-size: clamp(14px, 2.2vh, 26px);
+  padding: clamp(14px, 2.5vh, 24px);
   letter-spacing: 1px;
 }
 .bb-lb-back {
   margin-top: 4px;
-  width: min(60%, 200px);
+  width: min(60%, clamp(160px, 30vh, 340px));
   align-self: center;
 }
 
@@ -7459,17 +7459,17 @@ textarea:focus-visible,
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  width: min(80%, 260px);
+  gap: clamp(5px, 1vh, 10px);
+  width: min(80%, clamp(220px, 36vh, 320px));
   min-height: 1px;
 }
 .bb-go-powerups-line:empty { display: none; }
 .bb-go-pu-chip {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: clamp(3px, 0.5vh, 5px);
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(15px, 2.3vh, 18px);
+  font-size: clamp(14px, 2.2vh, 28px);
   line-height: 1;
   color: #fff;
 }
@@ -7477,13 +7477,13 @@ textarea:focus-visible,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: clamp(17px, 2.6vh, 32px);
+  height: clamp(17px, 2.6vh, 32px);
   border-radius: 50%;
   background: var(--c, #3fb8d4);
   color: #000;
   font-weight: 700;
-  font-size: 14px;
+  font-size: clamp(11px, 1.8vh, 22px);
   text-shadow: none;
   box-shadow: 0 0 5px var(--c, #3fb8d4);
   flex-shrink: 0;
@@ -7533,14 +7533,14 @@ textarea:focus-visible,
   display: flex;
   gap: 3px;
   width: 100%;
-  max-width: 460px;
+  max-width: clamp(360px, 60vh, 760px);
 }
 .bb-lb-tab {
   flex: 1;
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(13px, 2vh, 16px);
+  font-size: clamp(13px, 2vh, 26px);
   letter-spacing: 1px;
-  padding: 4px 4px;
+  padding: clamp(3px, 0.6vh, 6px) 4px;
   color: #9aa0c0;
   background: linear-gradient(180deg, #1c1c28 0%, #14141e 100%);
   border: 1px solid #3a3a52;
@@ -7561,7 +7561,7 @@ textarea:focus-visible,
 .bb-lb-content {
   flex: 1;
   width: 100%;
-  max-width: 460px;
+  max-width: clamp(360px, 60vh, 760px);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -7578,7 +7578,7 @@ textarea:focus-visible,
   color: #3fb8d4;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 4px rgba(63, 184, 212, 0.35);
-  font-size: 0.92em;
+  font-size: clamp(12px, 1.9vh, 24px);
 }
 .bb-lb-row-me .bb-lb-time { color: #5fd4e8; }
 
@@ -7593,9 +7593,9 @@ textarea:focus-visible,
    a altura perfeita para caber o conteúdo (header + poderes + stats). */
 .bb-details-cards {
   display: flex;
-  gap: 6px;
+  gap: clamp(4px, 0.8vh, 8px);
   width: 100%;
-  max-width: 460px;
+  max-width: clamp(360px, 60vh, 760px);
   align-items: flex-start;
   justify-content: center;
 }
@@ -7607,10 +7607,10 @@ textarea:focus-visible,
   background: linear-gradient(180deg, #14141e 0%, #0a0a14 100%);
   border: 1px solid #2a2a40;
   border-radius: 4px;
-  padding: 8px 6px;
+  padding: clamp(6px, 1.2vh, 10px) clamp(4px, 0.8vh, 8px);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: clamp(4px, 0.8vh, 8px);
   transition: border-color 0.12s;
 }
 
@@ -7634,7 +7634,7 @@ textarea:focus-visible,
 }
 .bb-detail-placeholder-text {
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: clamp(11px, 1.7vh, 22px);
   color: #6a6f90;
   letter-spacing: 1px;
   margin-top: 4px;
@@ -7651,14 +7651,14 @@ textarea:focus-visible,
 }
 .bb-detail-rank {
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(20px, 3vh, 26px);
+  font-size: clamp(20px, 3vh, 40px);
   font-weight: 700;
   line-height: 1;
   text-shadow: 0 0 8px currentColor;
 }
 .bb-detail-name {
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(14px, 2.2vh, 17px);
+  font-size: clamp(14px, 2.2vh, 26px);
   font-weight: 700;
   color: #e8e8f0;
   letter-spacing: 0.5px;
@@ -7691,7 +7691,7 @@ textarea:focus-visible,
 .bb-detail-stats {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
+  gap: clamp(3px, 0.6vh, 6px);
 }
 .bb-detail-stat {
   display: flex;
@@ -7700,11 +7700,11 @@ textarea:focus-visible,
   gap: 1px;
   background: rgba(0, 0, 16, 0.4);
   border-radius: 3px;
-  padding: 3px 2px;
+  padding: clamp(2px, 0.5vh, 5px) clamp(2px, 0.4vh, 4px);
 }
 .bb-detail-stat-label {
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: 10px;
+  font-size: clamp(9px, 1.4vh, 18px);
   letter-spacing: 1px;
   color: #6a6f90;
   text-transform: uppercase;
@@ -7712,7 +7712,7 @@ textarea:focus-visible,
 }
 .bb-detail-stat-val {
   font-family: 'VT323', 'Courier New', monospace;
-  font-size: clamp(14px, 2.2vh, 17px);
+  font-size: clamp(14px, 2.2vh, 26px);
   font-weight: 700;
   color: #e8e8f0;
   font-variant-numeric: tabular-nums;
