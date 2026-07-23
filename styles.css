@@ -1893,7 +1893,7 @@ body.editor-mode .card-played-btn {
 .admin-tabs {
   display: flex;
   gap: 4px;
-  padding: 8px 12px 0;
+  padding: 10px 12px 0;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -1906,7 +1906,7 @@ body.editor-mode .card-played-btn {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  padding: 8px 10px;
+  padding: 8px 10px 10px;
   border-radius: 6px 6px 0 0;
   background: transparent;
   border: none;
@@ -1936,6 +1936,14 @@ body.editor-mode .card-played-btn {
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+/* O divider dentro da tab Contas precisa de padding-top extra para não
+   ficar colado à border-bottom das tabs admin. A tab Jogos tem a
+   search-section com o seu próprio padding, mas a tab Contas começa
+   diretamente com um divider. */
+#admin-tab-accounts > .admin-divider {
+  padding-top: 14px;
 }
 
 /* ── Tab Contas — lista de utilizadores ── */
