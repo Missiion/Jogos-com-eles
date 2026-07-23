@@ -1648,6 +1648,7 @@ function createFallbackGame(fsDoc) {
     firebaseId:     fsDoc.firebaseId,
     preferredKeyArt: fsDoc.preferredKeyArt || null,
     playlistUrl:    fsDoc.playlistUrl || null,
+    addedBy:        fsDoc.addedBy || null, // quem adicionou o jogo (Firestore)
     _needsRetry:    true, // sinaliza que precisa de retry do IGDB
   };
 }
@@ -1853,6 +1854,7 @@ function listenToGames() {
             firebaseId: fsDoc.firebaseId,
             preferredKeyArt: fsDoc.preferredKeyArt || null,
             playlistUrl: fsDoc.playlistUrl || null,
+            addedBy: fsDoc.addedBy || null, // fonte de verdade = Firestore
           };
         }
         // Jogo novo no Firestore que não está no cache — usa fallback temporário
@@ -1882,6 +1884,7 @@ function listenToGames() {
             firebaseId: fsDoc.firebaseId,
             preferredKeyArt: fsDoc.preferredKeyArt || null,
             playlistUrl: fsDoc.playlistUrl || null,
+            addedBy: fsDoc.addedBy || null, // fonte de verdade = Firestore
           };
         }
         // Jogo novo (não estava no cache fresco) — marca para fetch IGDB
@@ -1963,6 +1966,7 @@ function listenToGames() {
           firebaseId: fsDoc.firebaseId,
           preferredKeyArt: fsDoc.preferredKeyArt || null,
           playlistUrl: fsDoc.playlistUrl || null,
+          addedBy: fsDoc.addedBy || null, // fonte de verdade = Firestore
         };
       });
 
@@ -2001,6 +2005,7 @@ function listenToGames() {
               firebaseId: fsDoc.firebaseId,
               preferredKeyArt: fsDoc.preferredKeyArt || null,
               playlistUrl: fsDoc.playlistUrl || null,
+              addedBy: fsDoc.addedBy || null, // fonte de verdade = Firestore
             };
           } catch(e) {
             console.warn("Falha ao buscar jogo", fsDoc.igdbId, e);
@@ -2102,11 +2107,25 @@ function getFilteredSortedGames() {
   } else {
     // Na tab "all", exclui jogos que estão no lixo (>= threshold down-votes)
     list = list.filter(g => !isInTrash(g.firebaseId));
-    // 1b. Esconde jogos que o user actual deu down-vote (localmente)
-    // ou que foram marcados como "jogados" (também ficam escondidos da
-    // lista principal — só visíveis na tab "Jogados" e "Escondidos").
-    // Apenas na lista "Todos". Outras tabs mostram tudo.
-    list = list.filter(g => !hiddenGames.has(g.firebaseId));
+    // 1b. Esconde jogos que o user actual deu down-vote ou que foram
+    // marcados como "jogados" — ficam escondidos da lista principal e são
+    // visíveis apenas nas tabs "Escondidos" e "Jogados" respectivamente.
+    //
+    // ⚠️  Fonte de verdade = Firebase (downvotesMap + tabGamesMap[playedTabId]).
+    //   O hiddenGames (localStorage) é mantido APENAS como cache/retro-
+    //   compatibilidade — mas NÃO como fonte primária, porque não sincroniza
+    //   entre browsers/dispositivos. Isto resolve o bug em que, após
+    //   recuperar a sessão noutro browser (recoveryMode), os jogos que o
+    //   user tinha dado down-vote apareciam na lista "Todos" porque o
+    //   localStorage desse novo browser estava vazio. Agora o Firebase é
+    //   a fonte de verdade: hasUserDownvoted() e isPlayed() funcionam em
+    //   qualquer browser porque dependem apenas de currentUser.id (que é
+    //   preservado na recuperação de sessão).
+    list = list.filter(g =>
+      !hasUserDownvoted(g.firebaseId) &&
+      !isPlayed(g.firebaseId) &&
+      !hiddenGames.has(g.firebaseId)
+    );
   }
 
   // 1c. Filtro "Jogos em comum" — mostra apenas jogos em que o user actual
@@ -3132,6 +3151,15 @@ function renderModalExtraInfo(game) {
     [t("Linguagem"), languageStrVal, false],
     [t("Géneros"), genresStr, false],
   ];
+
+  // ── "Adicionado por:" — mostra quem adicionou o jogo ao website ──
+  // O campo addedBy é guardado no Firestore quando um user adiciona um
+  // jogo (linha ~4181: addedBy: currentUser.name). Jogos adicionados
+  // antes desta feature poderão não ter o campo — nesse caso, a row
+  // simplesmente não aparece (null check abaixo).
+  if (game.addedBy) {
+    rows.push([t("Adicionado por"), game.addedBy, false]);
+  }
 
   $modalExtraInfo.innerHTML = rows.map(([label, value, isHtml]) => `
     <div class="extra-info-row">
@@ -5116,7 +5144,7 @@ function renderTabs() {
   });
 
   const options = [
-    { id: "all", label: t("Todos"), count: gamesData.filter(g => !isInTrash(g.firebaseId) && !hiddenGames.has(g.firebaseId)).length, deletable: false },
+    { id: "all", label: t("Todos"), count: gamesData.filter(g => !isInTrash(g.firebaseId) && !hasUserDownvoted(g.firebaseId) && !isPlayed(g.firebaseId) && !hiddenGames.has(g.firebaseId)).length, deletable: false },
     ...sortedTabs.map(tab => {
       const set = tabGamesMap[tab.id] || new Set();
       const isTrash = isTrashLabel(tab.label);
@@ -6517,8 +6545,16 @@ function shuffleArray(arr) {
 //    (excluindo jogos escondidos pelo utilizador)
 // 2. Abre o modal com o primeiro jogo da queue
 function startDiscover() {
-  // Filtrar jogos disponíveis (exclui escondidos)
-  const availableGames = gamesData.filter(g => !hiddenGames.has(g.firebaseId));
+  // Filtrar jogos disponíveis (exclui escondidos, downvoted e jogados).
+  // Usa as fontes de verdade do Firebase (hasUserDownvoted, isPlayed) +
+  // hiddenGames (localStorage) para retrocompatibilidade. Isto garante que
+  // o discover funciona corretamente após recovery noutro browser.
+  const availableGames = gamesData.filter(g =>
+    !hiddenGames.has(g.firebaseId) &&
+    !hasUserDownvoted(g.firebaseId) &&
+    !isPlayed(g.firebaseId) &&
+    !isInTrash(g.firebaseId)
+  );
 
   if (availableGames.length === 0) {
     showToast(t("Nenhum jogo disponível para descobrir."));
