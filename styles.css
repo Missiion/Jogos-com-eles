@@ -4080,46 +4080,44 @@ body.editor-mode .card-release-status {
 
 /* ═══════════════════════════════════════════════
    CARD — Label "Novidade" (canto superior esquerdo)
-   Mostra-se apenas para jogos não-visitados.
-   Estilo: cópia do tag-filter-item mas com cor azul.
-   Reage aos icons de admin: em editor-mode, desloca-se
-   para a direita (left: 72px) para não ficar por cima
-   dos botões delete (left:8px) e played (left:40px).
+   Cópia perfeita do .card-release-status mas em azul.
+   Movimento: hover → desce (top:8→20); editor-mode →
+   desloca para a direita (left:8→72) para evitar os
+   botões de admin (delete@8, played@40).
    ═══════════════════════════════════════════════ */
 .card-new-badge {
   position: absolute;
-  top: 8px;
+  top: 8px;       /* repouso: canto superior esquerdo */
   left: 8px;
-  z-index: 5;
+  z-index: 4;
   font-family: 'Space Grotesk', sans-serif;
   font-size: 0.57rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  padding: 3px 8px;
-  border-radius: 100px;
+  padding: 3px 7px;
+  border-radius: 4px;
   white-space: nowrap;
-  /* Azul — same palette as modal-new-badge */
-  background: linear-gradient(135deg, rgba(80, 150, 255, 0.28), rgba(80, 150, 255, 0.1));
-  border: 1px solid rgba(80, 150, 255, 0.35);
-  color: #8fc3ff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
-  backdrop-filter: blur(8px) brightness(0.8);
-  -webkit-backdrop-filter: blur(8px) brightness(0.8);
+  backdrop-filter: blur(8px) brightness(0.7);
+  -webkit-backdrop-filter: blur(8px) brightness(0.7);
   pointer-events: none;
-  animation: cardNewBadgePulse 2.5s ease-in-out infinite;
-  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-              top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  /* Azul — mesma paleta do card-release-status--early */
+  background: linear-gradient(135deg, rgba(80, 150, 255, 0.22), rgba(80, 150, 255, 0.08));
+  box-shadow: inset 0 0 0 1px rgba(80, 150, 255, 0.3), 0 2px 8px rgba(0,0,0,0.35);
+  color: #8fc3ff;
+  /* Mesma transição do card-release-status: só top */
+  transition: top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-@keyframes cardNewBadgePulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.6; }
+/* Hover: desce abaixo dos scrub-dots (igual ao card-release-status) */
+.game-card:hover .card-new-badge {
+  top: 20px;
 }
 
 /* Em modo editor, os botões de admin (delete + played) ocupam o canto
    superior esquerdo (left: 8px e left: 40px). O label desloca-se para
-   a direita (left: 72px) para não ficar por cima deles. */
+   a direita (left: 72px) para não ficar por cima deles — igual ao
+   card-release-status que desloca right:72px para evitar edit+addtab. */
 body.editor-mode .card-new-badge {
   left: 72px;
 }
@@ -4128,9 +4126,13 @@ body.editor-mode .card-new-badge {
 .game-grid.view-five .card-new-badge,
 .game-grid.view-compact .card-new-badge {
   font-size: 0.5rem;
-  padding: 2px 6px;
+  padding: 2px 5px;
   top: 6px;
   left: 6px;
+}
+.game-grid.view-five .game-card:hover .card-new-badge,
+.game-grid.view-compact .game-card:hover .card-new-badge {
+  top: 18px;
 }
 body.editor-mode .game-grid.view-five .card-new-badge,
 body.editor-mode .game-grid.view-compact .card-new-badge {
