@@ -92,6 +92,9 @@
     "Em modo recuperação de utilizador, escreve o teu nome corretamente.":
       "In user recovery mode, type your name correctly.",
 
+    // ── Modal — extra info ──
+    "Adicionado por": "Added by",
+
     // ── Tabs ────────────────────────────────────
     "Todos": "All",
     "Criar_Tab": "Create_Tab",
