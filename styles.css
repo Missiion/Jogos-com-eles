@@ -4079,6 +4079,65 @@ body.editor-mode .card-release-status {
 }
 
 /* ═══════════════════════════════════════════════
+   CARD — Label "Novidade" (canto superior esquerdo)
+   Mostra-se apenas para jogos não-visitados.
+   Estilo: cópia do tag-filter-item mas com cor azul.
+   Reage aos icons de admin: em editor-mode, desloca-se
+   para a direita (left: 72px) para não ficar por cima
+   dos botões delete (left:8px) e played (left:40px).
+   ═══════════════════════════════════════════════ */
+.card-new-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.57rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 100px;
+  white-space: nowrap;
+  /* Azul — same palette as modal-new-badge */
+  background: linear-gradient(135deg, rgba(80, 150, 255, 0.28), rgba(80, 150, 255, 0.1));
+  border: 1px solid rgba(80, 150, 255, 0.35);
+  color: #8fc3ff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  backdrop-filter: blur(8px) brightness(0.8);
+  -webkit-backdrop-filter: blur(8px) brightness(0.8);
+  pointer-events: none;
+  animation: cardNewBadgePulse 2.5s ease-in-out infinite;
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes cardNewBadgePulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.6; }
+}
+
+/* Em modo editor, os botões de admin (delete + played) ocupam o canto
+   superior esquerdo (left: 8px e left: 40px). O label desloca-se para
+   a direita (left: 72px) para não ficar por cima deles. */
+body.editor-mode .card-new-badge {
+  left: 72px;
+}
+
+/* Smaller badge in five/compact views */
+.game-grid.view-five .card-new-badge,
+.game-grid.view-compact .card-new-badge {
+  font-size: 0.5rem;
+  padding: 2px 6px;
+  top: 6px;
+  left: 6px;
+}
+body.editor-mode .game-grid.view-five .card-new-badge,
+body.editor-mode .game-grid.view-compact .card-new-badge {
+  left: 68px;
+}
+
+/* ═══════════════════════════════════════════════
    CARD — Last-row expand opens upward
    Cards in the last grid row get .last-row; their
    card-expand is repositioned above the card instead
