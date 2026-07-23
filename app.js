@@ -2432,9 +2432,10 @@ function buildCard(game, globalIdx) {
         <div class="card-image-gradient"></div>
         <div class="card-scrub-bar">${dotsHtml}</div>
 
-        <!-- Label "Novidade" — canto superior esquerdo, só para jogos não-visitados.
+        <!-- Label "Novidade" — canto superior esquerdo, só para jogos não-visitados
+             E que não estejam marcados como jogados (jogos jogados não são novidade).
              Reage aos icons de admin (editor-mode) descendo para não ficar por cima deles. -->
-        ${!isGameVisited(game.firebaseId) ? `<span class="card-new-badge">${escHtml(t("Novidade"))}</span>` : ""}
+        ${(!isGameVisited(game.firebaseId) && !isPlayed(game.firebaseId)) ? `<span class="card-new-badge">${escHtml(t("Novidade"))}</span>` : ""}
 
         <!-- Botões de admin — só visíveis em modo editor (body.editor-mode) -->
         <button class="card-delete-btn" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="${escHtml(t("Remover jogo"))}" title="${escHtml(t("Remover jogo"))}">
@@ -3011,7 +3012,7 @@ function renderModalBanner(game) {
     ${game.cover
       ? `<img src="${escHtml(game.cover)}" alt="${escHtml(game.name)}" loading="lazy"/>`
       : `<div class="modal-banner-empty"></div>`}
-    ${!isGameVisited(game.firebaseId) ? `<span class="modal-new-badge">${escHtml(t("Novidade"))}</span>` : ""}
+    ${(!isGameVisited(game.firebaseId) && !isPlayed(game.firebaseId)) ? `<span class="modal-new-badge">${escHtml(t("Novidade"))}</span>` : ""}
     <button class="modal-vote-btn modal-upvote-btn${upVoted ? " voted" : ""}" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="${escHtml(t("Votar a favor"))}" title="${escHtml(t("Votar a favor"))}">
       <svg class="vote-arrow" width="16" height="16" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" stroke="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 19a3.966 3.966 0 01-3.96-3.962V10.98H2.838c-.706 0-1.335-.42-1.605-1.073-.27-.652-.122-1.396.377-1.895l7.754-7.759a.925.925 0 011.272 0l7.754 7.76a1.734 1.734 0 01.376 1.894c-.27.652-.9 1.073-1.605 1.073h-3.202v4.058A3.965 3.965 0 0110 19zm-7.01-9.82h4.85v4.73c0 1.13.81 2.163 1.934 2.278a2.163 2.163 0 002.386-2.15V9.18h4.85L10 2.164 2.99 9.18z"/></svg>
       <span class="vote-count">${upCount}</span>
