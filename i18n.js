@@ -261,7 +261,7 @@
     "Notificações de teste adicionadas.": "Test notifications added.",
     "Limpar tudo": "Clear all",
     "Mutar notificações": "Mute notifications",
-    "Mutar sons": "Mute sounds",
+    "Skip após voto a favor": "Skip on upvote",
     "Computador": "Computer",
     "Sem sinal": "NO SIGNAL",
     "Testes": "Testing",
