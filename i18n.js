@@ -70,6 +70,28 @@
     "Erro ao apagar tab.": "Failed to delete tab.",
     "Erro ao guardar jogos da tab:": "Failed to save tab games:",
 
+    // ── Admin — Tabs internas (Jogos | Contas) ──
+    "Jogos": "Games",
+    "Contas": "Accounts",
+    "Utilizadores registados": "Registered users",
+    "Nenhum utilizador registado.": "No registered users.",
+    "Admin": "Admin",
+    "Tu": "You",
+    "Recuperação ativa": "Recovery active",
+    "Ativar recuperação": "Enable recovery",
+    "Cancelar recuperação": "Cancel recovery",
+    "Queres ativar a recuperação para": "Do you want to enable recovery for",
+    "Queres cancelar a recuperação para": "Do you want to cancel recovery for",
+    "Recuperação ativada para": "Recovery enabled for",
+    "Recuperação cancelada para": "Recovery cancelled for",
+    "Erro ao ativar recuperação.": "Failed to enable recovery.",
+    "Erro ao cancelar recuperação.": "Failed to cancel recovery.",
+    "Apenas o admin pode gerir contas.": "Only the admin can manage accounts.",
+    "A recuperação permite que um utilizador recupere a sua sessão noutro browser usando o mesmo nome.":
+      "Recovery allows a user to reclaim their session on another browser using the same name.",
+    "Em modo recuperação de utilizador, escreve o teu nome corretamente.":
+      "In user recovery mode, type your name correctly.",
+
     // ── Tabs ────────────────────────────────────
     "Todos": "All",
     "Criar_Tab": "Create_Tab",
