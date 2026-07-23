@@ -218,6 +218,7 @@ let gamesLoaded  = false; // true após o primeiro carregamento completo do onSn
 let adminOpen     = false; // true enquanto o "modo editor" está ativo (cards mostram botões de admin)
 let adminExpanded = false; // true quando o painel de admin (canto inferior direito) está descolapsado
 let testsExpanded = false; // true quando o painel de testes (ao lado da pesquisa) está descolapsado
+let adminActiveTab = "games"; // tab ativa no painel de admin: "games" | "accounts"
 let forcedLoadingActive = false; // true enquanto o loading é forçado a aparecer indefinidamente (debug)
 let modalOpen   = false;
 let modalIndex  = 0;    // índice de media no modal
@@ -396,6 +397,11 @@ const $adminGameList = document.getElementById("admin-game-list");
 const $adminStatus   = document.getElementById("admin-status");
 const $adminHint     = document.getElementById("admin-hint");
 const $adminHintText = document.getElementById("admin-hint-text");
+// ── Admin tabs (Jogos | Contas) ──
+const $adminTabs       = document.getElementById("admin-tabs");
+const $adminTabGames   = document.getElementById("admin-tab-games");
+const $adminTabAccounts= document.getElementById("admin-tab-accounts");
+const $adminAccountsList = document.getElementById("admin-accounts-list");
 const $gameModal     = document.getElementById("game-modal");
 const $modalBackdrop = document.getElementById("modal-backdrop");
 const $modalClose    = document.getElementById("modal-close");
@@ -1300,6 +1306,9 @@ function listenToUsers() {
     restoreSession();
     // Actualiza UI (botão de registo / nome)
     updateUserUI();
+    // Re-renderiza a lista de contas no painel de admin (recoveryMode pode
+    // ter mudado remotamente noutro dispositivo).
+    renderAdminAccounts();
   }, (err) => {
     console.warn("[app.js] Erro no listener de users:", err);
   });
@@ -1372,7 +1381,11 @@ function updateUserUI() {
     $input.classList.add("hidden");
     // Esconde o botão de registo se já houver 3 ou mais utilizadores
     // (incluindo o admin). Sinaliza que o grupo está completo.
-    if (allUsers.length >= 3) {
+    // EXCEÇÃO: se houver algum utilizador marcado para recuperação
+    // (recoveryMode === true), o botão continua visível para que o amigo
+    // possa reclamar a sua sessão noutro browser com o mesmo nome.
+    const recoveryActive = allUsers.some(u => u.recoveryMode === true);
+    if (allUsers.length >= 3 && !recoveryActive) {
       $btn.style.display = "none";
     } else {
       $btn.style.display = "";
@@ -1404,6 +1417,13 @@ function nameExists(name) {
 // - Cria doc em "users"
 // - Cria tab com o nome capitalizado
 // - Associa tabId ao user
+//
+//  MODO DE RECUPERAÇÃO:
+//  Se houver utilizadores com recoveryMode === true, o registo normal é
+//  suspenso. Apenas o nome exato de um utilizador marcado pode reclamar
+//  a sessão existente (preservando todos os dados: votos, tabs, scores
+//  do Brick Breaker, etc.). Nomes errados são bloqueados com notificação.
+//  O código admin ("admin1") continua a funcionar como backdoor do admin.
 async function registerUser(rawName) {
   const ADMIN_CODE = "admin1";
   let name, isAdmin = false;
@@ -1416,6 +1436,16 @@ async function registerUser(rawName) {
         // Restaura a sessão do admin
         currentUser = { id: adminUser.id, name: adminUser.name, isAdmin: true, tabId: adminUser.tabId || null };
         try { localStorage.setItem(USER_ID_KEY, adminUser.id); } catch (_) {}
+        // Se o admin estava marcado para recuperação, limpa a flag — a
+        // sessão foi reclamada via código admin, já não precisa de
+        // recuperação (evita que outra pessoa reclame "Leo" depois).
+        if (adminUser.recoveryMode === true && db) {
+          try {
+            await updateDoc(doc(db, "users", adminUser.id), { recoveryMode: false });
+          } catch (err) {
+            console.warn("[registerUser] erro ao limpar recovery do admin:", err);
+          }
+        }
         updateUserUI();
         showToast(`${t("Bem-vindo de volta,")} ${adminUser.name}!`);
         return true;
@@ -1427,6 +1457,45 @@ async function registerUser(rawName) {
     isAdmin = true;
   } else {
     name = capitalizeName(rawName);
+
+    // ── Modo de recuperação ──────────────────────────────────────
+    // Se houver utilizadores marcados para recuperação (recoveryMode ===
+    // true), o registo normal é suspenso: SÓ o nome exato (normalizado)
+    // de um utilizador marcado pode reclamar a sessão. Qualquer outro
+    // nome é bloqueado com a notificação de modo recuperação.
+    const recoveryUsers = allUsers.filter(u => u.recoveryMode === true);
+    if (recoveryUsers.length > 0) {
+      const match = recoveryUsers.find(u => normalizeStr(u.name) === normalizeStr(name));
+      if (match) {
+        // Nome correto → reclama a sessão existente (sem criar novo
+        // user/tab). Todos os dados associados ao userId são preservados.
+        currentUser = {
+          id: match.id,
+          name: match.name,
+          isAdmin: !!match.isAdmin,
+          tabId: match.tabId || null
+        };
+        try { localStorage.setItem(USER_ID_KEY, match.id); } catch (_) {}
+        // Limpa a flag de recuperação — sessão reclamada com sucesso.
+        // O onSnapshot de users re-renderiza a UI e volta ao normal.
+        if (db) {
+          try {
+            await updateDoc(doc(db, "users", match.id), { recoveryMode: false });
+          } catch (err) {
+            console.warn("[registerUser] erro ao limpar recovery:", err);
+          }
+        }
+        updateUserUI();
+        showToast(`${t("Bem-vindo de volta,")} ${match.name}!`);
+        return true;
+      } else {
+        // Nome errado — bloqueia e mostra a notificação de modo recuperação.
+        showToast(t("Em modo recuperação de utilizador, escreve o teu nome corretamente."));
+        return false;
+      }
+    }
+
+    // ── Registo normal (sem recuperação ativa) ───────────────────
     if (name.length < 2) {
       showToast(t("Nome muito curto (mín 2 caracteres)."));
       return false;
@@ -3389,7 +3458,7 @@ function closeAdmin() {
   // Fecha quaisquer modais dependentes do modo admin (key-art picker,
   // adicionar a tab) que possam estar abertos
   if (!$keyartModal.classList.contains("hidden")) closeKeyArtPicker();
-  if (!$addtabModal.classList.contains("hidden")) closeAddTabModal();
+  if (!$addtabModal.classList.contains("hidden")) closePlaylistModal();
   // Hide criar tab input if open
   $createTabBtn.classList.remove("hidden");
   $createTabInputWrap.classList.add("hidden");
@@ -3399,7 +3468,9 @@ function closeAdmin() {
 function toggleAdminPanel() {
   adminExpanded = !adminExpanded;
   $adminPanel.classList.toggle("expanded", adminExpanded);
-  if (adminExpanded) setTimeout(() => $adminSearch.focus(), 150);
+  if (adminExpanded && adminActiveTab === "games") {
+    setTimeout(() => $adminSearch.focus(), 150);
+  }
 }
 
 $adminFab.addEventListener("click", toggleAdminPanel);
@@ -3407,6 +3478,168 @@ $adminClose.addEventListener("click", closeAdmin);
 $adminOverlay.addEventListener("keydown", e => {
   if (e.key === "Escape") closeAdmin();
 });
+
+// ─────────────────────────────────────────────
+//  ADMIN — Tabs internas (Jogos | Contas)
+//
+//  • "Jogos"    → administração de jogos (pesquisa IGDB + lista)
+//  • "Contas"   → gerenciamento de contas (recuperação de sessão)
+//
+//  A tab "Contas" lista os utilizadores registados e permite ao admin
+//  ativar/desativar o modo de recuperação para cada um. Quando ativo,
+//  o utilizador marcado pode re-registar-se noutro browser com o MESMO
+//  nome, reclamando a sua sessão (e todos os dados associados: votos,
+//  tabs, scores do Brick Breaker, etc.) sem perder nada.
+// ─────────────────────────────────────────────
+function switchAdminTab(tab) {
+  if (tab !== "games" && tab !== "accounts") return;
+  adminActiveTab = tab;
+
+  // Atualiza os botões das tabs
+  if ($adminTabs) {
+    $adminTabs.querySelectorAll(".admin-tab").forEach(btn => {
+      const isActive = btn.dataset.adminTab === tab;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+  }
+
+  // Mostra/esconde o conteúdo das tabs
+  if ($adminTabGames)    $adminTabGames.classList.toggle("hidden",    tab !== "games");
+  if ($adminTabAccounts) $adminTabAccounts.classList.toggle("hidden", tab !== "accounts");
+
+  // Se abriu a tab das contas, (re)renderiza a lista para refletir o
+  // estado mais recente do Firebase (recoveryMode pode ter mudado).
+  if (tab === "accounts") renderAdminAccounts();
+}
+
+// Delegação de cliques nos botões das tabs do painel de admin.
+if ($adminTabs) {
+  $adminTabs.addEventListener("click", (e) => {
+    const btn = e.target.closest(".admin-tab");
+    if (!btn || !btn.dataset.adminTab) return;
+    switchAdminTab(btn.dataset.adminTab);
+  });
+}
+
+// ─────────────────────────────────────────────
+//  ADMIN — Render da lista de contas (tab "Contas")
+//
+//  Cada utilizador aparece numa linha com:
+//    • Nome (capitalizado)
+//    • Badge "Admin" se for admin
+//    • Badge "Recuperação ativa" se recoveryMode === true
+//    • Botão para ativar/cancelar a recuperação
+//
+//  O estado recoveryMode é lido do Firestore (campo boolean no doc do
+//  user). Quando ativo, o botão de registo volta a aparecer (mesmo com
+//  3+ utilizadores) e só o nome exato do utilizador marcado pode
+//  reclamar a sessão.
+// ─────────────────────────────────────────────
+function renderAdminAccounts() {
+  if (!$adminAccountsList) return;
+
+  if (allUsers.length === 0) {
+    $adminAccountsList.innerHTML =
+      `<div class="admin-empty">${escHtml(t("Nenhum utilizador registado."))}</div>`;
+    return;
+  }
+
+  $adminAccountsList.innerHTML = allUsers.map(u => {
+    const inRecovery = u.recoveryMode === true;
+    const isAdmin = !!u.isAdmin;
+    const isSelf = currentUser && currentUser.id === u.id;
+
+    const badges = [];
+    if (isAdmin) {
+      badges.push(`<span class="admin-account-badge admin">${escHtml(t("Admin"))}</span>`);
+    }
+    if (inRecovery) {
+      badges.push(`<span class="admin-account-badge recovery">${escHtml(t("Recuperação ativa"))}</span>`);
+    }
+    if (isSelf) {
+      badges.push(`<span class="admin-account-badge self">${escHtml(t("Tu"))}</span>`);
+    }
+
+    const btnLabel = inRecovery
+      ? t("Cancelar recuperação")
+      : t("Ativar recuperação");
+    const btnClass = inRecovery
+      ? "admin-account-recovery-btn cancel"
+      : "admin-account-recovery-btn";
+
+    return `
+      <div class="admin-account-row${inRecovery ? " recovery-active" : ""}" data-user-id="${escHtml(u.id)}">
+        <div class="admin-account-info">
+          <span class="admin-account-name">${escHtml(u.name || "")}</span>
+          <div class="admin-account-badges">${badges.join("")}</div>
+        </div>
+        <button class="${btnClass}" data-user-id="${escHtml(u.id)}" type="button">
+          ${escHtml(btnLabel)}
+        </button>
+      </div>
+    `;
+  }).join("");
+
+  // Liga os botões de toggle de recuperação
+  $adminAccountsList.querySelectorAll(".admin-account-recovery-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      toggleRecovery(btn.dataset.userId);
+    });
+  });
+}
+
+// ─────────────────────────────────────────────
+//  ADMIN — Toggle do modo de recuperação de um utilizador
+//
+//  • Pede confirmação (sim/não) antes de alterar o estado.
+//  • Se ativar: define recoveryMode = true no doc do user no Firestore.
+//    O registo volta a aparecer (mesmo com 3+ users) e só o nome exato
+//    pode reclamar a sessão.
+//  • Se cancelar: define recoveryMode = false.
+//  • O estado persiste no Firestore (sobrevive a fecho de página).
+//  • Apenas o admin pode usar esta função.
+// ─────────────────────────────────────────────
+async function toggleRecovery(userId) {
+  if (!currentUser || !currentUser.isAdmin) {
+    showToast(t("Apenas o admin pode gerir contas."));
+    return;
+  }
+  if (!db) return;
+
+  const user = allUsers.find(u => u.id === userId);
+  if (!user) return;
+
+  const userName = user.name || "";
+  const currentlyActive = user.recoveryMode === true;
+
+  if (currentlyActive) {
+    // Cancelar recuperação
+    const confirmMsg = `${t("Queres cancelar a recuperação para")} "${userName}"?`;
+    if (!confirm(confirmMsg)) return;
+    try {
+      await updateDoc(doc(db, "users", userId), { recoveryMode: false });
+      showToast(`${t("Recuperação cancelada para")} ${userName}.`);
+    } catch (err) {
+      console.error("[toggleRecovery] erro ao cancelar:", err);
+      showToast(t("Erro ao cancelar recuperação."));
+    }
+  } else {
+    // Ativar recuperação
+    const confirmMsg =
+      `${t("Queres ativar a recuperação para")} "${userName}"?\n` +
+      t("A recuperação permite que um utilizador recupere a sua sessão noutro browser usando o mesmo nome.");
+    if (!confirm(confirmMsg)) return;
+    try {
+      await updateDoc(doc(db, "users", userId), { recoveryMode: true });
+      showToast(`${t("Recuperação ativada para")} ${userName}.`);
+    } catch (err) {
+      console.error("[toggleRecovery] erro ao ativar:", err);
+      showToast(t("Erro ao ativar recuperação."));
+    }
+  }
+  // O onSnapshot de users re-renderiza a lista automaticamente.
+}
 
 // ─────────────────────────────────────────────
 //  ADMIN — Painel de Testes (fab ao lado do admin-fab)
@@ -6801,6 +7034,7 @@ function init() {
       // datas com locale correcto, etc.)
       renderGameList(gamesData);
       renderAdminList(gamesData);
+      renderAdminAccounts();
       renderTagFilter();
       renderTabs();
       // Re-renderiza as miniaturas de fundo (títulos traduzidos)
