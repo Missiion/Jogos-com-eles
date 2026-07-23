@@ -92,23 +92,43 @@
           </button>
         </div>
 
-        <div class="admin-search-section">
-          <label class="admin-label" for="admin-search-input" data-i18n="Pesquisar Jogo">Pesquisar Jogo</label>
-          <div class="admin-search-row">
-            <input type="text" id="admin-search-input" class="admin-input" data-i18n-placeholder="Nome do jogo..." placeholder="Nome do jogo..." autocomplete="off" />
-            <button id="admin-search-btn" class="admin-search-btn" data-i18n-aria-label="Pesquisar" aria-label="Pesquisar">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            </button>
+        <!-- Tabs internas do painel de admin: Jogos | Contas -->
+        <div class="admin-tabs" id="admin-tabs" role="tablist">
+          <button class="admin-tab active" data-admin-tab="games" type="button" role="tab" aria-selected="true" data-i18n="Jogos">Jogos</button>
+          <button class="admin-tab" data-admin-tab="accounts" type="button" role="tab" aria-selected="false" data-i18n="Contas">Contas</button>
+        </div>
+
+        <!-- Tab: Jogos (administração de jogos — default) -->
+        <div class="admin-tab-content" id="admin-tab-games" role="tabpanel">
+          <div class="admin-search-section">
+            <label class="admin-label" for="admin-search-input" data-i18n="Pesquisar Jogo">Pesquisar Jogo</label>
+            <div class="admin-search-row">
+              <input type="text" id="admin-search-input" class="admin-input" data-i18n-placeholder="Nome do jogo..." placeholder="Nome do jogo..." autocomplete="off" />
+              <button id="admin-search-btn" class="admin-search-btn" data-i18n-aria-label="Pesquisar" aria-label="Pesquisar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </button>
+            </div>
+            <div id="admin-search-results" class="admin-search-results hidden"></div>
           </div>
-          <div id="admin-search-results" class="admin-search-results hidden"></div>
+
+          <div class="admin-divider">
+            <span data-i18n="Na lista">Na lista</span>
+          </div>
+
+          <div id="admin-game-list" class="admin-game-list">
+            <div class="admin-empty" data-i18n="Nenhum jogo adicionado ainda.">Nenhum jogo adicionado ainda.</div>
+          </div>
         </div>
 
-        <div class="admin-divider">
-          <span data-i18n="Na lista">Na lista</span>
-        </div>
-
-        <div id="admin-game-list" class="admin-game-list">
-          <div class="admin-empty" data-i18n="Nenhum jogo adicionado ainda.">Nenhum jogo adicionado ainda.</div>
+        <!-- Tab: Contas (gerenciamento de contas — recuperação de sessão) -->
+        <div class="admin-tab-content hidden" id="admin-tab-accounts" role="tabpanel">
+          <div class="admin-divider">
+            <span data-i18n="Utilizadores registados">Utilizadores registados</span>
+          </div>
+          <div id="admin-accounts-list" class="admin-accounts-list">
+            <div class="admin-empty" data-i18n="Nenhum utilizador registado.">Nenhum utilizador registado.</div>
+          </div>
+          <div class="admin-accounts-hint" data-i18n="A recuperação permite que um utilizador recupere a sua sessão noutro browser usando o mesmo nome.">A recuperação permite que um utilizador recupere a sua sessão noutro browser usando o mesmo nome.</div>
         </div>
 
         <div id="admin-status" class="admin-status hidden"></div>
