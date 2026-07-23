@@ -313,6 +313,10 @@ const HIDDEN_GAMES_KEY = "jce_hidden_games";
 let hiddenGames = new Set();
 let showHiddenGames = false; // default: não mostrar
 let youtubeAutoplay = true; // default: autoplay on
+// Skip após voto a favor no modo Descoberta: quando ativo, dar up-vote
+// auto-avança para o próximo jogo (mesmo comportamento do down-vote).
+// Default: off. Persistido em localStorage (jce_skip_on_upvote).
+let skipOnUpvote = false; // default: não skip
 
 // Carrega jogos escondidos do localStorage
 function loadHiddenGames() {
@@ -371,6 +375,9 @@ function loadPreferences() {
   // porque initSettings() corre ANTES de initNotifications() e precisa do valor.
   try {
     notificationsMuted = localStorage.getItem("jce_mute_notifications") === "1";
+  } catch (_) {}
+  try {
+    skipOnUpvote = localStorage.getItem("jce_skip_on_upvote") === "1";
   } catch (_) {}
 }
 
@@ -2174,8 +2181,17 @@ function getFilteredSortedGames() {
   } else if (currentSort === "rating") {
     list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
   } else {
-    // random — stable within session via seed
-    list.sort((a, b) => seededRandom(randomSeed, gamesData.indexOf(a)) - seededRandom(randomSeed, gamesData.indexOf(b)));
+    // random — stable within session via seed.
+    // ⚠️  Novidades primeiro: jogos não-visitados (Novidade) aparecem antes
+    //    dos já visitados. Dentro de cada grupo, a ordem é aleatória mas
+    //    estável (seeded). Isto espelha o comportamento do modo Descoberta,
+    //    onde os jogos não-visitados vêm primeiro na queue.
+    list.sort((a, b) => {
+      const aVisited = isGameVisited(a.firebaseId) ? 1 : 0;
+      const bVisited = isGameVisited(b.firebaseId) ? 1 : 0;
+      if (aVisited !== bVisited) return aVisited - bVisited; // não-visitados (0) primeiro
+      return seededRandom(randomSeed, gamesData.indexOf(a)) - seededRandom(randomSeed, gamesData.indexOf(b));
+    });
   }
   return list;
 }
@@ -2415,6 +2431,10 @@ function buildCard(game, globalIdx) {
              data-videos='${JSON.stringify(videos)}'/>
         <div class="card-image-gradient"></div>
         <div class="card-scrub-bar">${dotsHtml}</div>
+
+        <!-- Label "Novidade" — canto superior esquerdo, só para jogos não-visitados.
+             Reage aos icons de admin (editor-mode) descendo para não ficar por cima deles. -->
+        ${!isGameVisited(game.firebaseId) ? `<span class="card-new-badge">${escHtml(t("Novidade"))}</span>` : ""}
 
         <!-- Botões de admin — só visíveis em modo editor (body.editor-mode) -->
         <button class="card-delete-btn" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="${escHtml(t("Remover jogo"))}" title="${escHtml(t("Remover jogo"))}">
@@ -2991,7 +3011,7 @@ function renderModalBanner(game) {
     ${game.cover
       ? `<img src="${escHtml(game.cover)}" alt="${escHtml(game.name)}" loading="lazy"/>`
       : `<div class="modal-banner-empty"></div>`}
-    ${discoverMode && !isGameVisited(game.firebaseId) ? `<span class="modal-new-badge">${escHtml(t("Novidade"))}</span>` : ""}
+    ${!isGameVisited(game.firebaseId) ? `<span class="modal-new-badge">${escHtml(t("Novidade"))}</span>` : ""}
     <button class="modal-vote-btn modal-upvote-btn${upVoted ? " voted" : ""}" data-fbid="${escHtml(game.firebaseId || "")}" aria-label="${escHtml(t("Votar a favor"))}" title="${escHtml(t("Votar a favor"))}">
       <svg class="vote-arrow" width="16" height="16" viewBox="0 0 20 20" fill="currentColor" fill-rule="evenodd" stroke="none" xmlns="http://www.w3.org/2000/svg"><path d="M10 19a3.966 3.966 0 01-3.96-3.962V10.98H2.838c-.706 0-1.335-.42-1.605-1.073-.27-.652-.122-1.396.377-1.895l7.754-7.759a.925.925 0 011.272 0l7.754 7.76a1.734 1.734 0 01.376 1.894c-.27.652-.9 1.073-1.605 1.073h-3.202v4.058A3.965 3.965 0 0110 19zm-7.01-9.82h4.85v4.73c0 1.13.81 2.163 1.934 2.278a2.163 2.163 0 002.386-2.15V9.18h4.85L10 2.164 2.99 9.18z"/></svg>
       <span class="vote-count">${upCount}</span>
@@ -3010,7 +3030,17 @@ function renderModalBanner(game) {
   if (upBtn) {
     upBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      toggleUpvote(game.firebaseId);
+      // No modo Descoberta: se o toggle "Skip após voto a favor" estiver
+      // ativo e o user acabou de dar up-vote (não estava já votado),
+      // auto-avança para o próximo jogo — espelha o comportamento do
+      // down-vote (que salta sempre no Discover).
+      if (discoverMode && skipOnUpvote && !hasUserUpvoted(game.firebaseId)) {
+        toggleUpvote(game.firebaseId).then(() => {
+          navigateDiscover("next");
+        });
+      } else {
+        toggleUpvote(game.firebaseId);
+      }
     });
     // Fallback para browsers sem :has() — mostra nomes independentemente no hover de cada botão
     upBtn.addEventListener("mouseenter", () => $modalBanner.classList.add("show-upvote-names"));
@@ -3305,8 +3335,24 @@ function openModal(gameIdx) {
   }
 
   // Marca o jogo como visitado (depois de renderModalBanner,
-  // para que o label "Novidade" possa aparecer correctamente)
+  // para que o label "Novidade" possa aparecer correctamente no modal).
+  // Após marcar como visitado, remove o label "Novidade" do card
+  // correspondente na lista (sem re-renderizar toda a lista).
   markGameVisited(game.firebaseId);
+  removeCardNewBadge(game.firebaseId);
+}
+
+// Remove o label "Novidade" de um card específico (por firebaseId).
+// Usado após markGameVisited para que o label desapareça imediatamente
+// quando o utilizador abre um jogo pela primeira vez, sem precisar de
+// re-renderizar toda a lista de jogos.
+function removeCardNewBadge(firebaseId) {
+  if (!firebaseId) return;
+  const card = $gameList.querySelector(`.game-card[data-fbid="${CSS.escape(firebaseId)}"]`);
+  if (card) {
+    const badge = card.querySelector(".card-new-badge");
+    if (badge) badge.remove();
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -6464,13 +6510,15 @@ function initSettings() {
     });
   }
 
-  // 7. Checkbox mutar sons (SFX)
-  const muteSoundsChk = document.getElementById("option-mute-sounds");
-  if (muteSoundsChk) {
-    muteSoundsChk.checked = window.sfx ? window.sfx.isMuted() : false;
-    muteSoundsChk.addEventListener("change", e => {
+  // 7. Checkbox "Skip após voto a favor" (auto-avançar no Discover)
+  //    Default: off. Persistido em localStorage (jce_skip_on_upvote).
+  const skipOnUpvoteChk = document.getElementById("option-skip-on-upvote");
+  if (skipOnUpvoteChk) {
+    skipOnUpvoteChk.checked = skipOnUpvote;
+    skipOnUpvoteChk.addEventListener("change", e => {
       e.stopPropagation();
-      if (window.sfx) window.sfx.setMuted(muteSoundsChk.checked);
+      skipOnUpvote = skipOnUpvoteChk.checked;
+      try { localStorage.setItem("jce_skip_on_upvote", skipOnUpvote ? "1" : "0"); } catch (_) {}
     });
   }
 }
@@ -6721,6 +6769,7 @@ function openDiscoverGame(queueIdx) {
   // Marca o jogo como visitado (depois de renderModalBanner,
   // para que o label "Novidade" possa aparecer correctamente)
   markGameVisited(game.firebaseId);
+  removeCardNewBadge(game.firebaseId);
 }
 
 // Navega na queue de descoberta com animação whoosh estilo carrossel.
