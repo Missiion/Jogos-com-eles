@@ -1886,6 +1886,194 @@ body.editor-mode .card-played-btn {
 }
 
 /* ═══════════════════════════════════════════════
+   ADMIN — Tabs internas (Jogos | Contas)
+   ═══════════════════════════════════════════════ */
+
+/* Container das tabs — flex row com separador inferior */
+.admin-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Botão de tab — segue o padrão do tag-filter-subtab */
+.admin-tab {
+  flex: 1;
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 8px 10px;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  margin-bottom: -1px;
+}
+
+.admin-tab:hover {
+  background: rgba(255,255,255,0.05);
+  color: var(--text);
+}
+
+.admin-tab.active {
+  color: var(--orange);
+  border-bottom-color: var(--orange);
+}
+
+/* Wrapper do conteúdo de cada tab — preenche o espaço disponível
+   e permite scroll interno (game-list / accounts-list) */
+.admin-tab-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Tab Contas — lista de utilizadores ── */
+
+.admin-accounts-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 18px 6px;
+}
+
+.admin-account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  transition: background 0.15s;
+}
+
+.admin-account-row:last-child {
+  border-bottom: none;
+}
+
+/* Linha com recuperação ativa — fundo subtil âmbar para destaque */
+.admin-account-row.recovery-active {
+  background: linear-gradient(90deg,
+    rgba(255,179,71,0.06) 0%,
+    rgba(255,179,71,0) 100%);
+  border-radius: 4px;
+  padding-left: 8px;
+  padding-right: 8px;
+  margin: 0 -8px;
+}
+
+.admin-account-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.admin-account-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.admin-account-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.admin-account-badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  line-height: 1.4;
+}
+
+.admin-account-badge.admin {
+  background: rgba(255,179,71,0.1);
+  border-color: rgba(255,179,71,0.25);
+  color: var(--amber);
+}
+
+.admin-account-badge.recovery {
+  background: rgba(255,148,102,0.12);
+  border-color: rgba(255,148,102,0.3);
+  color: var(--orange);
+  animation: admin-recovery-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes admin-recovery-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.65; }
+}
+
+.admin-account-badge.self {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.12);
+  color: var(--muted);
+}
+
+/* Botão de toggle de recuperação — estado "ativar" (subtle âmbar) */
+.admin-account-recovery-btn {
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  padding: 5px 10px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid rgba(255,179,71,0.22);
+  color: rgba(255,179,71,0.65);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.admin-account-recovery-btn:hover {
+  background: rgba(255,179,71,0.08);
+  border-color: rgba(255,179,71,0.4);
+  color: var(--amber);
+}
+
+/* Botão de toggle de recuperação — estado "cancelar" (vermelho) */
+.admin-account-recovery-btn.cancel {
+  border-color: rgba(255,80,80,0.22);
+  color: rgba(255,120,120,0.7);
+}
+
+.admin-account-recovery-btn.cancel:hover {
+  background: rgba(255,80,80,0.08);
+  border-color: rgba(255,80,80,0.4);
+  color: rgba(255,130,130,0.95);
+}
+
+/* Hint explicativo no fundo da tab Contas */
+.admin-accounts-hint {
+  padding: 10px 18px 14px;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: var(--muted2);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* ═══════════════════════════════════════════════
    KEY ART PICKER — popup de admin
    ═══════════════════════════════════════════════ */
 .keyart-modal {
