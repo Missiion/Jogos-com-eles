@@ -6129,6 +6129,12 @@ function detectVoteNotifications(newVotes, voteType) {
     const game = gamesData.find(g => g.firebaseId === gameId);
     if (!game) return;
 
+    // ⚠️ CORREÇÃO: esta verificação estava descrita no comentário do topo da
+    // função ("Apenas notifica ... jogos que ELE adicionou") mas nunca tinha
+    // sido implementada — todos os users recebiam notificação de votos em
+    // qualquer jogo, não só nos que eles próprios adicionaram.
+    if (game.addedBy !== currentUser.name) return;
+
     // BUG #6 fix: aplicar filtro per-user (igual a detectGameChanges)
     // Não notificar sobre votos em jogos que o utilizador escondeu ou jogou.
     if (hiddenGames.has(gameId)) return;
