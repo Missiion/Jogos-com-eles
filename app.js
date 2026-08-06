@@ -4236,6 +4236,21 @@ async function addGameForUser(igdbId) {
     //    Aproveita o fetch IGDB já feito para extrair e persistir o steamAppId
     //    — evita um backfill posterior.
     const steam = steamUrl(igdbGame.websites);
+
+    // 4. Up-vote automático do user que adicionou.
+    //    ⚠️ CORREÇÃO (bug do up-vote que não acontecia): isto tem de ser
+    //    enfileirado ANTES do addDoc(), não depois.
+    //    O Firestore aplica "latency compensation": assim que addDoc() é
+    //    chamado, o listener onSnapshot("games") já dispara com o doc local
+    //    otimista (antes do await resolver, que só termina após o ACK do
+    //    servidor). Esse snapshot chama processPendingUpvotes() — se o push
+    //    só acontecesse DEPOIS do await (como antes), a fila ainda estava
+    //    vazia nesse momento e a entrada era perdida (só era reprocessada
+    //    se, por coincidência, chegasse outro snapshot mais tarde — daí a
+    //    inconsistência: "às vezes funciona"). Ao enfileirar antes, a
+    //    entrada já lá está quando esse primeiro snapshot dispara.
+    pendingUpvotes.push({ igdbId, userId: currentUser.id, userName: currentUser.name });
+
     await addDoc(collection(db, "games"), {
       igdbId,
       addedAt: serverTimestamp(),
@@ -4243,17 +4258,18 @@ async function addGameForUser(igdbId) {
       steamAppId: steamAppId(steam) || null,
     });
 
-    // 4. Up-vote automático do user que adicionou.
-    //    O up-vote fará com que o jogo apareça na tab do user
-    //    (processado pelo listener de upvotes).
-    pendingUpvotes.push({ igdbId, userId: currentUser.id, userName: currentUser.name });
-
     // OTIMIZAÇÃO: não chamar clearCache() — o onSnapshot do Firebase busca só
     // o jogo novo. Outros jogos mantêm-se válidos no cache.
     showToast(t("Jogo adicionado!"));
     return true;
   } catch (err) {
     console.error("[addGameForUser] erro:", err);
+    // Se o addDoc falhou depois do push, remove a entrada órfã da fila
+    // (o jogo nunca vai aparecer em gamesData, ficaria pendente para sempre).
+    const idx = pendingUpvotes.findIndex(
+      p => p.igdbId === igdbId && p.userId === currentUser.id
+    );
+    if (idx !== -1) pendingUpvotes.splice(idx, 1);
     showToast(t("Erro ao adicionar."));
     return false;
   }
@@ -5844,6 +5860,19 @@ function renderCarousel() {
 const NOTIFICATIONS_KEY = "jce_notifications";
 const NOTIFICATIONS_MAX = 50; // máximo de notificações guardadas
 const GAMES_SNAPSHOT_KEY = "jce_games_snapshot_v2";
+// ⚠️ CORREÇÃO (bug das notificações que reaparecem):
+// "added"/"released"/"early-access" são transições ÚNICAS por jogo (um jogo só
+// é "adicionado" uma vez, só "sai de acesso antecipado" uma vez, etc.). Antes,
+// a única memória de "já notifiquei isto" era o gamesSnapshot — se por algum
+// motivo essa entrada não batesse certo entre sessões (ex.: instabilidade do
+// enrichment Steam a afetar campos usados na comparação), detectGameChanges()
+// tratava a transição como nova outra vez, mesmo já tendo sido vista e limpa
+// pelo utilizador. O NOTIFIED_EVENTS_KEY é um registo à parte, que NUNCA é
+// apagado por "limpar notificações" nem depende do snapshot de jogos — cada
+// transição one-time só entra aqui (e portanto só notifica) uma única vez,
+// para sempre, por jogo.
+const NOTIFIED_EVENTS_KEY = "jce_notified_events";
+const ONE_TIME_NOTIF_TYPES = new Set(["added", "released", "early-access"]);
 // Migração one-time: remove o snapshot v1 (raw IGDB status). O v2 usa
 // computeReleaseStatus() (IGDB + Steam), pelo que snapshots v1 são incompatíveis —
 // compará-los geraria falsas notificações na primeira carga pós-update.
@@ -5853,6 +5882,7 @@ try { localStorage.removeItem("jce_games_snapshot"); } catch (_) {}
 
 let notifications = [];        // array de {id, type, text, gameId, gameName, timestamp, read}
 let notificationsMuted = false;
+let notifiedEvents = new Set(); // "type:gameId" de transições one-time já notificadas (persistente, não é afetado por "limpar")
 
 // Snapshot anterior dos jogos para deteção de mudanças.
 // Estrutura: { [firebaseId]: { releaseStatus, studios, developers, engines, summary, ... } }
@@ -5871,6 +5901,17 @@ function loadNotifications() {
     const rawSnap = localStorage.getItem(GAMES_SNAPSHOT_KEY);
     if (rawSnap) gamesSnapshot = JSON.parse(rawSnap);
   } catch (_) { gamesSnapshot = {}; }
+  try {
+    const rawNotified = localStorage.getItem(NOTIFIED_EVENTS_KEY);
+    if (rawNotified) notifiedEvents = new Set(JSON.parse(rawNotified));
+  } catch (_) { notifiedEvents = new Set(); }
+}
+
+// Guarda o registo persistente de eventos one-time já notificados.
+function saveNotifiedEvents() {
+  try {
+    localStorage.setItem(NOTIFIED_EVENTS_KEY, JSON.stringify([...notifiedEvents]));
+  } catch (_) {}
 }
 
 // Extrai os campos relevantes de um jogo para o snapshot (para comparação).
@@ -5895,7 +5936,7 @@ function loadNotifications() {
 //   com datas no passado, e compará-lo entre snapshots poderia gerar falsas
 //   notificações devido à instabilidade intermitente do enrichment.
 //   Para jogos SEM steamAppId, IGDB é a fonte única → game.releaseStatus.
-function extractGameSnapshot(game) {
+function extractGameSnapshot(game, prevEntry) {
   let releaseStatus;
   if (game.steamAppId && game.steamEnriched === true) {
     // Jogo com Steam enriquecido → status combinado (alinhado com o display)
@@ -5907,12 +5948,24 @@ function extractGameSnapshot(game) {
     // Tem steamAppId mas enrichment falhou → status não fiável (não comparar)
     releaseStatus = null;
   }
+  // Last update: usa o timestamp do último patch (Steam) ou IGDB updated_at.
+  // steamLastUpdate é { date, title, url } — só guardamos o date para comparar.
+  // ⚠️ CORREÇÃO: se o enrichment Steam falhar nesta sessão (rate-limit, rede),
+  // NÃO grava null por cima do último valor válido conhecido — isso "apagava"
+  // o histórico e, quando o enrichment voltasse a funcionar, o guard
+  // `prevUpdateTs !== null` do detectGameChanges perdia a comparação para
+  // sempre (falso silêncio) OU, dependendo da ordem, podia levar a comparar
+  // contra um `null` estático repetidamente. Preserva o valor anterior.
+  let steamLastUpdateTs;
+  if (game.steamAppId && game.steamEnriched === true) {
+    steamLastUpdateTs = game.steamLastUpdate?.date ?? null;
+  } else {
+    steamLastUpdateTs = prevEntry ? prevEntry.steamLastUpdateTs : null;
+  }
   return {
     releaseStatus,
     firstReleaseTs: game.firstReleaseTs || null,
-    // Last update: usa o timestamp do último patch (Steam) ou IGDB updated_at.
-    // steamLastUpdate é { date, title, url } — só guardamos o date para comparar.
-    steamLastUpdateTs: game.steamLastUpdate?.date || null,
+    steamLastUpdateTs,
     igdbUpdatedAt: game.igdbUpdatedAt || null,
   };
 }
@@ -5936,7 +5989,7 @@ function saveGamesSnapshot() {
         // quando um jogo fallback recupera (retryFailedGames), o snapshot não
         // o tem e detectGameChanges gera uma falsa notificação "added".
         // O fallback já tem releaseStatus/firstReleaseTs/etc (de createFallbackGame).
-        snap[g.firebaseId] = extractGameSnapshot(g);
+        snap[g.firebaseId] = extractGameSnapshot(g, gamesSnapshot[g.firebaseId]);
       }
     });
     gamesSnapshot = snap; // ← CRÍTICO: atualiza em memória (BUG #1 fix)
@@ -5987,7 +6040,7 @@ function detectGameChanges() {
       return; // jogo novo não tem prev para comparar — não cai nas secções abaixo
     }
 
-    const curr = extractGameSnapshot(game);
+    const curr = extractGameSnapshot(game, prev);
     const prevStatus = prev.releaseStatus;
     const currStatus = curr.releaseStatus;
 
@@ -6121,6 +6174,17 @@ function saveNotifications() {
 // gameName: nome do jogo (para mostrar na notificação)
 function addNotification(type, text, gameId, gameName) {
   if (notificationsMuted) return;
+
+  // CORREÇÃO — notificações one-time (added/released/early-access) que
+  // reapareciam depois de vistas/limpas: nunca notificar a mesma transição
+  // duas vezes, independentemente do que o gamesSnapshot disser. Isto é
+  // permanente e sobrevive a "limpar notificações".
+  if (ONE_TIME_NOTIF_TYPES.has(type) && gameId) {
+    const eventKey = `${type}:${gameId}`;
+    if (notifiedEvents.has(eventKey)) return;
+    notifiedEvents.add(eventKey);
+    saveNotifiedEvents();
+  }
 
   // BUG #8 fix: dedup — se já existe uma notificação com o mesmo type+gameId
   // nos últimos 5 segundos, não adiciona duplicada. Previne spam quando
