@@ -1464,6 +1464,15 @@ function listenToGamesCache() {
     // Log para debug (verificar que o onSnapshot está a disparar)
     if (gamesCacheMap.size !== prevSize || newCacheIds.length > 0) {
       console.log(`[listenToGamesCache] ${gamesCacheMap.size} jogos em cache (era ${prevSize}), ${newCacheIds.length} novo(s)`);
+      if (newCacheIds.length > 0) {
+        console.log(`[listenToGamesCache] Novos IDs:`, newCacheIds);
+        // Verifica se estes IDs estão em _lastFirestoreDocs
+        const firestoreIds = _lastFirestoreDocs.map(d => String(d.igdbId));
+        const missingInFirestore = newCacheIds.filter(id => !firestoreIds.includes(id));
+        if (missingInFirestore.length > 0) {
+          console.warn(`[listenToGamesCache] ⚠️ ${missingInFirestore.length} jogo(s) no cache mas NÃO em games:`, missingInFirestore);
+        }
+      }
     }
 
     // Se gamesData já foi populado (listenToGames já correu), re-renderiza
@@ -1522,7 +1531,10 @@ function listenToGamesCache() {
 let _lastFirestoreDocs = [];
 function rebuildGamesData() {
   gamesData = _lastFirestoreDocs.map(fsDoc => {
-    const cached = gamesCacheMap.get(String(fsDoc.igdbId));
+    // Tenta ambas as representações de igdbId (string e number)
+    // O games_cache usa o igdbId como doc id (string), mas o games pode ter como number
+    const idStr = String(fsDoc.igdbId);
+    const cached = gamesCacheMap.get(idStr);
     if (cached) {
       // Jogo enriquecido — merge cache + Firestore metadata
       return {
@@ -3778,7 +3790,44 @@ async function addGameForUser(igdbId) {
     // é chamado imediatamente, mesmo que tenha sido chamado há < 16s.
     // O worker busca IGDB+Steam, cria doc em games_cache, e cria notificação "added".
     // O onSnapshot do games_cache pega a mudança e re-renderiza a lista.
+    console.log(`[addGameForUser] Jogo ${igdbId} adicionado. A chamar triggerRefreshForced...`);
     triggerRefreshForced();
+
+    // Etapa 5: Polling de fallback — se o onSnapshot do games_cache não disparar,
+    // verifica manualmente a cada 3 segundos se o jogo já foi enriquecido.
+    // Faz um getDoc direto ao Firestore (não depende do onSnapshot).
+    const pollIgdbId = igdbId;
+    let pollAttempts = 0;
+    const maxPollAttempts = 20; // 20 × 3s = 60s máximo
+    const pollInterval = setInterval(async () => {
+      pollAttempts++;
+      try {
+        // Busca direta ao Firestore (não depende do onSnapshot)
+        const cacheDoc = await getDoc(doc(db, "games_cache", String(pollIgdbId)));
+        if (cacheDoc.exists()) {
+          console.log(`[addGameForUser] Jogo ${pollIgdbId} enriquecido após ${pollAttempts * 3}s (polling direto)`);
+          // Atualiza o gamesCacheMap manualmente
+          const data = cacheDoc.data();
+          gamesCacheMap.set(String(pollIgdbId), { ...data, igdbId: Number(pollIgdbId) });
+          rebuildGamesData();
+          renderGameList(gamesData);
+          renderAdminList(gamesData);
+          renderTagFilter();
+          clearInterval(pollInterval);
+        } else if (pollAttempts >= maxPollAttempts) {
+          console.warn(`[addGameForUser] Jogo ${pollIgdbId} não enriquecido após ${maxPollAttempts * 3}s`);
+          clearInterval(pollInterval);
+        } else {
+          // Tentar forçar outro refresh se o jogo ainda não apareceu
+          if (pollAttempts % 3 === 0) {
+            console.log(`[addGameForUser] Polling ${pollAttempts}/${maxPollAttempts} — jogo ainda não enriquecido, a re-forçar refresh...`);
+            triggerRefreshForced();
+          }
+        }
+      } catch (e) {
+        console.warn(`[addGameForUser] Erro no polling:`, e.message);
+      }
+    }, 3000);
 
     showToast(t("Jogo adicionado!"));
     return true;
