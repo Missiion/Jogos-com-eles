@@ -1417,12 +1417,13 @@ async function triggerRefresh() {
 
 // Versão FORÇADA — ignora o debounce. Usada quando se adiciona um jogo novo
 // (precisamos que o worker enriqueça imediatamente, sem esperar 16s).
-async function triggerRefreshForced() {
+// Se for passado igdbId, força o enriquecimento desse jogo específico.
+async function triggerRefreshForced(igdbId = null) {
   _triggerRefreshLastCallTs = Date.now(); // reset do debounce
-  await _doRefresh();
+  await _doRefresh(igdbId);
 }
 
-async function _doRefresh() {
+async function _doRefresh(forceIgdbId = null) {
   // Usa currentUser se disponível, senão lê do localStorage (a sessão
   // pode ainda não ter sido restaurada quando triggerRefresh é chamado).
   let userId = null;
@@ -1433,7 +1434,15 @@ async function _doRefresh() {
   }
   if (!userId) return;
   try {
-    await fetch(`${IGDB_PROXY}/refresh?userId=${encodeURIComponent(userId)}`);
+    let url = `${IGDB_PROXY}/refresh?userId=${encodeURIComponent(userId)}`;
+    if (forceIgdbId) {
+      url += `&igdbId=${encodeURIComponent(forceIgdbId)}`;
+    }
+    const response = await fetch(url);
+    const data = await response.json();
+    if (forceIgdbId) {
+      console.log(`[triggerRefresh] Forçar enriquecimento ${forceIgdbId}:`, data);
+    }
   } catch (e) {
     console.warn("[triggerRefresh] Erro (não bloqueia):", e.message);
   }
@@ -3786,12 +3795,10 @@ async function addGameForUser(igdbId) {
     });
 
     // Etapa 4: trigger refresh FORÇADO para o worker enriquecer o jogo novo.
-    // Usa triggerRefreshForced (ignora debounce) para garantir que o worker
-    // é chamado imediatamente, mesmo que tenha sido chamado há < 16s.
-    // O worker busca IGDB+Steam, cria doc em games_cache, e cria notificação "added".
-    // O onSnapshot do games_cache pega a mudança e re-renderiza a lista.
-    console.log(`[addGameForUser] Jogo ${igdbId} adicionado. A chamar triggerRefreshForced...`);
-    triggerRefreshForced();
+    // Passa o igdbId para o worker forçar o enriquecimento desse jogo específico
+    // (mesmo que o snapshot do games ainda não tenha chegado ao worker).
+    console.log(`[addGameForUser] Jogo ${igdbId} adicionado. A chamar triggerRefreshForced com igdbId...`);
+    triggerRefreshForced(igdbId);
 
     // Etapa 5: Polling de fallback — se o onSnapshot do games_cache não disparar,
     // verifica manualmente a cada 3 segundos se o jogo já foi enriquecido.
