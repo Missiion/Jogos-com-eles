@@ -3018,6 +3018,9 @@ document.addEventListener("keydown", e => {
     return;
   }
 
+  // DEBUG: log para ver se as teclas estão a chegar
+  console.log(`[admin] key="${char}", buffer="${adminBuffer}${char}", modalOpen=${modalOpen}, target=${e.target.tagName}`);
+
   adminBuffer += char;
 
   // Show hint
