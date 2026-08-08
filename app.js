@@ -1392,7 +1392,22 @@ async function backfillSteamAppId(firebaseId, appId) {
  * Rate limited a 15s por userId (o worker controla).
  * Retorna imediatamente — o enriquecimento corre em background.
  */
+// Etapa 5: Debounce de triggerRefresh para evitar chamadas duplicadas.
+// O app.js chama triggerRefresh em restoreSession() e listenToGamesV2()
+// quase em simultâneo no arranque. Sem debounce, a 2ª chamada leva 429
+// (rate limit de 15s do worker). Com debounce, só a 1ª chama o worker;
+// as seguintes dentro de 15s são ignoradas silenciosamente.
+let _triggerRefreshLastCallTs = 0;
+const _TRIGGER_REFRESH_DEBOUNCE_MS = 16000; // 16s (margem sobre os 15s do worker)
+
 async function triggerRefresh() {
+  // Debounce: ignora chamadas dentro da janela de 16s
+  const now = Date.now();
+  if (now - _triggerRefreshLastCallTs < _TRIGGER_REFRESH_DEBOUNCE_MS) {
+    return; // chamada recente — ignora
+  }
+  _triggerRefreshLastCallTs = now;
+
   // Usa currentUser se disponível, senão lê do localStorage (a sessão
   // pode ainda não ter sido restaurada quando triggerRefresh é chamado).
   let userId = null;
