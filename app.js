@@ -1450,6 +1450,7 @@ function listenToGamesCache() {
   const q = query(collection(db, "games_cache"));
   _gamesCacheUnsub = onSnapshot(q, (snapshot) => {
     const prevSize = gamesCacheMap.size;
+    const prevCacheIds = new Set(gamesCacheMap.keys());
     gamesCacheMap = new Map();
     snapshot.docs.forEach(d => {
       const data = d.data();
@@ -1457,9 +1458,12 @@ function listenToGamesCache() {
       gamesCacheMap.set(String(d.id), { ...data, igdbId: Number(d.id) });
     });
 
+    // Detecta jogos NOVOS no cache (que não estavam antes)
+    const newCacheIds = [...gamesCacheMap.keys()].filter(id => !prevCacheIds.has(id));
+
     // Log para debug (verificar que o onSnapshot está a disparar)
-    if (gamesCacheMap.size !== prevSize) {
-      console.log(`[listenToGamesCache] ${gamesCacheMap.size} jogos em cache (era ${prevSize})`);
+    if (gamesCacheMap.size !== prevSize || newCacheIds.length > 0) {
+      console.log(`[listenToGamesCache] ${gamesCacheMap.size} jogos em cache (era ${prevSize}), ${newCacheIds.length} novo(s)`);
     }
 
     // Se gamesData já foi populado (listenToGames já correu), re-renderiza
@@ -1469,21 +1473,37 @@ function listenToGamesCache() {
       const fallbackBefore = gamesData.filter(g => g._needsRetry).length;
       rebuildGamesData();
       const fallbackAfter = gamesData.filter(g => g._needsRetry).length;
-      // Só re-renderiza se houve mudança real (evita re-renders desnecessários)
-      if (fallbackAfter < fallbackBefore || gamesCacheMap.size !== prevSize) {
-        console.log(`[listenToGamesCache] Re-render: ${fallbackBefore} fallback → ${fallbackAfter} fallback`);
+
+      // Força re-render se:
+      // - Há novos jogos no cache (newCacheIds.length > 0)
+      // - O número de fallbacks diminuiu (jogo foi enriquecido)
+      // - O tamanho do cache mudou
+      const shouldRender = newCacheIds.length > 0 ||
+                           fallbackAfter < fallbackBefore ||
+                           gamesCacheMap.size !== prevSize;
+
+      if (shouldRender) {
+        console.log(`[listenToGamesCache] Re-render: ${fallbackBefore} fallback → ${fallbackAfter} fallback, ${newCacheIds.length} novo(s)`);
         renderGameList(gamesData);
         renderAdminList(gamesData);
         renderTagFilter();
-        // Se o modal estiver aberto e o jogo atual foi enriquecido, atualiza
-        if (modalOpen && _modalCurrentGame && !_modalCurrentGame._needsRetry) {
+
+        // Se o modal estiver aberto, atualiza o jogo atual
+        if (modalOpen && _modalCurrentGame) {
           const updated = gamesData.find(g => g.firebaseId === _modalCurrentGame.firebaseId);
-          if (updated && updated !== _modalCurrentGame) {
+          if (updated && (updated !== _modalCurrentGame || !updated._needsRetry)) {
+            const wasFallback = _modalCurrentGame._needsRetry;
             _modalCurrentGame = updated;
-            const savedMediaIdx = modalIndex;
-            openModal(gamesData.indexOf(updated));
-            if (savedMediaIdx < modalMediaList.length) {
-              renderModalMedia(savedMediaIdx);
+            // Só reabre o modal se o jogo tinha fallback (agora tem dados)
+            if (wasFallback) {
+              const savedMediaIdx = modalIndex;
+              openModal(gamesData.indexOf(updated));
+              if (savedMediaIdx < modalMediaList.length) {
+                renderModalMedia(savedMediaIdx);
+              }
+            } else {
+              // Só atualiza info, sem reabrir modal
+              renderModalExtraInfo(updated);
             }
           }
         }
@@ -1586,8 +1606,10 @@ function listenToGamesV2() {
 //  RENDER — Game List
 // ─────────────────────────────────────────────
 function getFilteredSortedGames() {
-  // 1. Filter by active tab
-  let list = gamesData.slice();
+  // 0. Esconde jogos em fallback (_needsRetry) — ainda não foram enriquecidos
+  // pelo worker. Não mostramos placeholders "Jogo #123456" na lista.
+  // O jogo aparece automaticamente quando o games_cache é populado (onSnapshot).
+  let list = gamesData.filter(g => !g._needsRetry);
   if (activeTab === "escondidos") {
     // Tab "Escondidos": mostra apenas jogos que o utilizador deu down-vote.
     // Usa hasUserDownvoted() (Firebase downvotesMap) em vez de hiddenGames
