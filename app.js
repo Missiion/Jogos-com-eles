@@ -1439,12 +1439,26 @@ async function _doRefresh(forceIgdbId = null) {
       url += `&igdbId=${encodeURIComponent(forceIgdbId)}`;
     }
     const response = await fetch(url);
+
+    // CORREÇÃO: Verificar response.ok — um 429 (rate limit) NÃO é sucesso
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 429) {
+        console.warn(`[triggerRefresh] Rate limited (429)${forceIgdbId ? ` para igdbId=${forceIgdbId}` : ""}. Retry-After: ${response.headers.get("Retry-After") || data.retryAfter || "?"}s`);
+      } else {
+        console.warn(`[triggerRefresh] HTTP ${response.status}${forceIgdbId ? ` para igdbId=${forceIgdbId}` : ""}:`, data);
+      }
+      return false; // falhou
+    }
+
     const data = await response.json();
     if (forceIgdbId) {
       console.log(`[triggerRefresh] Forçar enriquecimento ${forceIgdbId}:`, data);
     }
+    return true; // sucesso
   } catch (e) {
     console.warn("[triggerRefresh] Erro (não bloqueia):", e.message);
+    return false;
   }
 }
 
@@ -3832,9 +3846,10 @@ async function addGameForUser(igdbId) {
           clearInterval(pollInterval);
         } else {
           // Tentar forçar outro refresh se o jogo ainda não apareceu
+          // CORREÇÃO: passar pollIgdbId para forçar o enriquecimento do jogo específico
           if (pollAttempts % 3 === 0) {
-            console.log(`[addGameForUser] Polling ${pollAttempts}/${maxPollAttempts} — jogo ainda não enriquecido, a re-forçar refresh...`);
-            triggerRefreshForced();
+            console.log(`[addGameForUser] Polling ${pollAttempts}/${maxPollAttempts} — jogo ainda não enriquecido, a re-forçar refresh com igdbId=${pollIgdbId}...`);
+            triggerRefreshForced(pollIgdbId);
           }
         }
       } catch (e) {
