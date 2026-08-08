@@ -1397,6 +1397,11 @@ async function backfillSteamAppId(firebaseId, appId) {
 // quase em simultâneo no arranque. Sem debounce, a 2ª chamada leva 429
 // (rate limit de 15s do worker). Com debounce, só a 1ª chama o worker;
 // as seguintes dentro de 15s são ignoradas silenciosamente.
+//
+// ⚠️ CORREÇÃO: O debounce estava a bloquear o triggerRefresh quando se
+// adiciona um jogo novo (se foi chamado há < 16s). Isto causava o jogo
+// ficar em fallback sem enriquecer. Solução: triggerRefreshForced()
+// ignora o debounce — usado no addGameForUser.
 let _triggerRefreshLastCallTs = 0;
 const _TRIGGER_REFRESH_DEBOUNCE_MS = 16000; // 16s (margem sobre os 15s do worker)
 
@@ -1407,7 +1412,17 @@ async function triggerRefresh() {
     return; // chamada recente — ignora
   }
   _triggerRefreshLastCallTs = now;
+  await _doRefresh();
+}
 
+// Versão FORÇADA — ignora o debounce. Usada quando se adiciona um jogo novo
+// (precisamos que o worker enriqueça imediatamente, sem esperar 16s).
+async function triggerRefreshForced() {
+  _triggerRefreshLastCallTs = Date.now(); // reset do debounce
+  await _doRefresh();
+}
+
+async function _doRefresh() {
   // Usa currentUser se disponível, senão lê do localStorage (a sessão
   // pode ainda não ter sido restaurada quando triggerRefresh é chamado).
   let userId = null;
@@ -1434,6 +1449,7 @@ function listenToGamesCache() {
   if (_gamesCacheUnsub) _gamesCacheUnsub();
   const q = query(collection(db, "games_cache"));
   _gamesCacheUnsub = onSnapshot(q, (snapshot) => {
+    const prevSize = gamesCacheMap.size;
     gamesCacheMap = new Map();
     snapshot.docs.forEach(d => {
       const data = d.data();
@@ -1441,13 +1457,37 @@ function listenToGamesCache() {
       gamesCacheMap.set(String(d.id), { ...data, igdbId: Number(d.id) });
     });
 
+    // Log para debug (verificar que o onSnapshot está a disparar)
+    if (gamesCacheMap.size !== prevSize) {
+      console.log(`[listenToGamesCache] ${gamesCacheMap.size} jogos em cache (era ${prevSize})`);
+    }
+
     // Se gamesData já foi populado (listenToGames já correu), re-renderiza
     // com os dados enriquecidos do cache.
     if (gamesLoaded) {
+      // Conta quantos jogos estão em fallback antes do rebuild
+      const fallbackBefore = gamesData.filter(g => g._needsRetry).length;
       rebuildGamesData();
-      renderGameList(gamesData);
-      renderAdminList(gamesData);
-      renderTagFilter();
+      const fallbackAfter = gamesData.filter(g => g._needsRetry).length;
+      // Só re-renderiza se houve mudança real (evita re-renders desnecessários)
+      if (fallbackAfter < fallbackBefore || gamesCacheMap.size !== prevSize) {
+        console.log(`[listenToGamesCache] Re-render: ${fallbackBefore} fallback → ${fallbackAfter} fallback`);
+        renderGameList(gamesData);
+        renderAdminList(gamesData);
+        renderTagFilter();
+        // Se o modal estiver aberto e o jogo atual foi enriquecido, atualiza
+        if (modalOpen && _modalCurrentGame && !_modalCurrentGame._needsRetry) {
+          const updated = gamesData.find(g => g.firebaseId === _modalCurrentGame.firebaseId);
+          if (updated && updated !== _modalCurrentGame) {
+            _modalCurrentGame = updated;
+            const savedMediaIdx = modalIndex;
+            openModal(gamesData.indexOf(updated));
+            if (savedMediaIdx < modalMediaList.length) {
+              renderModalMedia(savedMediaIdx);
+            }
+          }
+        }
+      }
     }
   }, (err) => {
     console.warn("[listenToGamesCache] Erro:", err);
@@ -3711,10 +3751,12 @@ async function addGameForUser(igdbId) {
       steamAppId: steamAppId(steam) || null,
     });
 
-    // Etapa 4: trigger refresh para o worker enriquecer o jogo novo.
+    // Etapa 4: trigger refresh FORÇADO para o worker enriquecer o jogo novo.
+    // Usa triggerRefreshForced (ignora debounce) para garantir que o worker
+    // é chamado imediatamente, mesmo que tenha sido chamado há < 16s.
     // O worker busca IGDB+Steam, cria doc em games_cache, e cria notificação "added".
     // O onSnapshot do games_cache pega a mudança e re-renderiza a lista.
-    triggerRefresh();
+    triggerRefreshForced();
 
     showToast(t("Jogo adicionado!"));
     return true;
