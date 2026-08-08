@@ -3799,17 +3799,23 @@ async function addGameForUser(igdbId) {
     const pollIgdbId = igdbId;
     let pollAttempts = 0;
     const maxPollAttempts = 20; // 20 × 3s = 60s máximo
+    console.log(`[addGameForUser] Iniciar polling para igdbId=${pollIgdbId} (type: ${typeof pollIgdbId})`);
     const pollInterval = setInterval(async () => {
       pollAttempts++;
       try {
         // Busca direta ao Firestore (não depende do onSnapshot)
-        const cacheDoc = await getDoc(doc(db, "games_cache", String(pollIgdbId)));
+        const docId = String(pollIgdbId);
+        console.log(`[addGameForUser] Polling ${pollAttempts}/${maxPollAttempts} — getDoc(games_cache/${docId})...`);
+        const cacheDoc = await getDoc(doc(db, "games_cache", docId));
+        console.log(`[addGameForUser] Polling ${pollAttempts} — exists: ${cacheDoc.exists()}`);
         if (cacheDoc.exists()) {
           console.log(`[addGameForUser] Jogo ${pollIgdbId} enriquecido após ${pollAttempts * 3}s (polling direto)`);
           // Atualiza o gamesCacheMap manualmente
           const data = cacheDoc.data();
-          gamesCacheMap.set(String(pollIgdbId), { ...data, igdbId: Number(pollIgdbId) });
+          gamesCacheMap.set(docId, { ...data, igdbId: Number(pollIgdbId) });
+          console.log(`[addGameForUser] gamesCacheMap size: ${gamesCacheMap.size}, chave: ${docId}`);
           rebuildGamesData();
+          console.log(`[addGameForUser] gamesData length: ${gamesData.length}, jogo no gamesData: ${gamesData.some(g => String(g.igdbId) === docId)}`);
           renderGameList(gamesData);
           renderAdminList(gamesData);
           renderTagFilter();
